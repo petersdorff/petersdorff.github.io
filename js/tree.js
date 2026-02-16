@@ -17,6 +17,7 @@ const Tree = (() => {
   let highlightedFromId = null;
   let highlightedToId = null;
   let onNodeTapCallback = null;
+  let onBackgroundTapCallback = null;
   let currentUserId = null;
 
   // View mode state
@@ -69,10 +70,11 @@ const Tree = (() => {
       if (onNodeTapCallback) onNodeTapCallback(nodeId);
     });
 
-    // Tap on background to deselect
+    // Tap on background to deselect and close overlays
     cy.on('tap', (evt) => {
       if (evt.target === cy) {
         clearHighlight();
+        if (onBackgroundTapCallback) onBackgroundTapCallback();
       }
     });
 
@@ -98,6 +100,10 @@ const Tree = (() => {
 
   function onNodeTap(callback) {
     onNodeTapCallback = callback;
+  }
+
+  function onBackgroundTap(callback) {
+    onBackgroundTapCallback = callback;
   }
 
   function setCurrentUser(memberId) {
@@ -1651,6 +1657,7 @@ const Tree = (() => {
   return {
     init,
     onNodeTap,
+    onBackgroundTap,
     setCurrentUser,
     render,
     highlightConnection,

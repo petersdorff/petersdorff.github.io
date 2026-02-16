@@ -171,7 +171,10 @@ const App = (() => {
       Profile.searchForRelation(e.target.value.trim());
     });
     document.getElementById('btn-add-relation').addEventListener('click', Profile.addRelation);
-    document.getElementById('btn-add-new-person').addEventListener('click', Profile.addNewPersonAndRelate);
+    // Rel type change — update pending display for new person mode
+    document.getElementById('edit-rel-type').addEventListener('change', () => {
+      if (!Profile.getEditingMemberId()) Profile.updatePendingRelDisplay();
+    });
 
     // QR views
     document.getElementById('btn-qr-back').addEventListener('click', () => showView('view-main'));
@@ -209,6 +212,12 @@ const App = (() => {
     // Tree node tap
     Tree.onNodeTap((nodeId) => {
       Profile.show(nodeId);
+    });
+
+    // Tree background tap — close overlays and return to tree
+    Tree.onBackgroundTap(() => {
+      closeConnection();
+      showView('view-main');
     });
   }
 

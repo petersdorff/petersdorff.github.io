@@ -6,6 +6,7 @@ const Profile = (() => {
   let currentProfileId = null;
   let editingMemberId = null;
   let selectedRelTarget = null;
+  let pendingFirstRelation = null;
 
   // ─── German labels for relationship types ───
   const REL_LABELS = {
@@ -145,28 +146,11 @@ const Profile = (() => {
       item.innerHTML = `
         <span class="rel-type-badge ${displayType}">${REL_LABELS[displayType]}</span>
         <span class="rel-name">${otherName}</span>
-        <button class="rel-delete" title="Verbindung löschen">&times;</button>
       `;
 
       // Click on name → go to that person's profile
       item.querySelector('.rel-name').addEventListener('click', () => {
         show(otherId);
-      });
-
-      // Click delete → remove relationship
-      item.querySelector('.rel-delete').addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const typeName = REL_LABELS[displayType];
-        if (!confirm(`Verbindung "${typeName}: ${otherName}" wirklich löschen?`)) return;
-        try {
-          await DB.removeRelationship(r.id);
-          App.toast('Verbindung gelöscht', 'success');
-          await App.refreshTree();
-          await renderProfileRelations(memberId);
-        } catch (err) {
-          console.error('Delete relation error:', err);
-          App.toast('Fehler beim Löschen', 'error');
-        }
       });
 
       list.appendChild(item);
@@ -179,6 +163,7 @@ const Profile = (() => {
   async function edit(memberId) {
     editingMemberId = memberId;
     selectedRelTarget = null;
+    pendingFirstRelation = null;
 
     let member = null;
     if (memberId) {
@@ -202,8 +187,24 @@ const Profile = (() => {
     document.getElementById('edit-rel-search').value = '';
     document.getElementById('edit-rel-results').innerHTML = '';
 
-    // Render existing relationships in edit view
-    await renderEditRelations(memberId);
+    const btnAddRel = document.getElementById('btn-add-relation');
+
+    if (!memberId) {
+      // New person mode: hide "Verbindung hinzufügen" button, show pending display
+      btnAddRel.style.display = 'none';
+      const container = document.getElementById('edit-existing-rels');
+      container.innerHTML = `
+        <div class="rel-empty">
+          Wähle unten eine erste Verbindung, damit die Person
+          korrekt im Stammbaum positioniert wird.
+        </div>
+        <div id="pending-rel-display"></div>
+      `;
+    } else {
+      // Existing person: show button, render existing relationships
+      btnAddRel.style.display = '';
+      await renderEditRelations(memberId);
+    }
 
     App.showView('view-edit');
   }
@@ -313,7 +314,25 @@ const Profile = (() => {
         data.createdBy = Auth.getUser()?.id || null;
         const newId = await DB.createMember(data);
         editingMemberId = newId;
-        App.toast('Person angelegt', 'success');
+
+        // Create pending first relation if set
+        if (pendingFirstRelation) {
+          const { targetId, relType } = pendingFirstRelation;
+          await cleanConflictingRelations(newId, targetId, relType);
+          if (relType === 'parent') {
+            await DB.addRelationship(newId, targetId, 'parent_child');
+          } else if (relType === 'child') {
+            await DB.addRelationship(targetId, newId, 'parent_child');
+          } else if (relType === 'spouse') {
+            await DB.addRelationship(newId, targetId, 'spouse');
+          } else if (relType === 'sibling') {
+            await DB.addRelationship(newId, targetId, 'sibling');
+          }
+          pendingFirstRelation = null;
+          App.toast('Person angelegt & verbunden', 'success');
+        } else {
+          App.toast('Person angelegt', 'success');
+        }
       }
 
       // Reload tree
@@ -345,22 +364,116 @@ const Profile = (() => {
     // Filter out self
     const filtered = results.filter(m => m.id !== editingMemberId);
 
-    resultsEl.innerHTML = filtered.slice(0, 5).map(m => `
-      <div class="mini-result-item" data-id="${m.id}">
-        ${m.firstName} ${m.lastName}
-        ${m.birthDate ? ` (* ${m.birthDate.substring(0, 4)})` : ''}
-      </div>
-    `).join('');
+    if (filtered.length > 0) {
+      // Show matching results
+      resultsEl.innerHTML = filtered.slice(0, 5).map(m => `
+        <div class="mini-result-item" data-id="${m.id}">
+          ${m.firstName} ${m.lastName}
+          ${m.birthDate ? ` (* ${m.birthDate.substring(0, 4)})` : ''}
+        </div>
+      `).join('');
 
-    // Add click handlers
-    resultsEl.querySelectorAll('.mini-result-item').forEach(el => {
-      el.addEventListener('click', () => {
-        selectedRelTarget = el.dataset.id;
-        document.getElementById('edit-rel-search').value =
-          el.textContent.trim();
-        resultsEl.innerHTML = '';
+      resultsEl.querySelectorAll('.mini-result-item').forEach(el => {
+        el.addEventListener('click', () => {
+          selectedRelTarget = el.dataset.id;
+          document.getElementById('edit-rel-search').value = el.textContent.trim();
+          resultsEl.innerHTML = '';
+          // If new person mode, update pending relation display
+          if (!editingMemberId) updatePendingRelDisplay();
+        });
       });
-    });
+    } else {
+      // No results — show inline "create new person" buttons
+      resultsEl.innerHTML = `
+        <div style="padding:12px; text-align:center;">
+          <p style="color:var(--text-muted); font-size:12px; margin-bottom:12px;">
+            Keine Person mit diesem Namen gefunden.
+          </p>
+          <button class="btn btn-secondary btn-create-new" style="width:100%; margin-bottom:6px;">
+            Als neue Person anlegen
+          </button>
+          <button class="btn btn-secondary btn-create-and-switch" style="width:100%;">
+            Anlegen &amp; zum Profil wechseln
+          </button>
+        </div>
+      `;
+
+      resultsEl.querySelector('.btn-create-new').addEventListener('click', () => {
+        createNewPersonFromSearch(query, false);
+      });
+      resultsEl.querySelector('.btn-create-and-switch').addEventListener('click', () => {
+        createNewPersonFromSearch(query, true);
+      });
+    }
+  }
+
+  /**
+   * Create a new person from the search field text.
+   * @param {string} query - The typed name
+   * @param {boolean} switchToProfile - If true, navigate to the new person's edit form
+   */
+  async function createNewPersonFromSearch(query, switchToProfile) {
+    const parts = query.trim().split(' ');
+    const firstName = parts[0] || 'Unbekannt';
+    const lastName = parts.slice(1).join(' ') || 'Unbekannt';
+
+    // If editing a new person that hasn't been saved yet, save first
+    if (!editingMemberId) {
+      await save();
+      if (!editingMemberId) return; // save failed
+    }
+
+    const relType = document.getElementById('edit-rel-type').value;
+    const sourceId = editingMemberId;
+
+    try {
+      const newId = await DB.createMember({
+        firstName,
+        lastName,
+        birthName: '',
+        birthDate: '',
+        deathDate: '',
+        isDeceased: false,
+        isPlaceholder: true,
+        claimedByUid: null,
+        createdBy: Auth.getUser()?.id || null,
+        location: '',
+        contact: '',
+        photo: '',
+        notes: '',
+      });
+
+      if (switchToProfile) {
+        // Create relationship if type selected, then navigate to new person
+        if (relType && sourceId) {
+          await cleanConflictingRelations(sourceId, newId, relType);
+          if (relType === 'parent') {
+            await DB.addRelationship(sourceId, newId, 'parent_child');
+          } else if (relType === 'child') {
+            await DB.addRelationship(newId, sourceId, 'parent_child');
+          } else if (relType === 'spouse') {
+            await DB.addRelationship(sourceId, newId, 'spouse');
+          } else if (relType === 'sibling') {
+            await DB.addRelationship(sourceId, newId, 'sibling');
+          }
+          App.toast(`${firstName} ${lastName} angelegt & verbunden`, 'success');
+        } else {
+          App.toast(`${firstName} ${lastName} angelegt`, 'success');
+        }
+        await App.refreshTree();
+        edit(newId);
+      } else {
+        // Stay on current form, set new person as selected target
+        selectedRelTarget = newId;
+        document.getElementById('edit-rel-search').value = `${firstName} ${lastName}`;
+        document.getElementById('edit-rel-results').innerHTML = '';
+        App.toast(`${firstName} ${lastName} angelegt`, 'success');
+        await App.refreshTree();
+      }
+    } catch (err) {
+      console.error('Create person error:', err);
+      App.toast('Fehler beim Anlegen', 'error');
+    }
   }
 
   /**
@@ -439,6 +552,41 @@ const Profile = (() => {
     }
 
     return toRemove.length;
+  }
+
+  /**
+   * Update the pending first-relation preview chip (new person mode only).
+   * Called when user selects a search result or changes the relation type.
+   */
+  function updatePendingRelDisplay() {
+    const displayEl = document.getElementById('pending-rel-display');
+    if (!displayEl) return;
+
+    const relType = document.getElementById('edit-rel-type').value;
+    const searchName = document.getElementById('edit-rel-search').value.trim();
+
+    if (relType && selectedRelTarget && searchName) {
+      pendingFirstRelation = { targetId: selectedRelTarget, relType };
+      const label = REL_LABELS[relType] || relType;
+      displayEl.innerHTML = `
+        <div class="rel-item" style="margin-top:8px;">
+          <span class="rel-type-badge ${relType}">${label}</span>
+          <span class="rel-name">${searchName}</span>
+          <button class="rel-delete" title="Entfernen">&times;</button>
+        </div>
+      `;
+      displayEl.querySelector('.rel-delete').addEventListener('click', () => {
+        pendingFirstRelation = null;
+        selectedRelTarget = null;
+        document.getElementById('edit-rel-search').value = '';
+        document.getElementById('edit-rel-type').value = '';
+        displayEl.innerHTML = '';
+      });
+    } else {
+      // Not enough data yet — clear display but don't reset selection
+      pendingFirstRelation = null;
+      displayEl.innerHTML = '';
+    }
   }
 
   /**
@@ -582,7 +730,7 @@ const Profile = (() => {
     save,
     searchForRelation,
     addRelation,
-    addNewPersonAndRelate,
+    updatePendingRelDisplay,
     getCurrentProfileId,
     getEditingMemberId,
   };

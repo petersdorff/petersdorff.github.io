@@ -639,125 +639,200 @@ const Tree = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════
-  //  ZIG-ZAG ISOCHRONES (for generational view)
+  //  ISOCHRONES (for generational view)
+  //  Bucket-based: assign people to 25-year temporal buckets,
+  //  then build H/V boundary paths that enclose each bucket's
+  //  people boxes without crossing through them.
   // ═══════════════════════════════════════════════════════════
 
-  /**
-   * Compute isochrone lines that sit in the gaps between generation rows.
-   * Each isochrone is a straight horizontal line at the midpoint between
-   * two consecutive generation Y-levels, labelled with a representative year.
-   *
-   * Strategy:
-   * 1. Find unique generation Y-levels and the average birth year per generation
-   * 2. Place isochrones between consecutive generation rows (in the GEN_GAP)
-   * 3. Label each isochrone with the midpoint year between the two generations
-   * 4. Also add boundary isochrones above the top and below the bottom generation
-   */
   function computeZigZagIsochrones(members, positions, generation, memberMap) {
-    // Collect members with birth years + positions, grouped by generation
-    const genData = new Map(); // gen → { y, years: [] }
+    const PERIOD = 25;
+    const PAD = 15; // padding around node boxes for isochrone clearance
+
+    // ─── 1. Collect people with known positions + birth years ───
+    const people = [];
     for (const m of members) {
       if (!positions[m.id]) continue;
-      const gen = generation.get(m.id);
-      if (gen === undefined) continue;
-      const y = positions[m.id].y;
       let year = null;
       if (m.birthDate) {
         year = parseInt(m.birthDate.substring(0, 4));
         if (isNaN(year)) year = null;
       }
-      if (!genData.has(gen)) genData.set(gen, { y, years: [] });
-      if (year !== null) genData.get(gen).years.push(year);
-    }
-
-    if (genData.size < 2) return [];
-
-    // Sort generations by Y position (top to bottom)
-    const sortedGens = [...genData.entries()].sort((a, b) => a[1].y - b[1].y);
-
-    // Get X range
-    const allX = Object.values(positions).map(p => p.x);
-    const xMin = Math.min(...allX) - NODE_W;
-    const xMax = Math.max(...allX) + NODE_W;
-
-    const isochroneData = [];
-
-    // Add isochrone above the top generation
-    {
-      const topGen = sortedGens[0][1];
-      const topAvgYear = topGen.years.length > 0
-        ? Math.round(topGen.years.reduce((s, y) => s + y, 0) / topGen.years.length)
-        : null;
-      if (topAvgYear !== null) {
-        const isoY = topGen.y - GEN_GAP / 2;
-        const PERIOD = 25;
-        const label = Math.floor(topAvgYear / PERIOD) * PERIOD;
-        const waypoints = [{ x: xMin - 50, y: isoY }, { x: xMax + 50, y: isoY }];
-        isochroneData.push({
-          year: label,
-          y: isoY,
-          pathData: `M ${xMin - 50} ${isoY} L ${xMax + 50} ${isoY}`,
-          waypoints,
-          type: 'zigzag',
-        });
-      }
-    }
-
-    // Add isochrones between consecutive generation rows
-    for (let i = 0; i < sortedGens.length - 1; i++) {
-      const upper = sortedGens[i][1];
-      const lower = sortedGens[i + 1][1];
-
-      // Isochrone Y is midway between the two generation rows
-      const isoY = (upper.y + lower.y) / 2;
-
-      // Label: average of the two generations' average birth years, rounded to nearest 25
-      const upperAvgYear = upper.years.length > 0
-        ? upper.years.reduce((s, y) => s + y, 0) / upper.years.length : null;
-      const lowerAvgYear = lower.years.length > 0
-        ? lower.years.reduce((s, y) => s + y, 0) / lower.years.length : null;
-
-      let label;
-      const PERIOD = 25;
-      if (upperAvgYear !== null && lowerAvgYear !== null) {
-        label = Math.round((upperAvgYear + lowerAvgYear) / 2 / PERIOD) * PERIOD;
-      } else if (upperAvgYear !== null) {
-        label = Math.round(upperAvgYear / PERIOD) * PERIOD + PERIOD;
-      } else if (lowerAvgYear !== null) {
-        label = Math.round(lowerAvgYear / PERIOD) * PERIOD;
-      } else {
-        continue; // no year data, skip this isochrone
-      }
-
-      const waypoints = [{ x: xMin - 50, y: isoY }, { x: xMax + 50, y: isoY }];
-      isochroneData.push({
-        year: label,
-        y: isoY,
-        pathData: `M ${xMin - 50} ${isoY} L ${xMax + 50} ${isoY}`,
-        waypoints,
-        type: 'zigzag',
+      if (year === null) continue; // skip members without birth year
+      people.push({
+        id: m.id,
+        x: positions[m.id].x,
+        y: positions[m.id].y,
+        year,
+        bucket: Math.floor(year / PERIOD) * PERIOD,
+        gen: generation.get(m.id) || 0,
       });
     }
 
-    // Add isochrone below the bottom generation
-    {
-      const bottomGen = sortedGens[sortedGens.length - 1][1];
-      const bottomAvgYear = bottomGen.years.length > 0
-        ? Math.round(bottomGen.years.reduce((s, y) => s + y, 0) / bottomGen.years.length)
-        : null;
-      if (bottomAvgYear !== null) {
-        const isoY = bottomGen.y + GEN_GAP / 2;
-        const PERIOD = 25;
-        const label = Math.ceil(bottomAvgYear / PERIOD) * PERIOD;
-        const waypoints = [{ x: xMin - 50, y: isoY }, { x: xMax + 50, y: isoY }];
-        isochroneData.push({
-          year: label,
-          y: isoY,
-          pathData: `M ${xMin - 50} ${isoY} L ${xMax + 50} ${isoY}`,
-          waypoints,
-          type: 'zigzag',
-        });
+    if (people.length < 2) return [];
+
+    // ─── 2. Find all buckets and sort them (oldest first = smallest year) ───
+    const bucketSet = new Set(people.map(p => p.bucket));
+    const buckets = [...bucketSet].sort((a, b) => a - b);
+    if (buckets.length < 2) return [];
+
+    // ─── 3. Global X range ───
+    const allX = Object.values(positions).map(p => p.x);
+    const xMin = Math.min(...allX) - NODE_W - 50;
+    const xMax = Math.max(...allX) + NODE_W + 50;
+
+    // ─── 4. Group people by generation row Y ───
+    // In generational view all members of same gen share the same Y.
+    // Find unique generation Y levels.
+    const genYLevels = new Map(); // gen → y
+    for (const p of people) {
+      if (!genYLevels.has(p.gen)) genYLevels.set(p.gen, p.y);
+    }
+    const sortedGenYs = [...new Set(genYLevels.values())].sort((a, b) => a - b);
+
+    // Midpoints between consecutive generation rows (where parent-child lines cross)
+    const gapMidpoints = [];
+    for (let i = 0; i < sortedGenYs.length - 1; i++) {
+      gapMidpoints.push((sortedGenYs[i] + sortedGenYs[i + 1]) / 2);
+    }
+
+    // ─── 5. Build isochrone paths ───
+    // For each boundary between bucket[i] and bucket[i+1],
+    // create a path that separates people born <= bucket[i]+PERIOD-1
+    // from people born >= bucket[i+1].
+    //
+    // The path:
+    // - Travels horizontally at gap-midpoints (between generation rows)
+    // - When it encounters a person at a generation row who belongs to
+    //   the YOUNGER bucket (below the boundary), it must loop ABOVE them
+    //   (go up and around their box, using only H/V segments).
+    // - When it encounters a person who belongs to the OLDER bucket
+    //   (above the boundary) in a lower row, it must loop BELOW them.
+
+    const isochroneData = [];
+
+    for (let bi = 0; bi < buckets.length - 1; bi++) {
+      const boundaryYear = buckets[bi] + PERIOD; // year of the boundary line
+      // People above the boundary (born < boundaryYear) should be above the isochrone
+      // People below the boundary (born >= boundaryYear) should be below
+
+      // For each generation row, determine if isochrone goes above or below
+      // the row, or through the gap between rows.
+      //
+      // Key insight: the isochrone default Y-level sits in the gap between
+      // the last gen-row where ALL people are above the boundary
+      // and the first gen-row where ANY people are at/below the boundary.
+      //
+      // But people within a single gen-row can straddle the boundary.
+      // For those rows, we must route the isochrone around the outliers.
+
+      // Determine which gen-row-gap the isochrone primarily sits in.
+      // Find the gap between the last "fully above" row and the first "has below" row.
+      let defaultGapIdx = -1;
+      for (let gi = 0; gi < sortedGenYs.length; gi++) {
+        const rowY = sortedGenYs[gi];
+        const rowPeople = people.filter(p => p.y === rowY);
+        const hasBelow = rowPeople.some(p => p.year >= boundaryYear);
+        if (hasBelow) {
+          defaultGapIdx = gi - 1; // gap above this row
+          break;
+        }
       }
+      if (defaultGapIdx === -1) defaultGapIdx = sortedGenYs.length - 1; // all above
+
+      // Default Y: midpoint of the gap, or above/below the tree
+      let defaultY;
+      if (defaultGapIdx < 0) {
+        // Boundary is above all people
+        defaultY = sortedGenYs[0] - NODE_H / 2 - PAD - 20;
+      } else if (defaultGapIdx >= sortedGenYs.length - 1) {
+        // Boundary is below all people
+        defaultY = sortedGenYs[sortedGenYs.length - 1] + NODE_H / 2 + PAD + 20;
+      } else {
+        defaultY = gapMidpoints[defaultGapIdx];
+      }
+
+      // ─── Build the path by scanning left-to-right ───
+      // Collect all people who are in rows that need looping
+      // (i.e., they are in the same gen-row but on the wrong side of the boundary)
+      const outliers = [];
+      for (const p of people) {
+        // Person is an outlier if their box center is on the wrong side of defaultY
+        // relative to their bucket.
+        // Person born BEFORE boundaryYear should be ABOVE defaultY (lower Y value)
+        // Person born AT/AFTER boundaryYear should be BELOW defaultY (higher Y value)
+        const shouldBeAbove = p.year < boundaryYear;
+        const isAbove = p.y < defaultY;
+        if (shouldBeAbove !== isAbove) {
+          outliers.push(p);
+        }
+      }
+
+      // Sort outliers by X
+      outliers.sort((a, b) => a.x - b.x);
+
+      // Build waypoints (H/V only)
+      const waypoints = [];
+      waypoints.push({ x: xMin, y: defaultY });
+
+      // Group overlapping outliers by proximity in X (they might be side-by-side couples)
+      const groups = [];
+      for (const o of outliers) {
+        const lastGroup = groups[groups.length - 1];
+        if (lastGroup && Math.abs(o.x - lastGroup[lastGroup.length - 1].x) < NODE_W + SPOUSE_GAP + 20) {
+          lastGroup.push(o);
+        } else {
+          groups.push([o]);
+        }
+      }
+
+      for (const group of groups) {
+        // Compute bounding box of the group
+        const gxMin = Math.min(...group.map(p => p.x)) - NODE_W / 2 - PAD;
+        const gxMax = Math.max(...group.map(p => p.x)) + NODE_W / 2 + PAD;
+        const gyMin = Math.min(...group.map(p => p.y)) - NODE_H / 2 - PAD;
+        const gyMax = Math.max(...group.map(p => p.y)) + NODE_H / 2 + PAD;
+
+        // Determine loop direction: if person should be above defaultY but is below,
+        // isochrone must go BELOW the person's box (loop down).
+        // If person should be below defaultY but is above,
+        // isochrone must go ABOVE the person's box (loop up).
+        const shouldBeAbove = group[0].year < boundaryYear;
+        // If should be above but is below defaultY → isochrone needs to go below them
+        // (the isochrone needs to be between them and the boundary)
+        const loopBelow = shouldBeAbove; // person is below but should be above → loop below person
+
+        if (loopBelow) {
+          // Route: go right to left edge of group, down below group, across, back up
+          const loopY = gyMax;
+          waypoints.push({ x: gxMin, y: defaultY }); // approach
+          waypoints.push({ x: gxMin, y: loopY });     // down
+          waypoints.push({ x: gxMax, y: loopY });     // across below
+          waypoints.push({ x: gxMax, y: defaultY });  // back up
+        } else {
+          // Route: go right to left edge of group, up above group, across, back down
+          const loopY = gyMin;
+          waypoints.push({ x: gxMin, y: defaultY }); // approach
+          waypoints.push({ x: gxMin, y: loopY });     // up
+          waypoints.push({ x: gxMax, y: loopY });     // across above
+          waypoints.push({ x: gxMax, y: defaultY });  // back down
+        }
+      }
+
+      waypoints.push({ x: xMax, y: defaultY });
+
+      // Convert waypoints to SVG path (straight line segments only)
+      let pathData = `M ${waypoints[0].x} ${waypoints[0].y}`;
+      for (let i = 1; i < waypoints.length; i++) {
+        pathData += ` L ${waypoints[i].x} ${waypoints[i].y}`;
+      }
+
+      isochroneData.push({
+        year: boundaryYear,
+        pathData,
+        waypoints,
+        type: 'zigzag',
+      });
     }
 
     return isochroneData;
@@ -974,6 +1049,7 @@ const Tree = (() => {
     }
 
     cy.fit(undefined, 60);
+    applySpouseEdgeStyle();
     cy.style().update();
     renderIsochrones(isochroneData);
   }
@@ -997,6 +1073,9 @@ const Tree = (() => {
     // Hide isochrones during animation
     renderIsochrones([]);
 
+    // Apply spouse edge style for new view mode
+    applySpouseEdgeStyle();
+
     // Animate nodes to new positions
     const duration = 700;
     for (const [id, pos] of Object.entries(positions)) {
@@ -1011,6 +1090,31 @@ const Tree = (() => {
       cy.animate({ fit: { padding: 60 }, duration: 400, easing: 'ease-out' });
       setTimeout(() => renderIsochrones(isochroneData), 400);
     }, duration);
+  }
+
+  /**
+   * Apply view-mode-specific style to spouse edges.
+   * - generational: straight (same Y, horizontal line)
+   * - temporal: taxi with rightward direction (H/V segments when Y differs)
+   */
+  function applySpouseEdgeStyle() {
+    if (!cy) return;
+    const spouseEdges = cy.edges('.spouse-edge');
+    if (viewMode === 'temporal') {
+      spouseEdges.style({
+        'curve-style': 'taxi',
+        'taxi-direction': 'rightward',
+        'taxi-turn': 20,
+        'taxi-turn-min-distance': 5,
+      });
+    } else {
+      spouseEdges.style({
+        'curve-style': 'straight',
+        'taxi-direction': 'rightward',  // reset even though unused
+        'taxi-turn': 50,
+        'taxi-turn-min-distance': 10,
+      });
+    }
   }
 
   // ═══════════════════════════════════════════════════════════

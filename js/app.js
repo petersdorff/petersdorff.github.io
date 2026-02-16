@@ -558,6 +558,12 @@ const App = (() => {
 
     // If showing profile on desktop → side panel mode (don't hide tree)
     if (viewId === 'view-profile' && isDesktop) {
+      // First: deactivate ALL views except main and profile
+      document.querySelectorAll('.view').forEach(v => {
+        if (v.id !== 'view-main' && v.id !== 'view-profile') {
+          v.classList.remove('active');
+        }
+      });
       profileView.classList.add('side-panel', 'active');
       profileView.style.display = 'flex';
       // Keep tree visible

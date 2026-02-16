@@ -824,13 +824,14 @@ const Tree = (() => {
       // Use generous padding: treat any box within PAD of the line as conflict
       const TOUCH_PAD = 5; // extra clearance
       const conflicts = [];
+      const conflictIds = new Set();
 
       for (const p of belowPeople) {
         const boxTop = p.y - hH;
-        const boxBottom = p.y + hH;
         // Person should be below the line → line must be above box top
         if (boxTop < myHomeY + TOUCH_PAD) {
           conflicts.push({ ...p, type: 'goAbove' });
+          conflictIds.add(p.id);
         }
       }
       for (const p of abovePeople) {
@@ -838,6 +839,26 @@ const Tree = (() => {
         // Person should be above the line → line must be below box bottom
         if (boxBottom > myHomeY - TOUCH_PAD) {
           conflicts.push({ ...p, type: 'goBelow' });
+          conflictIds.add(p.id);
+        }
+      }
+
+      // ─── Second pass: check for abovePeople swept up by goAbove detours ───
+      // When the line detours above goAbove people (e.g. at y=560), the slope
+      // from homeY up to the detour can pass above abovePeople at the same Y
+      // who weren't detected as conflicts (because their boxes don't overlap homeY).
+      // These people must be added as goBelow conflicts so the line dips around them.
+      const goAboveConflicts = conflicts.filter(c => c.type === 'goAbove');
+      if (goAboveConflicts.length > 0) {
+        const minDetourY = Math.min(...goAboveConflicts.map(c => c.y - hH)) - TOUCH_PAD;
+        for (const p of abovePeople) {
+          if (conflictIds.has(p.id)) continue;
+          // Check if this person's box overlaps with any goAbove detour zone
+          // Person is at same Y as goAbove people AND would be caught by slope
+          if (p.y - hH < myHomeY && p.y + hH > minDetourY) {
+            conflicts.push({ ...p, type: 'goBelow' });
+            conflictIds.add(p.id);
+          }
         }
       }
 

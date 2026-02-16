@@ -640,12 +640,16 @@ const Tree = (() => {
 
   // ═══════════════════════════════════════════════════════════
   //  ISOCHRONES (for generational view)
-  //  Stacked-region algorithm: process buckets from youngest
-  //  to oldest. Each boundary's contour is guaranteed to sit
-  //  above the previous one — no crossing, no overlap.
+  //  "Primary gap + outlier detours" algorithm.
   //
-  //  Key idea: the upper boundary of a younger region becomes
-  //  the floor for the next older region's contour.
+  //  For each boundary year, find the generation gap that best
+  //  separates older people (above) from younger people (below).
+  //  Route the isochrone through that gap as a horizontal line.
+  //  Where outliers exist (people on the wrong side of the gap),
+  //  create H/V detours around their boxes.
+  //
+  //  Process youngest-to-oldest so each isochrone is guaranteed
+  //  to be above (smaller Y) the previous one.
   // ═══════════════════════════════════════════════════════════
 
   function computeZigZagIsochrones(members, positions, generation, memberMap) {
@@ -676,231 +680,207 @@ const Tree = (() => {
 
     // ─── 2. Unique buckets, sorted youngest-first (descending) ───
     const bucketSet = new Set(people.map(p => p.bucket));
-    const bucketsDesc = [...bucketSet].sort((a, b) => b - a); // youngest first
+    const bucketsDesc = [...bucketSet].sort((a, b) => b - a);
     if (bucketsDesc.length < 2) return [];
 
-    // ─── 3. Global X range & generation rows ───
+    // ─── 3. Global layout info ───
     const allX = Object.values(positions).map(p => p.x);
     const xMin = Math.min(...allX) - NODE_W - 80;
     const xMax = Math.max(...allX) + NODE_W + 80;
-    const allY = Object.values(positions).map(p => p.y);
-    const yMin = Math.min(...allY);
-    const yMax = Math.max(...allY);
 
-    // Sorted generation rows (unique Y values, ascending = top to bottom)
-    const genYSet = new Set(people.map(p => p.y));
-    const genRows = [...genYSet].sort((a, b) => a - b);
+    // Generation rows sorted top→bottom
+    const genRows = [...new Set(people.map(p => p.y))].sort((a, b) => a - b);
 
-    // Precompute midpoint Y between adjacent gen rows (the "gaps")
-    // gapY[i] = midpoint between genRows[i] and genRows[i+1]
-    const gapY = [];
+    // Gap midpoints between consecutive generation rows
+    const gapMid = [];
     for (let i = 0; i < genRows.length - 1; i++) {
-      gapY.push((genRows[i] + genRows[i + 1]) / 2);
+      gapMid.push((genRows[i] + genRows[i + 1]) / 2);
     }
 
-    // ─── 4. Build X grid: columns separated by node box edges ───
-    const xEdges = new Set([xMin, xMax]);
-    for (const p of people) {
-      xEdges.add(p.x - hW);
-      xEdges.add(p.x + hW);
-    }
-    const sortedXEdges = [...xEdges].sort((a, b) => a - b);
-
-    // Each column is a segment between consecutive X edges
-    const columns = [];
-    for (let i = 0; i < sortedXEdges.length - 1; i++) {
-      columns.push({
-        xStart: sortedXEdges[i],
-        xEnd: sortedXEdges[i + 1],
-        xMid: (sortedXEdges[i] + sortedXEdges[i + 1]) / 2,
-      });
-    }
-
-    // ─── 5. Process boundaries youngest-to-oldest ───
+    // ─── 4. Process boundaries youngest-to-oldest ───
     //
-    // Boundaries are between consecutive buckets. We process from
-    // the youngest boundary upward. Each isochrone separates
-    // "people in this bucket or younger" (below) from "people in
-    // older buckets" (above).
+    // For i=0..len-2, boundaryYear = bucketsDesc[i]
+    //   "below" = born >= boundaryYear (younger or same bucket)
+    //   "above" = born < boundaryYear (older buckets)
     //
-    // prevFloor[col] tracks the Y ceiling from the previous
-    // (younger) isochrone. Each new isochrone must be <= prevFloor.
-    // (Remember: smaller Y = higher on screen.)
+    // prevCeiling tracks the maximum Y (lowest on screen) that the
+    // next isochrone can use. Starts at bottom of tree.
 
-    // Initialize floor: bottom of the tree (below everything)
-    const prevFloor = new Array(columns.length).fill(yMax + GEN_GAP);
-
+    let prevCeiling = genRows[genRows.length - 1] + GEN_GAP;
     const isochroneData = [];
-
-    // Walk from youngest boundary to oldest
-    // bucketsDesc = [youngest, ..., oldest]
-    // Boundaries: between bucketsDesc[0] & [1], between [1] & [2], etc.
-    // boundary year = start of the older bucket in each pair
-    // E.g. if bucketsDesc = [2025, 2000, 1975, ...], boundaries are 2025, 2000, 1975, ...
-    // But we want: the boundary between 2025 and 2000 is "year 2025" (people >=2025 below, <2025 above)
-    // Actually: boundary year = the start of the younger bucket in the pair
-    // Wait — let me think about this clearly:
-    //
-    // bucketsDesc[0] = youngest bucket (e.g., 2025)
-    // The first boundary separates bucket 2025 from everything older.
-    // So boundaryYear = 2025: people born >= 2025 are below, people born < 2025 are above.
-    //
-    // Next: bucketsDesc[1] = 2000. The boundary separates {2025, 2000} from older.
-    // boundaryYear = 2000: people born >= 2000 below, < 2000 above.
-    //
-    // So: for i = 0..len-2, boundaryYear = bucketsDesc[i]
-    // (which gives boundaries 2025, 2000, 1975, 1950, 1925, 1900)
-    // That's one boundary per bucket except the oldest.
 
     for (let bi = 0; bi < bucketsDesc.length - 1; bi++) {
       const boundaryYear = bucketsDesc[bi];
 
-      // "below" = born >= boundaryYear; "above" = born < boundaryYear
-      // The isochrone must go ABOVE all "below" people, BELOW all "above" people
       const belowPeople = people.filter(p => p.year >= boundaryYear);
       const abovePeople = people.filter(p => p.year < boundaryYear);
-
       if (belowPeople.length === 0 || abovePeople.length === 0) continue;
 
-      // For each column, determine where the isochrone should be
-      const colY = new Array(columns.length);
-
-      for (let ci = 0; ci < columns.length; ci++) {
-        const col = columns[ci];
-
-        // Find people whose box overlaps this column
-        const localBelow = belowPeople.filter(p =>
-          p.x - hW <= col.xMid && p.x + hW >= col.xMid
-        );
-        const localAbove = abovePeople.filter(p =>
-          p.x - hW <= col.xMid && p.x + hW >= col.xMid
-        );
-
-        let targetY;
-
-        if (localBelow.length > 0 && localAbove.length > 0) {
-          // Both above and below people in this column
-          const lowestAbove = Math.max(...localAbove.map(p => p.y)); // largest Y = lowest on screen
-          const highestBelow = Math.min(...localBelow.map(p => p.y)); // smallest Y = highest on screen
-
-          if (lowestAbove < highestBelow) {
-            // Gap exists between them — go through the middle
-            targetY = (lowestAbove + highestBelow) / 2;
-          } else {
-            // Same row or inverted — route above the below people's boxes
-            targetY = highestBelow - hH - 2;
-          }
-        } else if (localBelow.length > 0) {
-          // Only below people — isochrone goes above them
-          const highestBelow = Math.min(...localBelow.map(p => p.y));
-          // Find the gap above this row
-          const rowIdx = genRows.indexOf(highestBelow);
-          if (rowIdx > 0) {
-            targetY = gapY[rowIdx - 1]; // midpoint between this row and row above
-          } else {
-            targetY = highestBelow - GEN_GAP / 2;
-          }
-        } else if (localAbove.length > 0) {
-          // Only above people — isochrone goes below them
-          const lowestAbove = Math.max(...localAbove.map(p => p.y));
-          const rowIdx = genRows.indexOf(lowestAbove);
-          if (rowIdx < genRows.length - 1) {
-            targetY = gapY[rowIdx]; // midpoint between this row and row below
-          } else {
-            targetY = lowestAbove + GEN_GAP / 2;
-          }
-        } else {
-          // No people in this column — use a sensible default
-          // Find the "natural" level: the gap between the highest-Y gen row
-          // that has any below-people (globally) and the row above it
-          const belowRows = [...new Set(belowPeople.map(p => p.y))].sort((a, b) => a - b);
-          const highestBelowRow = belowRows[0]; // topmost row with below people
-          const rowIdx = genRows.indexOf(highestBelowRow);
-          if (rowIdx > 0) {
-            targetY = gapY[rowIdx - 1];
-          } else {
-            targetY = highestBelowRow - GEN_GAP / 2;
-          }
+      // ─── Find the best gap for this boundary ───
+      // Score each gap by how few outliers it creates
+      let bestGapIdx = 0;
+      let bestOutliers = Infinity;
+      for (let gi = 0; gi < gapMid.length; gi++) {
+        const gy = gapMid[gi];
+        // Outliers: below people above the gap, or above people below the gap
+        const belowAboveGap = belowPeople.filter(p => p.y <= genRows[gi]).length;
+        const aboveBelowGap = abovePeople.filter(p => p.y >= genRows[gi + 1]).length;
+        const total = belowAboveGap + aboveBelowGap;
+        if (total < bestOutliers) {
+          bestOutliers = total;
+          bestGapIdx = gi;
         }
-
-        // Enforce floor: isochrone can't go below previous (younger) isochrone
-        // (smaller Y = higher on screen, so we want targetY <= prevFloor)
-        colY[ci] = Math.min(targetY, prevFloor[ci] - 15);
       }
 
-      // ─── Smooth the contour: propagate constraints ───
-      // If a column had to dip (go to a lower Y = higher on screen)
-      // to avoid a node, neighboring empty columns should follow suit
-      // rather than snapping back to the default level.
+      // Primary Y for this isochrone (in the best gap)
+      let primaryY = gapMid[bestGapIdx];
+
+      // Enforce stacking: must be above (smaller Y) the previous isochrone
+      if (primaryY >= prevCeiling) {
+        // Try to find a gap above the ceiling
+        for (let gi = bestGapIdx - 1; gi >= 0; gi--) {
+          if (gapMid[gi] < prevCeiling - 10) {
+            bestGapIdx = gi;
+            primaryY = gapMid[gi];
+            break;
+          }
+        }
+        // If still too low, force it above the ceiling
+        if (primaryY >= prevCeiling) {
+          primaryY = prevCeiling - 20;
+        }
+      }
+
+      // ─── Identify outliers and build contour ───
       //
-      // Strategy: for each column, if it has no local people, inherit
-      // the Y from its nearest neighbor that does have local people.
-      // This prevents the contour from jumping up and down between
-      // columns that are between the same nodes.
+      // "Below-outliers": people born >= boundaryYear but positioned
+      //   above (smaller Y) the primary gap → isochrone must loop
+      //   ABOVE their box (go to smaller Y).
+      //
+      // "Above-outliers": people born < boundaryYear but positioned
+      //   below (larger Y) the primary gap → isochrone must loop
+      //   BELOW their box (go to larger Y, but constrained by ceiling).
 
-      // Mark which columns have local people for this boundary
-      const hasLocal = columns.map((col, ci) => {
-        return belowPeople.some(p => p.x - hW <= col.xMid && p.x + hW >= col.xMid)
-            || abovePeople.some(p => p.x - hW <= col.xMid && p.x + hW >= col.xMid);
-      });
+      const belowOutliers = belowPeople.filter(p => p.y < primaryY);
+      const aboveOutliers = abovePeople.filter(p => p.y > primaryY);
 
-      // Forward pass: propagate from left
-      for (let ci = 1; ci < columns.length; ci++) {
-        if (!hasLocal[ci]) {
-          colY[ci] = Math.min(colY[ci], colY[ci - 1]);
+      // All outlier people that need box-avoidance routing
+      const allOutliers = [
+        ...belowOutliers.map(p => ({ ...p, type: 'below' })),  // loop above
+        ...aboveOutliers.map(p => ({ ...p, type: 'above' })),   // loop below
+      ];
+
+      // ─── Build the contour as waypoints ───
+      //
+      // Strategy: walk left→right at primaryY. When approaching an
+      // outlier box, make an H/V detour around it, then return to primaryY.
+
+      // Sort outliers by x position
+      allOutliers.sort((a, b) => a.x - b.x);
+
+      // Group nearby outliers (boxes that overlap in X) into clusters
+      const clusters = [];
+      for (const out of allOutliers) {
+        const boxLeft = out.x - hW;
+        const boxRight = out.x + hW;
+        if (clusters.length > 0) {
+          const lastCluster = clusters[clusters.length - 1];
+          if (boxLeft <= lastCluster.xRight + 20) {
+            // Merge into existing cluster
+            lastCluster.xRight = Math.max(lastCluster.xRight, boxRight);
+            lastCluster.members.push(out);
+            continue;
+          }
         }
-      }
-      // Backward pass: propagate from right
-      for (let ci = columns.length - 2; ci >= 0; ci--) {
-        if (!hasLocal[ci]) {
-          colY[ci] = Math.min(colY[ci], colY[ci + 1]);
-        }
-      }
-
-      // ─── Convert columns to merged segments + waypoints ───
-      // Merge adjacent columns with the same Y (within tolerance)
-      const merged = [{ xStart: columns[0].xStart, xEnd: columns[0].xEnd, y: colY[0] }];
-      for (let ci = 1; ci < columns.length; ci++) {
-        const last = merged[merged.length - 1];
-        if (Math.abs(colY[ci] - last.y) < 1) {
-          last.xEnd = columns[ci].xEnd;
-        } else {
-          merged.push({ xStart: columns[ci].xStart, xEnd: columns[ci].xEnd, y: colY[ci] });
-        }
+        clusters.push({
+          xLeft: boxLeft,
+          xRight: boxRight,
+          members: [out],
+        });
       }
 
-      // Build waypoints with H/V transitions
+      // Build waypoints
       const waypoints = [];
-      waypoints.push({ x: merged[0].xStart, y: merged[0].y });
+      let curX = xMin;
 
-      for (let i = 0; i < merged.length; i++) {
-        const seg = merged[i];
-        if (i > 0) {
-          // Vertical transition: go from previous Y to this Y at the segment boundary
-          waypoints.push({ x: seg.xStart, y: merged[i - 1].y });
-          waypoints.push({ x: seg.xStart, y: seg.y });
+      for (const cluster of clusters) {
+        // Horizontal segment at primaryY up to the cluster
+        if (curX < cluster.xLeft - 5) {
+          waypoints.push({ x: curX, y: primaryY });
+          waypoints.push({ x: cluster.xLeft - 5, y: primaryY });
+          curX = cluster.xLeft - 5;
         }
-        waypoints.push({ x: seg.xEnd, y: seg.y });
+
+        // Determine detour Y for this cluster
+        // Check if cluster has below-outliers (need to go above = smaller Y)
+        // or above-outliers (need to go below = larger Y)
+        const hasBelow = cluster.members.some(m => m.type === 'below');
+        const hasAbove = cluster.members.some(m => m.type === 'above');
+
+        let detourY;
+        if (hasBelow) {
+          // Need to go above all below-outlier boxes in this cluster
+          const minBoxTop = Math.min(...cluster.members
+            .filter(m => m.type === 'below')
+            .map(m => m.y - hH));
+          detourY = minBoxTop - 5;
+
+          // Also check: is there an above-outlier in this cluster?
+          // That would mean conflicting requirements. In this case,
+          // prioritize going above the below-outlier (since it's "our" person).
+        } else if (hasAbove) {
+          // Need to go below all above-outlier boxes
+          const maxBoxBottom = Math.max(...cluster.members
+            .filter(m => m.type === 'above')
+            .map(m => m.y + hH));
+          detourY = maxBoxBottom + 5;
+          // Constrain by ceiling
+          detourY = Math.min(detourY, prevCeiling - 10);
+        } else {
+          detourY = primaryY;
+        }
+
+        // Detour: vertical move to detourY, horizontal across cluster, vertical back
+        waypoints.push({ x: curX, y: primaryY });
+        waypoints.push({ x: curX, y: detourY });
+        waypoints.push({ x: cluster.xRight + 5, y: detourY });
+        waypoints.push({ x: cluster.xRight + 5, y: primaryY });
+        curX = cluster.xRight + 5;
+      }
+
+      // Final segment to the right edge
+      if (curX < xMax) {
+        waypoints.push({ x: curX, y: primaryY });
+        waypoints.push({ x: xMax, y: primaryY });
+      }
+
+      // Clean up: remove duplicate consecutive waypoints
+      const cleanWaypoints = [waypoints[0]];
+      for (let i = 1; i < waypoints.length; i++) {
+        const prev = cleanWaypoints[cleanWaypoints.length - 1];
+        if (Math.abs(waypoints[i].x - prev.x) > 0.5 || Math.abs(waypoints[i].y - prev.y) > 0.5) {
+          cleanWaypoints.push(waypoints[i]);
+        }
       }
 
       // Build SVG path
-      let pathData = `M ${waypoints[0].x} ${waypoints[0].y}`;
-      for (let i = 1; i < waypoints.length; i++) {
-        pathData += ` L ${waypoints[i].x} ${waypoints[i].y}`;
+      let pathData = `M ${cleanWaypoints[0].x} ${cleanWaypoints[0].y}`;
+      for (let i = 1; i < cleanWaypoints.length; i++) {
+        pathData += ` L ${cleanWaypoints[i].x} ${cleanWaypoints[i].y}`;
       }
 
       isochroneData.push({
         year: boundaryYear,
         pathData,
-        waypoints,
+        waypoints: cleanWaypoints,
+        primaryY,
         type: 'zigzag',
       });
 
-      // Update floor for next (older) isochrone:
-      // Next isochrone must be above this one (smaller Y)
-      for (let ci = 0; ci < columns.length; ci++) {
-        prevFloor[ci] = colY[ci];
-      }
+      // Update ceiling for next (older) isochrone
+      // Use the minimum Y across the contour (highest point on screen)
+      const minContourY = Math.min(...cleanWaypoints.map(w => w.y));
+      prevCeiling = Math.min(primaryY, minContourY);
     }
 
     // Reverse so they're ordered oldest-first (for consistent rendering)
@@ -1039,14 +1019,13 @@ const Tree = (() => {
         path.setAttribute('opacity', '0.7');
         g.appendChild(path);
 
-        // Label — place at left side of path
+        // Label — place at primaryY on the left side
         const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         label.setAttribute('class', 'isochrone-label');
-        const firstMove = iso.pathData.match(/^M\s+([-\d.]+)\s+([-\d.]+)/);
-        if (firstMove) {
-          label.setAttribute('x', String(parseFloat(firstMove[1]) + 5));
-          label.setAttribute('y', String(parseFloat(firstMove[2]) - 5 / zoom));
-        }
+        const labelX = modelXMin + 5;
+        const labelY = (iso.primaryY != null ? iso.primaryY : parseFloat((iso.pathData.match(/^M\s+[-\d.]+\s+([-\d.]+)/) || [])[1] || 0)) - 5 / zoom;
+        label.setAttribute('x', String(labelX));
+        label.setAttribute('y', String(labelY));
         label.setAttribute('font-size', String(11 / zoom));
         label.setAttribute('font-family', "'IBM Plex Mono', monospace");
         label.setAttribute('fill', '#9ca3af');

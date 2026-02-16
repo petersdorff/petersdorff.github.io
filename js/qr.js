@@ -96,17 +96,18 @@ const QR = (() => {
 
     // Extract member ID from URL
     // Expected format: https://.../#connect/MEMBER_ID
-    const match = decodedText.match(/#connect\/([a-zA-Z0-9]+)/);
+    const match = decodedText.match(/#connect\/([a-zA-Z0-9-]+)/);
     if (match && match[1]) {
       const memberId = match[1];
       if (onScanCallback) {
         onScanCallback(memberId);
       }
     } else {
-      // Maybe it's just a plain member ID
-      if (decodedText.length > 5 && decodedText.length < 40) {
+      // Maybe it's just a plain member ID (UUID format)
+      const trimmed = decodedText.trim();
+      if (/^[a-f0-9-]{36}$/i.test(trimmed)) {
         if (onScanCallback) {
-          onScanCallback(decodedText);
+          onScanCallback(trimmed);
         }
       } else {
         App.toast('Ungültiger QR-Code', 'error');

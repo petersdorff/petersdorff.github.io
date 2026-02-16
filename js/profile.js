@@ -189,14 +189,25 @@ const Profile = (() => {
 
     const btnAddRel = document.getElementById('btn-add-relation');
 
+    // Update header text
+    const editTitle = document.querySelector('.edit-header h2');
+    if (editTitle) {
+      editTitle.textContent = memberId ? 'Profil bearbeiten' : 'Neue Person anlegen';
+    }
+
+    // Mark birthdate as required for new persons
+    const birthLabel = document.querySelector('#edit-birthdate')?.closest('.input-group')?.querySelector('label');
+    if (birthLabel) {
+      birthLabel.textContent = memberId ? 'Geburtsdatum' : 'Geburtsdatum *';
+    }
+
     if (!memberId) {
       // New person mode: hide "Verbindung hinzufügen" button, show pending display
       btnAddRel.style.display = 'none';
       const container = document.getElementById('edit-existing-rels');
       container.innerHTML = `
         <div class="rel-empty">
-          Wähle unten eine erste Verbindung, damit die Person
-          korrekt im Stammbaum positioniert wird.
+          Wähle unten eine Verbindung zu einer bestehenden Person (Pflichtfeld).
         </div>
         <div id="pending-rel-display"></div>
       `;
@@ -283,9 +294,22 @@ const Profile = (() => {
   async function save() {
     const firstName = document.getElementById('edit-firstname').value.trim();
     const lastName = document.getElementById('edit-lastname').value.trim();
+    const birthDate = document.getElementById('edit-birthdate').value;
 
     if (!firstName || !lastName) {
       App.toast('Vor- und Nachname sind Pflichtfelder', 'error');
+      return;
+    }
+
+    // Birthdate is mandatory for NEW persons (so they can be placed correctly)
+    if (!editingMemberId && !birthDate) {
+      App.toast('Geburtsdatum ist Pflichtfeld für neue Personen', 'error');
+      return;
+    }
+
+    // New person: must have a relationship
+    if (!editingMemberId && !pendingFirstRelation) {
+      App.toast('Bitte wähle eine Verbindung zu einer bestehenden Person', 'error');
       return;
     }
 
@@ -293,7 +317,7 @@ const Profile = (() => {
       firstName,
       lastName,
       birthName: document.getElementById('edit-birthname').value.trim(),
-      birthDate: document.getElementById('edit-birthdate').value,
+      birthDate,
       deathDate: document.getElementById('edit-deathdate').value,
       isDeceased: !!document.getElementById('edit-deathdate').value,
       location: document.getElementById('edit-location').value.trim(),
@@ -315,7 +339,7 @@ const Profile = (() => {
         const newId = await DB.createMember(data);
         editingMemberId = newId;
 
-        // Create pending first relation if set
+        // Create pending first relation (guaranteed to exist by validation above)
         if (pendingFirstRelation) {
           const { targetId, relType } = pendingFirstRelation;
           await cleanConflictingRelations(newId, targetId, relType);
@@ -330,8 +354,6 @@ const Profile = (() => {
           }
           pendingFirstRelation = null;
           App.toast('Person angelegt & verbunden', 'success');
-        } else {
-          App.toast('Person angelegt', 'success');
         }
       }
 
@@ -383,69 +405,91 @@ const Profile = (() => {
         });
       });
     } else {
-      // No results — show inline "create new person" buttons
-      resultsEl.innerHTML = `
-        <div style="padding:12px; text-align:center;">
-          <p style="color:var(--text-muted); font-size:12px; margin-bottom:12px;">
-            Keine Person mit diesem Namen gefunden.
-          </p>
-          <button class="btn btn-secondary btn-create-new" style="width:100%; margin-bottom:6px;">
-            Als neue Person anlegen
-          </button>
-          <button class="btn btn-secondary btn-create-and-switch" style="width:100%;">
-            Anlegen &amp; zum Profil wechseln
-          </button>
-        </div>
-      `;
-
-      resultsEl.querySelector('.btn-create-new').addEventListener('click', () => {
-        createNewPersonFromSearch(query, false);
-      });
-      resultsEl.querySelector('.btn-create-and-switch').addEventListener('click', () => {
-        createNewPersonFromSearch(query, true);
-      });
+      // No results — show inline creation form with mandatory fields
+      showCreateNewPersonForm(query, false);
     }
   }
 
   /**
-   * Create a new person from the search field text.
-   * @param {string} query - The typed name
-   * @param {boolean} switchToProfile - If true, navigate to the new person's edit form
+   * Show an inline mini-form in the search results area to create a new person.
+   * Requires: first name, last name, birthdate (all mandatory).
+   * Then links them with the selected relationship type.
+   * @param {string} query - The typed name (used to pre-fill)
+   * @param {boolean} switchToProfile - If true, navigate to the new person's edit form after creation
    */
-  async function createNewPersonFromSearch(query, switchToProfile) {
+  function showCreateNewPersonForm(query, switchToProfile) {
     const parts = query.trim().split(' ');
-    const firstName = parts[0] || 'Unbekannt';
-    const lastName = parts.slice(1).join(' ') || 'Unbekannt';
+    const preFirstName = parts[0] || '';
+    const preLastName = parts.slice(1).join(' ') || '';
 
-    // If editing a new person that hasn't been saved yet, save first
-    if (!editingMemberId) {
-      await save();
-      if (!editingMemberId) return; // save failed
-    }
+    const resultsEl = document.getElementById('edit-rel-results');
+    resultsEl.innerHTML = `
+      <div class="create-new-inline" style="padding:12px; border:2px solid var(--trace-faint); border-radius:4px; margin-top:4px;">
+        <p style="font-size:12px; color:var(--text-secondary); margin-bottom:10px; font-weight:600;">
+          Neue Person anlegen
+        </p>
+        <div class="input-group" style="margin-bottom:8px;">
+          <label>Vorname *</label>
+          <input type="text" id="new-rel-firstname" value="${preFirstName}" placeholder="Vorname">
+        </div>
+        <div class="input-group" style="margin-bottom:8px;">
+          <label>Nachname *</label>
+          <input type="text" id="new-rel-lastname" value="${preLastName}" placeholder="Nachname">
+        </div>
+        <div class="input-group" style="margin-bottom:10px;">
+          <label>Geburtsdatum *</label>
+          <input type="date" id="new-rel-birthdate">
+        </div>
+        <button class="btn btn-primary btn-small btn-confirm-create" style="width:100%;">Anlegen & verbinden</button>
+      </div>
+    `;
 
-    const relType = document.getElementById('edit-rel-type').value;
-    const sourceId = editingMemberId;
+    resultsEl.querySelector('.btn-confirm-create').addEventListener('click', async () => {
+      const firstName = document.getElementById('new-rel-firstname').value.trim();
+      const lastName = document.getElementById('new-rel-lastname').value.trim();
+      const birthDate = document.getElementById('new-rel-birthdate').value;
 
-    try {
-      const newId = await DB.createMember({
-        firstName,
-        lastName,
-        birthName: '',
-        birthDate: '',
-        deathDate: '',
-        isDeceased: false,
-        isPlaceholder: true,
-        claimedByUid: null,
-        createdBy: Auth.getUser()?.id || null,
-        location: '',
-        contact: '',
-        photo: '',
-        notes: '',
-      });
+      if (!firstName || !lastName) {
+        App.toast('Vor- und Nachname sind Pflichtfelder', 'error');
+        return;
+      }
+      if (!birthDate) {
+        App.toast('Geburtsdatum ist Pflichtfeld', 'error');
+        return;
+      }
 
-      if (switchToProfile) {
-        // Create relationship if type selected, then navigate to new person
-        if (relType && sourceId) {
+      const relType = document.getElementById('edit-rel-type').value;
+      if (!relType) {
+        App.toast('Bitte wähle zuerst einen Beziehungstyp', 'error');
+        return;
+      }
+
+      // If editing a new person that hasn't been saved yet, save first
+      if (!editingMemberId) {
+        await save();
+        if (!editingMemberId) return; // save failed
+      }
+
+      const sourceId = editingMemberId;
+
+      try {
+        const newId = await DB.createMember({
+          firstName,
+          lastName,
+          birthName: '',
+          birthDate,
+          deathDate: '',
+          isDeceased: false,
+          isPlaceholder: true,
+          claimedByUid: null,
+          createdBy: Auth.getUser()?.id || null,
+          location: '',
+          contact: '',
+          photo: '',
+          notes: '',
+        });
+
+        if (sourceId) {
           await cleanConflictingRelations(sourceId, newId, relType);
           if (relType === 'parent') {
             await DB.addRelationship(sourceId, newId, 'parent_child');
@@ -457,23 +501,23 @@ const Profile = (() => {
             await DB.addRelationship(sourceId, newId, 'sibling');
           }
           App.toast(`${firstName} ${lastName} angelegt & verbunden`, 'success');
-        } else {
-          App.toast(`${firstName} ${lastName} angelegt`, 'success');
         }
+
         await App.refreshTree();
-        edit(newId);
-      } else {
-        // Stay on current form, set new person as selected target
-        selectedRelTarget = newId;
-        document.getElementById('edit-rel-search').value = `${firstName} ${lastName}`;
-        document.getElementById('edit-rel-results').innerHTML = '';
-        App.toast(`${firstName} ${lastName} angelegt`, 'success');
-        await App.refreshTree();
+
+        if (switchToProfile) {
+          edit(newId);
+        } else {
+          // Clear search and refresh relations list
+          document.getElementById('edit-rel-search').value = '';
+          resultsEl.innerHTML = '';
+          await renderEditRelations(editingMemberId);
+        }
+      } catch (err) {
+        console.error('Create person error:', err);
+        App.toast('Fehler beim Anlegen', 'error');
       }
-    } catch (err) {
-      console.error('Create person error:', err);
-      App.toast('Fehler beim Anlegen', 'error');
-    }
+    });
   }
 
   /**
@@ -593,14 +637,14 @@ const Profile = (() => {
    * Add a relationship between the editing member and selected target.
    */
   async function addRelation() {
-    if (!editingMemberId || !selectedRelTarget) {
-      App.toast('Bitte wähle eine Person aus', 'error');
+    const relType = document.getElementById('edit-rel-type').value;
+    if (!relType) {
+      App.toast('Bitte wähle zuerst einen Beziehungstyp', 'error');
       return;
     }
 
-    const relType = document.getElementById('edit-rel-type').value;
-    if (!relType) {
-      App.toast('Bitte wähle einen Beziehungstyp', 'error');
+    if (!editingMemberId || !selectedRelTarget) {
+      App.toast('Bitte wähle eine Person aus', 'error');
       return;
     }
 
@@ -638,67 +682,7 @@ const Profile = (() => {
     }
   }
 
-  /**
-   * Create a new person and add a relation.
-   */
-  async function addNewPersonAndRelate() {
-    const relType = document.getElementById('edit-rel-type').value;
-    if (!relType) {
-      App.toast('Bitte wähle zuerst einen Beziehungstyp', 'error');
-      return;
-    }
-
-    if (!editingMemberId) {
-      // Need to save current profile first
-      await save();
-    }
-
-    // Save the relation type and context, then open a blank edit form
-    const sourceId = editingMemberId;
-    const pendingRelType = relType;
-
-    // Create a minimal placeholder
-    const name = document.getElementById('edit-rel-search').value.trim();
-    const parts = name.split(' ');
-    const firstName = parts[0] || 'Unbekannt';
-    const lastName = parts.slice(1).join(' ') || 'Unbekannt';
-
-    const newId = await DB.createMember({
-      firstName,
-      lastName,
-      birthName: '',
-      birthDate: '',
-      deathDate: '',
-      isDeceased: false,
-      isPlaceholder: true,
-      claimedByUid: null,
-      createdBy: Auth.getUser()?.id || null,
-      location: '',
-      contact: '',
-      photo: '',
-      notes: '',
-    });
-
-    // Clean conflicting relationships before adding
-    await cleanConflictingRelations(sourceId, newId, pendingRelType);
-
-    // Add the relation
-    if (pendingRelType === 'parent') {
-      await DB.addRelationship(sourceId, newId, 'parent_child');
-    } else if (pendingRelType === 'child') {
-      await DB.addRelationship(newId, sourceId, 'parent_child');
-    } else if (pendingRelType === 'spouse') {
-      await DB.addRelationship(sourceId, newId, 'spouse');
-    } else if (pendingRelType === 'sibling') {
-      await DB.addRelationship(sourceId, newId, 'sibling');
-    }
-
-    App.toast(`${firstName} ${lastName} angelegt & verbunden`, 'success');
-    await App.refreshTree();
-
-    // Open the new person's edit form
-    edit(newId);
-  }
+  // addNewPersonAndRelate has been replaced by showCreateNewPersonForm
 
   function getCurrentProfileId() {
     return currentProfileId;

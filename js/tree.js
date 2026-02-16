@@ -1369,15 +1369,15 @@ const Tree = (() => {
         },
       },
       {
+        selector: 'node.placeholder',
+        style: { 'border-style': 'dotted' },
+      },
+      {
         selector: 'node.deceased',
         style: {
           'border-style': 'dashed', 'border-color': COLORS.textMuted,
           'color': COLORS.textMuted, 'background-color': COLORS.bgSecondary,
         },
-      },
-      {
-        selector: 'node.placeholder',
-        style: { 'border-style': 'dotted' },
       },
       {
         selector: 'node.current-user',

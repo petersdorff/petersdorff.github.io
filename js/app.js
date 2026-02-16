@@ -4,9 +4,19 @@
 
 const App = (() => {
   // ─── Supabase Config ───
-  // Replace with your own Supabase project URL and anon key
   const SUPABASE_URL = 'https://ixdcyoivtapglllmwvut.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4ZGN5b2l2dGFwZ2xsbG13dnV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExNDQwMzcsImV4cCI6MjA4NjcyMDAzN30.9bwk1HrmsWz6Hk5RxqnpZiqt7-0YhNjzyev_tpIwLqU';
+
+  // Admin email — this user can approve/reject new registrations
+  const ADMIN_EMAIL = 'kaivonpetersdorff@me.com';
+
+  // Email to receive approval notifications
+  const NOTIFICATION_EMAIL = 'kaivonpetersdorff@gmail.com';
+
+  // EmailJS config (free tier, client-side emails)
+  const EMAILJS_PUBLIC_KEY = ''; // TODO: Set after creating EmailJS account
+  const EMAILJS_SERVICE_ID = ''; // TODO: Set after creating EmailJS service
+  const EMAILJS_TEMPLATE_ID = ''; // TODO: Set after creating EmailJS template
 
   let cachedMembers = [];
   let cachedRelationships = [];
@@ -35,11 +45,37 @@ const App = (() => {
       }
 
       if (user) {
+        // Check approval status (admin bypasses)
+        const isAdmin = user.email === ADMIN_EMAIL;
+
+        if (!isAdmin) {
+          const approval = await DB.getApprovalStatus(user.id);
+          if (!approval) {
+            // No approval request exists — create one
+            const displayName = user.user_metadata?.display_name || user.email || '';
+            await DB.createApprovalRequest(user.id, user.email, displayName);
+            sendAdminNotification(user.email, displayName);
+            showView('view-pending');
+            return;
+          }
+          if (approval.status === 'pending') {
+            showView('view-pending');
+            return;
+          }
+          if (approval.status === 'rejected') {
+            toast('Dein Zugang wurde abgelehnt. Bitte kontaktiere den Administrator.', 'error');
+            showView('view-pending');
+            return;
+          }
+          // approval.status === 'approved' → continue normally
+        }
+
         if (member) {
           // User has a linked profile → go to tree
           Tree.setCurrentUser(member.id);
           await loadTree();
           showView('view-main');
+          updateAdminMenu(isAdmin);
         } else {
           // User logged in but no profile → claim flow
           showView('view-claim');
@@ -137,7 +173,16 @@ const App = (() => {
     document.getElementById('fab-center').addEventListener('click', centerOnMe);
 
     // Profile view
-    document.getElementById('btn-profile-back').addEventListener('click', () => showView('view-main'));
+    document.getElementById('btn-profile-back').addEventListener('click', () => {
+      const profileView = document.getElementById('view-profile');
+      // If in side panel mode, just close it
+      if (profileView.classList.contains('side-panel')) {
+        profileView.classList.remove('side-panel', 'active');
+        profileView.style.display = '';
+        return;
+      }
+      showView('view-main');
+    });
     document.getElementById('btn-profile-edit').addEventListener('click', () => {
       Profile.edit(Profile.getCurrentProfileId());
     });
@@ -208,16 +253,30 @@ const App = (() => {
     document.getElementById('menu-logout').addEventListener('click', (e) => {
       e.preventDefault(); closeMenu(); Auth.logout();
     });
+    document.getElementById('menu-admin').addEventListener('click', (e) => {
+      e.preventDefault(); closeMenu(); showAdminPanel();
+    });
+
+    // Pending approval logout
+    document.getElementById('btn-pending-logout').addEventListener('click', () => Auth.logout());
+
+    // Admin panel back button
+    document.getElementById('btn-admin-back').addEventListener('click', () => showView('view-main'));
 
     // Tree node tap
     Tree.onNodeTap((nodeId) => {
       Profile.show(nodeId);
     });
 
-    // Tree background tap — close overlays and return to tree
+    // Tree background tap — close overlays and side panels
     Tree.onBackgroundTap(() => {
       closeConnection();
-      showView('view-main');
+      // Close profile side panel if open
+      const profileView = document.getElementById('view-profile');
+      if (profileView.classList.contains('side-panel')) {
+        profileView.classList.remove('side-panel', 'active');
+        profileView.style.display = '';
+      }
     });
   }
 
@@ -456,6 +515,24 @@ const App = (() => {
   // ─── View Management ───
 
   function showView(viewId) {
+    const isDesktop = window.innerWidth >= 600;
+    const profileView = document.getElementById('view-profile');
+
+    // If showing profile on desktop → side panel mode (don't hide tree)
+    if (viewId === 'view-profile' && isDesktop) {
+      profileView.classList.add('side-panel', 'active');
+      profileView.style.display = 'flex';
+      // Keep tree visible
+      document.getElementById('view-main').classList.add('active');
+      return;
+    }
+
+    // Otherwise: close profile side panel if open
+    if (profileView) {
+      profileView.classList.remove('side-panel');
+      profileView.style.display = '';
+    }
+
     document.querySelectorAll('.view').forEach(v => {
       v.classList.remove('active');
     });
@@ -520,6 +597,19 @@ const App = (() => {
 
   async function handleQRScanned(memberId) {
     toast('QR-Code erkannt!', 'success');
+
+    // Verify the member exists — try cache first, then fresh DB lookup
+    let member = cachedMembers.find(m => m.id === memberId);
+    if (!member) {
+      member = await DB.getMember(memberId);
+      if (!member) {
+        toast('Person nicht im Stammbaum gefunden', 'error');
+        showView('view-main');
+        return;
+      }
+      // Refresh tree to include this member in cache
+      await loadTree();
+    }
 
     // Show connection between me and scanned person
     const myMember = Auth.getMember();
@@ -670,6 +760,19 @@ const App = (() => {
       }, 500);
       // Timeout after 10 seconds
       setTimeout(() => clearInterval(checkAuth), 10000);
+    } else if (hash === '#admin') {
+      // Admin deep link — wait for auth, then show admin panel
+      const checkAdmin = setInterval(() => {
+        const user = Auth.getUser();
+        if (user) {
+          clearInterval(checkAdmin);
+          if (user.email === ADMIN_EMAIL) {
+            showAdminPanel();
+          }
+          window.location.hash = '';
+        }
+      }, 500);
+      setTimeout(() => clearInterval(checkAdmin), 10000);
     }
   }
 
@@ -686,6 +789,91 @@ const App = (() => {
       el.classList.add('out');
       setTimeout(() => el.remove(), 200);
     }, 3000);
+  }
+
+  // ─── Admin Functions ───
+
+  function updateAdminMenu(isAdmin) {
+    const adminItem = document.getElementById('menu-admin-item');
+    if (adminItem) {
+      adminItem.style.display = isAdmin ? '' : 'none';
+    }
+  }
+
+  async function showAdminPanel() {
+    const listEl = document.getElementById('admin-pending-list');
+    listEl.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">Lade...</p>';
+    showView('view-admin-approve');
+
+    try {
+      const pending = await DB.getPendingApprovals();
+      if (pending.length === 0) {
+        listEl.innerHTML = '<p style="color:var(--text-muted);font-size:13px;text-align:center;">Keine ausstehenden Anfragen.</p>';
+        return;
+      }
+
+      listEl.innerHTML = '';
+      for (const req of pending) {
+        const card = document.createElement('div');
+        card.className = 'admin-user-card';
+        card.innerHTML = `
+          <div class="user-name">${req.display_name || 'Unbekannt'}</div>
+          <div class="user-email">${req.email}</div>
+          <div class="user-date" style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
+            Registriert: ${new Date(req.created_at).toLocaleDateString('de-DE')}
+          </div>
+          <div class="admin-actions">
+            <button class="btn btn-primary btn-small btn-approve">Freigeben</button>
+            <button class="btn btn-danger btn-small btn-reject">Ablehnen</button>
+          </div>
+        `;
+
+        card.querySelector('.btn-approve').addEventListener('click', async () => {
+          const adminUser = Auth.getUser();
+          await DB.approveUser(req.id, adminUser.id);
+          toast(`${req.display_name || req.email} freigeschaltet`, 'success');
+          showAdminPanel(); // Refresh list
+        });
+
+        card.querySelector('.btn-reject').addEventListener('click', async () => {
+          if (!confirm(`${req.display_name || req.email} wirklich ablehnen?`)) return;
+          const adminUser = Auth.getUser();
+          await DB.rejectUser(req.id, adminUser.id);
+          toast(`${req.display_name || req.email} abgelehnt`, 'info');
+          showAdminPanel(); // Refresh list
+        });
+
+        listEl.appendChild(card);
+      }
+    } catch (err) {
+      console.error('Admin panel error:', err);
+      listEl.innerHTML = '<p style="color:var(--red);font-size:13px;">Fehler beim Laden.</p>';
+    }
+  }
+
+  /**
+   * Send email notification to admin about new registration.
+   * Uses EmailJS (free tier) if configured, otherwise logs to console.
+   */
+  function sendAdminNotification(userEmail, displayName) {
+    if (!EMAILJS_PUBLIC_KEY || !EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID) {
+      console.log(`[ADMIN NOTIFICATION] Neue Registrierung: ${displayName} (${userEmail})`);
+      console.log('EmailJS ist nicht konfiguriert. Bitte EMAILJS_PUBLIC_KEY, EMAILJS_SERVICE_ID und EMAILJS_TEMPLATE_ID in app.js setzen.');
+      return;
+    }
+
+    // EmailJS loaded via CDN
+    if (typeof emailjs !== 'undefined') {
+      emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+        admin_email: NOTIFICATION_EMAIL,
+        user_name: displayName,
+        user_email: userEmail,
+        approve_url: window.location.origin + window.location.pathname + '#admin',
+      }, EMAILJS_PUBLIC_KEY).then(
+        () => console.log('Admin notification sent'),
+        (err) => console.error('EmailJS error:', err)
+      );
+    }
   }
 
   // ─── Helpers ───

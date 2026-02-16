@@ -239,6 +239,75 @@ const DB = (() => {
     return true;
   }
 
+  // ─── User Approvals ───
+
+  async function createApprovalRequest(userUid, email, displayName) {
+    const { data: existing } = await supabase
+      .from('user_approvals')
+      .select('id, status')
+      .eq('user_uid', userUid)
+      .maybeSingle();
+
+    if (existing) return existing; // Already exists
+
+    const { data, error } = await supabase
+      .from('user_approvals')
+      .insert({
+        user_uid: userUid,
+        email: email,
+        display_name: displayName,
+        status: 'pending',
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async function getApprovalStatus(userUid) {
+    const { data, error } = await supabase
+      .from('user_approvals')
+      .select('*')
+      .eq('user_uid', userUid)
+      .maybeSingle();
+    if (error || !data) return null;
+    return data;
+  }
+
+  async function getPendingApprovals() {
+    const { data, error } = await supabase
+      .from('user_approvals')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function approveUser(approvalId, adminUid) {
+    const { error } = await supabase
+      .from('user_approvals')
+      .update({
+        status: 'approved',
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: adminUid,
+      })
+      .eq('id', approvalId);
+    if (error) throw error;
+  }
+
+  async function rejectUser(approvalId, adminUid) {
+    const { error } = await supabase
+      .from('user_approvals')
+      .update({
+        status: 'rejected',
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: adminUid,
+      })
+      .eq('id', approvalId);
+    if (error) throw error;
+  }
+
   // ─── Mapping: snake_case (DB) ↔ camelCase (App) ───
 
   function mapMember(row) {
@@ -314,5 +383,10 @@ const DB = (() => {
     getRelationshipsForMember,
     getFullGraph,
     seedDemoData,
+    createApprovalRequest,
+    getApprovalStatus,
+    getPendingApprovals,
+    approveUser,
+    rejectUser,
   };
 })();

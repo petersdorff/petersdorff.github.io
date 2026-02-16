@@ -666,16 +666,21 @@ const Tree = (() => {
 
   // ═══════════════════════════════════════════════════════════
   //  ISOCHRONES (for generational view)
-  //  "Primary gap + outlier detours" algorithm.
   //
-  //  For each boundary year, find the generation gap that best
-  //  separates older people (above) from younger people (below).
-  //  Route the isochrone through that gap as a horizontal line.
-  //  Where outliers exist (people on the wrong side of the gap),
-  //  create H/V detours around their boxes.
+  //  Equal-band algorithm:
+  //  1. All boundary lines start evenly spaced on the left edge
+  //     so every band has the same thickness (matching 25-year
+  //     periods).
+  //  2. Scanning left→right, each line sits at its "natural" Y
+  //     (its even-spacing position) as long as no person box is
+  //     in the way.
+  //  3. When encountering a person on the wrong side, the line
+  //     detours around their box with a gradual slope.
+  //  4. If a family line has no people in a band, that band can
+  //     squeeze through two people of subsequent generations.
   //
-  //  Process youngest-to-oldest so each isochrone is guaranteed
-  //  to be above (smaller Y) the previous one.
+  //  Fully data-driven: works for any tree shape, number of
+  //  generations, or birth year distribution.
   // ═══════════════════════════════════════════════════════════
 
   function computeZigZagIsochrones(members, positions, generation, memberMap) {
@@ -705,18 +710,50 @@ const Tree = (() => {
     }
     if (people.length < 2) return [];
 
-    // ─── 2. Unique buckets, sorted youngest-first (descending) ───
+    // ─── 2. Unique buckets sorted oldest-first (ascending) ───
     const bucketSet = new Set(people.map(p => p.bucket));
-    const bucketsDesc = [...bucketSet].sort((a, b) => b - a);
-    if (bucketsDesc.length < 2) return [];
+    const bucketsAsc = [...bucketSet].sort((a, b) => a - b);
+    if (bucketsAsc.length < 2) return [];
+
+    // Boundary years between adjacent buckets (sorted ascending)
+    // e.g. buckets [1875,1900,1925,1950,1975,2000] →
+    //      boundaries [1900,1925,1950,1975,2000]
+    const boundaries = [];
+    for (let i = 0; i < bucketsAsc.length - 1; i++) {
+      boundaries.push(bucketsAsc[i + 1]); // boundary = start of next bucket
+    }
+    const numBounds = boundaries.length; // e.g. 5
 
     // ─── 3. Global layout info ───
     const allX = Object.values(positions).map(p => p.x);
     const xMin = Math.min(...allX) - NODE_W - 80;
     const xMax = Math.max(...allX) + NODE_W + 80;
 
+    // Person Y positions sorted top→bottom
+    const allY = people.map(p => p.y);
+    const yTop = Math.min(...allY) - hH - 10;    // above topmost box
+    const yBottom = Math.max(...allY) + hH + 10;  // below bottommost box
+
     // Generation rows sorted top→bottom
     const genRows = [...new Set(people.map(p => p.y))].sort((a, b) => a - b);
+
+    // ─── 4. Evenly space boundary lines on the left edge ───
+    //
+    // The total vertical extent is divided into (numBounds + 1) bands.
+    // Each band gets equal thickness. Boundary i is at:
+    //   leftY[i] = yTop + (i+1) * bandH
+    //
+    const bandH = (yBottom - yTop) / (numBounds + 1);
+    const leftEdgeY = [];
+    for (let i = 0; i < numBounds; i++) {
+      leftEdgeY.push(yTop + (i + 1) * bandH);
+    }
+
+    // ─── 5. For each boundary, find the "best gap" (primary Y) ───
+    //
+    // The best gap is the generation-row gap that best separates
+    // older people (above) from younger people (below).
+    // This is where the line WANTS to be in the middle of the tree.
 
     // Gap midpoints between consecutive generation rows
     const gapMid = [];
@@ -724,40 +761,13 @@ const Tree = (() => {
       gapMid.push((genRows[i] + genRows[i + 1]) / 2);
     }
 
-    // ─── 4. Process boundaries youngest-to-oldest ───
-    //
-    // prevWaypoints stores the previous (younger) isochrone's contour
-    // so we can enforce per-X ceiling and minimum band thickness.
-
-    let prevWaypoints = null;
-    const defaultCeiling = genRows[genRows.length - 1] + GEN_GAP;
-
-    function ceilingAtX(x) {
-      if (!prevWaypoints || prevWaypoints.length === 0) return defaultCeiling;
-      for (let i = 0; i < prevWaypoints.length - 1; i++) {
-        const a = prevWaypoints[i];
-        const b = prevWaypoints[i + 1];
-        if (a.x === b.x) continue;
-        if (x >= Math.min(a.x, b.x) && x <= Math.max(a.x, b.x)) {
-          // Linear interpolation for non-horizontal segments
-          const t = (x - a.x) / (b.x - a.x);
-          return a.y + t * (b.y - a.y);
-        }
-      }
-      if (x <= prevWaypoints[0].x) return prevWaypoints[0].y;
-      return prevWaypoints[prevWaypoints.length - 1].y;
-    }
-
-    const isochroneData = [];
-
-    for (let bi = 0; bi < bucketsDesc.length - 1; bi++) {
-      const boundaryYear = bucketsDesc[bi];
-
+    // Compute primaryY for each boundary
+    const primaryYs = [];
+    for (let bi = 0; bi < numBounds; bi++) {
+      const boundaryYear = boundaries[bi];
       const belowPeople = people.filter(p => p.year >= boundaryYear);
       const abovePeople = people.filter(p => p.year < boundaryYear);
-      if (belowPeople.length === 0 || abovePeople.length === 0) continue;
 
-      // ─── Find the best gap for this boundary ───
       let bestGapIdx = 0;
       let bestOutliers = Infinity;
       for (let gi = 0; gi < gapMid.length; gi++) {
@@ -769,34 +779,59 @@ const Tree = (() => {
           bestGapIdx = gi;
         }
       }
+      primaryYs.push(gapMid[bestGapIdx]);
+    }
 
-      let primaryY = gapMid[bestGapIdx];
+    // Enforce monotonic ordering: each primaryY must be > the previous
+    for (let i = 1; i < primaryYs.length; i++) {
+      if (primaryYs[i] <= primaryYs[i - 1]) {
+        primaryYs[i] = primaryYs[i - 1] + MIN_BAND_H;
+      }
+    }
 
-      // Enforce stacking: primaryY must be above the previous isochrone
-      const midCeiling = ceilingAtX((xMin + xMax) / 2);
-      if (primaryY >= midCeiling - MIN_BAND_H) {
-        for (let gi = bestGapIdx - 1; gi >= 0; gi--) {
-          if (gapMid[gi] < midCeiling - MIN_BAND_H) {
-            bestGapIdx = gi;
-            primaryY = gapMid[gi];
-            break;
-          }
-        }
-        if (primaryY >= midCeiling - MIN_BAND_H) {
-          primaryY = midCeiling - MIN_BAND_H - 10;
+    // ─── 6. Build isochrones (process youngest-to-oldest) ───
+    //
+    // We process in reverse (bottom → top) so we can track the
+    // ceiling from the previous (younger) isochrone.
+
+    let prevWaypoints = null;
+    const defaultCeiling = yBottom + GEN_GAP;
+
+    function ceilingAtX(x) {
+      if (!prevWaypoints || prevWaypoints.length === 0) return defaultCeiling;
+      for (let i = 0; i < prevWaypoints.length - 1; i++) {
+        const a = prevWaypoints[i];
+        const b = prevWaypoints[i + 1];
+        if (a.x === b.x) continue;
+        if (x >= Math.min(a.x, b.x) && x <= Math.max(a.x, b.x)) {
+          const t = (x - a.x) / (b.x - a.x);
+          return a.y + t * (b.y - a.y);
         }
       }
+      if (x <= prevWaypoints[0].x) return prevWaypoints[0].y;
+      return prevWaypoints[prevWaypoints.length - 1].y;
+    }
 
-      // ─── Identify outliers ───
-      const belowOutliers = belowPeople.filter(p => p.y < primaryY);
-      const aboveOutliers = abovePeople.filter(p => p.y > primaryY);
+    const isochroneData = [];
 
+    for (let bi = numBounds - 1; bi >= 0; bi--) {
+      const boundaryYear = boundaries[bi];
+      const startY = leftEdgeY[bi];       // evenly-spaced left-edge Y
+      const targetY = primaryYs[bi];       // best generation-gap Y
+
+      const belowPeople = people.filter(p => p.year >= boundaryYear);
+      const abovePeople = people.filter(p => p.year < boundaryYear);
+      if (belowPeople.length === 0 || abovePeople.length === 0) continue;
+
+      // ─── Identify outliers relative to targetY ───
+      // below-outlier: born >= boundary but positioned above targetY → wrap above
+      // above-outlier: born < boundary but positioned below targetY → wrap below
+      const belowOutliers = belowPeople.filter(p => p.y < targetY);
+      const aboveOutliers = abovePeople.filter(p => p.y > targetY);
       const allOutliers = [
         ...belowOutliers.map(p => ({ ...p, type: 'below' })),
         ...aboveOutliers.map(p => ({ ...p, type: 'above' })),
       ];
-
-      // Sort outliers by x position (left to right)
       allOutliers.sort((a, b) => a.x - b.x);
 
       // Group nearby outliers into clusters
@@ -805,51 +840,62 @@ const Tree = (() => {
         const boxLeft = out.x - hW;
         const boxRight = out.x + hW;
         if (clusters.length > 0) {
-          const lastCluster = clusters[clusters.length - 1];
-          if (boxLeft <= lastCluster.xRight + 20) {
-            lastCluster.xRight = Math.max(lastCluster.xRight, boxRight);
-            lastCluster.members.push(out);
+          const last = clusters[clusters.length - 1];
+          if (boxLeft <= last.xRight + 20) {
+            last.xRight = Math.max(last.xRight, boxRight);
+            last.members.push(out);
             continue;
           }
         }
-        clusters.push({
-          xLeft: boxLeft,
-          xRight: boxRight,
-          members: [out],
-        });
+        clusters.push({ xLeft: boxLeft, xRight: boxRight, members: [out] });
       }
 
-      // ─── Build waypoints with left-anchoring ───
+      // ─── Build waypoints ───
       //
-      // Key idea: The leftmost region defines the "natural" level.
-      // On the left side, if there are no outliers, the isochrone
-      // sits at primaryY. When we encounter an outlier, we do a
-      // SMOOTH transition (not abrupt H/V) — a gradual slope leading
-      // into the detour, then back. This keeps bends gentle on the
-      // left and only becomes more abrupt further right if needed.
+      // Strategy:
+      //  - Start at (xMin, startY) where startY is the evenly-spaced position
+      //  - Transition to targetY (best gen gap) as we approach the first person
+      //  - At each outlier cluster, detour around the boxes
+      //  - Between clusters, sit at targetY
+      //  - Maintain minimum band thickness against previous isochrone
 
       const waypoints = [];
       let curX = xMin;
-      const SLOPE_RUN = 40; // horizontal distance for gradual transitions
+      let curY = startY;
+      const SLOPE_RUN = 60; // horizontal distance for gradual transitions
+
+      // Find the X of the leftmost person box (where we need to be at targetY)
+      const leftmostPersonX = Math.min(...people.map(p => p.x)) - hW;
+
+      // If startY != targetY, transition smoothly before the first person
+      if (Math.abs(startY - targetY) > 1) {
+        const transitionEndX = Math.max(leftmostPersonX - 10, xMin + 20);
+        const transitionStartX = Math.max(transitionEndX - SLOPE_RUN, xMin);
+
+        waypoints.push({ x: xMin, y: startY });
+        if (transitionStartX > xMin + 1) {
+          waypoints.push({ x: transitionStartX, y: startY });
+        }
+        waypoints.push({ x: transitionEndX, y: targetY });
+        curX = transitionEndX;
+        curY = targetY;
+      }
 
       for (const cluster of clusters) {
-        // Horizontal at primaryY up to the slope start before the cluster
-        const slopeStartX = cluster.xLeft - SLOPE_RUN;
-        if (curX < slopeStartX) {
-          waypoints.push({ x: curX, y: primaryY });
-          waypoints.push({ x: slopeStartX, y: primaryY });
-          curX = slopeStartX;
-        } else if (curX < cluster.xLeft - 5) {
-          waypoints.push({ x: curX, y: primaryY });
-          waypoints.push({ x: cluster.xLeft - 5, y: primaryY });
-          curX = cluster.xLeft - 5;
+        // Horizontal at targetY up to the cluster approach
+        const approachX = cluster.xLeft - 10;
+        if (curX < approachX) {
+          waypoints.push({ x: curX, y: targetY });
+          waypoints.push({ x: approachX, y: targetY });
+          curX = approachX;
+          curY = targetY;
         }
 
-        // Determine detour Y for this cluster
+        // Determine detour Y
         const hasBelow = cluster.members.some(m => m.type === 'below');
         const hasAbove = cluster.members.some(m => m.type === 'above');
-
         let detourY;
+
         if (hasBelow) {
           const minBoxTop = Math.min(...cluster.members
             .filter(m => m.type === 'below')
@@ -860,37 +906,36 @@ const Tree = (() => {
             .filter(m => m.type === 'above')
             .map(m => m.y + hH));
           detourY = maxBoxBottom + 5;
-          // Constrain by per-X ceiling (keep MIN_BAND_H from previous isochrone)
+          // Keep minimum gap from previous (younger) isochrone
           const localCeiling = ceilingAtX((cluster.xLeft + cluster.xRight) / 2);
           detourY = Math.min(detourY, localCeiling - MIN_BAND_H);
         } else {
-          detourY = primaryY;
+          detourY = targetY;
         }
 
-        // Gradual slope into the detour
-        waypoints.push({ x: curX, y: primaryY });
+        // Slope into detour, horizontal across, slope back
+        waypoints.push({ x: curX, y: curY });
         waypoints.push({ x: cluster.xLeft - 5, y: detourY });
-        // Horizontal across the cluster at detourY
         waypoints.push({ x: cluster.xRight + 5, y: detourY });
-        // Gradual slope back to primaryY
-        const slopeEndX = Math.min(cluster.xRight + SLOPE_RUN, xMax);
-        waypoints.push({ x: slopeEndX, y: primaryY });
-        curX = slopeEndX;
+        const returnX = Math.min(cluster.xRight + SLOPE_RUN, xMax);
+        waypoints.push({ x: returnX, y: targetY });
+        curX = returnX;
+        curY = targetY;
       }
 
       // Final segment to the right edge
       if (curX < xMax) {
-        waypoints.push({ x: curX, y: primaryY });
-        waypoints.push({ x: xMax, y: primaryY });
+        waypoints.push({ x: curX, y: curY });
+        waypoints.push({ x: xMax, y: curY });
       }
 
-      // If no clusters at all, just one horizontal line
+      // If no waypoints yet, just a horizontal line
       if (waypoints.length === 0) {
-        waypoints.push({ x: xMin, y: primaryY });
-        waypoints.push({ x: xMax, y: primaryY });
+        waypoints.push({ x: xMin, y: startY });
+        waypoints.push({ x: xMax, y: startY });
       }
 
-      // ─── Enforce minimum band thickness against previous isochrone ───
+      // ─── Enforce minimum band thickness ───
       for (const wp of waypoints) {
         const ceil = ceilingAtX(wp.x);
         if (wp.y > ceil - MIN_BAND_H) {
@@ -898,33 +943,33 @@ const Tree = (() => {
         }
       }
 
-      // Clean up: remove duplicate consecutive waypoints
-      const cleanWaypoints = [waypoints[0]];
+      // Clean up duplicates
+      const clean = [waypoints[0]];
       for (let i = 1; i < waypoints.length; i++) {
-        const prev = cleanWaypoints[cleanWaypoints.length - 1];
+        const prev = clean[clean.length - 1];
         if (Math.abs(waypoints[i].x - prev.x) > 0.5 || Math.abs(waypoints[i].y - prev.y) > 0.5) {
-          cleanWaypoints.push(waypoints[i]);
+          clean.push(waypoints[i]);
         }
       }
 
-      // Build SVG path (straight segments for the line)
-      let pathData = `M ${cleanWaypoints[0].x} ${cleanWaypoints[0].y}`;
-      for (let i = 1; i < cleanWaypoints.length; i++) {
-        pathData += ` L ${cleanWaypoints[i].x} ${cleanWaypoints[i].y}`;
+      // Build SVG path
+      let pathData = `M ${clean[0].x} ${clean[0].y}`;
+      for (let i = 1; i < clean.length; i++) {
+        pathData += ` L ${clean[i].x} ${clean[i].y}`;
       }
 
       isochroneData.push({
         year: boundaryYear,
         pathData,
-        waypoints: cleanWaypoints,
-        primaryY,
+        waypoints: clean,
+        primaryY: targetY,
         type: 'zigzag',
       });
 
-      prevWaypoints = cleanWaypoints;
+      prevWaypoints = clean;
     }
 
-    // Reverse so they're ordered oldest-first (for consistent rendering)
+    // Reverse so oldest-first for rendering
     isochroneData.reverse();
     return isochroneData;
   }

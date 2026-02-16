@@ -14,9 +14,9 @@ const App = (() => {
   const NOTIFICATION_EMAIL = 'kaivonpetersdorff@gmail.com';
 
   // EmailJS config (free tier, client-side emails)
-  const EMAILJS_PUBLIC_KEY = ''; // TODO: Set after creating EmailJS account
-  const EMAILJS_SERVICE_ID = ''; // TODO: Set after creating EmailJS service
-  const EMAILJS_TEMPLATE_ID = ''; // TODO: Set after creating EmailJS template
+  const EMAILJS_PUBLIC_KEY = 'DUarAtNJocWYAECRq';
+  const EMAILJS_SERVICE_ID = 'service_ml2fcxt';
+  const EMAILJS_TEMPLATE_ID = 'template_6fcntlg';
 
   let cachedMembers = [];
   let cachedRelationships = [];
@@ -864,11 +864,12 @@ const App = (() => {
 
     // EmailJS loaded via CDN
     if (typeof emailjs !== 'undefined') {
+      const adminUrl = window.location.origin + window.location.pathname + '#admin';
+      const now = new Date().toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
       emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-        admin_email: NOTIFICATION_EMAIL,
-        user_name: displayName,
-        user_email: userEmail,
-        approve_url: window.location.origin + window.location.pathname + '#admin',
+        name: displayName,
+        time: now,
+        message: `Neue Registrierung im Stammbaum:\n\nName: ${displayName}\nE-Mail: ${userEmail}\n\nBitte prüfe und genehmige den Zugang:\n${adminUrl}`,
       }, EMAILJS_PUBLIC_KEY).then(
         () => console.log('Admin notification sent'),
         (err) => console.error('EmailJS error:', err)

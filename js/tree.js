@@ -640,14 +640,16 @@ const Tree = (() => {
 
   // ═══════════════════════════════════════════════════════════
   //  ISOCHRONES (for generational view)
-  //  Bucket-based: assign people to 25-year temporal buckets,
-  //  then build H/V boundary paths that enclose each bucket's
-  //  people boxes without crossing through them.
+  //  Bottom-up bucket stacking: assign people to 25-year
+  //  temporal buckets, then build H/V-only boundary paths
+  //  that enclose each bucket's people from youngest to oldest.
   // ═══════════════════════════════════════════════════════════
 
   function computeZigZagIsochrones(members, positions, generation, memberMap) {
     const PERIOD = 25;
-    const PAD = 15; // padding around node boxes for isochrone clearance
+    const PAD = 12;  // padding around node boxes
+    const hH = NODE_H / 2 + PAD;  // half-height with padding
+    const hW = NODE_W / 2 + PAD;  // half-width with padding
 
     // ─── 1. Collect people with known positions + birth years ───
     const people = [];
@@ -658,170 +660,156 @@ const Tree = (() => {
         year = parseInt(m.birthDate.substring(0, 4));
         if (isNaN(year)) year = null;
       }
-      if (year === null) continue; // skip members without birth year
+      if (year === null) continue;
       people.push({
         id: m.id,
         x: positions[m.id].x,
         y: positions[m.id].y,
         year,
         bucket: Math.floor(year / PERIOD) * PERIOD,
-        gen: generation.get(m.id) || 0,
       });
     }
 
     if (people.length < 2) return [];
 
-    // ─── 2. Find all buckets and sort them (oldest first = smallest year) ───
+    // ─── 2. Buckets sorted oldest-first (ascending by year) ───
     const bucketSet = new Set(people.map(p => p.bucket));
     const buckets = [...bucketSet].sort((a, b) => a - b);
     if (buckets.length < 2) return [];
 
     // ─── 3. Global X range ───
     const allX = Object.values(positions).map(p => p.x);
-    const xMin = Math.min(...allX) - NODE_W - 50;
-    const xMax = Math.max(...allX) + NODE_W + 50;
+    const xMin = Math.min(...allX) - NODE_W - 80;
+    const xMax = Math.max(...allX) + NODE_W + 80;
 
-    // ─── 4. Group people by generation row Y ───
-    // In generational view all members of same gen share the same Y.
-    // Find unique generation Y levels.
-    const genYLevels = new Map(); // gen → y
-    for (const p of people) {
-      if (!genYLevels.has(p.gen)) genYLevels.set(p.gen, p.y);
-    }
-    const sortedGenYs = [...new Set(genYLevels.values())].sort((a, b) => a - b);
+    // ─── 4. Generation rows sorted top→bottom ───
+    const genYSet = new Set(people.map(p => p.y));
+    const sortedGenYs = [...genYSet].sort((a, b) => a - b);
 
-    // Midpoints between consecutive generation rows (where parent-child lines cross)
-    const gapMidpoints = [];
-    for (let i = 0; i < sortedGenYs.length - 1; i++) {
-      gapMidpoints.push((sortedGenYs[i] + sortedGenYs[i + 1]) / 2);
-    }
-
-    // ─── 5. Build isochrone paths ───
-    // For each boundary between bucket[i] and bucket[i+1],
-    // create a path that separates people born <= bucket[i]+PERIOD-1
-    // from people born >= bucket[i+1].
+    // ─── 5. Build isochrone for each bucket boundary ───
     //
-    // The path:
-    // - Travels horizontally at gap-midpoints (between generation rows)
-    // - When it encounters a person at a generation row who belongs to
-    //   the YOUNGER bucket (below the boundary), it must loop ABOVE them
-    //   (go up and around their box, using only H/V segments).
-    // - When it encounters a person who belongs to the OLDER bucket
-    //   (above the boundary) in a lower row, it must loop BELOW them.
+    // For each boundary between bucket[i] and bucket[i+1]:
+    //   boundaryYear = bucket[i+1]
+    //   Everyone born >= boundaryYear is "below" the isochrone
+    //   Everyone born < boundaryYear is "above" the isochrone
+    //
+    // The isochrone's primary Y is the gap between the last gen-row
+    // that's fully "above" and the first gen-row with any "below" people.
+    //
+    // When a gen-row has MIXED buckets, the isochrone loops around
+    // the outlier boxes using H/V segments only.
 
     const isochroneData = [];
 
     for (let bi = 0; bi < buckets.length - 1; bi++) {
-      const boundaryYear = buckets[bi] + PERIOD; // year of the boundary line
-      // People above the boundary (born < boundaryYear) should be above the isochrone
-      // People below the boundary (born >= boundaryYear) should be below
+      const boundaryYear = buckets[bi + 1]; // start of next bucket
 
-      // For each generation row, determine if isochrone goes above or below
-      // the row, or through the gap between rows.
-      //
-      // Key insight: the isochrone default Y-level sits in the gap between
-      // the last gen-row where ALL people are above the boundary
-      // and the first gen-row where ANY people are at/below the boundary.
-      //
-      // But people within a single gen-row can straddle the boundary.
-      // For those rows, we must route the isochrone around the outliers.
-
-      // Determine which gen-row-gap the isochrone primarily sits in.
-      // Find the gap between the last "fully above" row and the first "has below" row.
-      let defaultGapIdx = -1;
-      for (let gi = 0; gi < sortedGenYs.length; gi++) {
-        const rowY = sortedGenYs[gi];
+      // Classify each generation row
+      const rowClassification = []; // { y, above[], below[], side }
+      for (const rowY of sortedGenYs) {
         const rowPeople = people.filter(p => p.y === rowY);
-        const hasBelow = rowPeople.some(p => p.year >= boundaryYear);
-        if (hasBelow) {
-          defaultGapIdx = gi - 1; // gap above this row
+        const above = rowPeople.filter(p => p.year < boundaryYear);
+        const below = rowPeople.filter(p => p.year >= boundaryYear);
+        let side;
+        if (above.length > 0 && below.length > 0) side = 'mixed';
+        else if (below.length > 0) side = 'allBelow';
+        else side = 'allAbove';
+        rowClassification.push({ y: rowY, above, below, side });
+      }
+
+      // Find the gap where the isochrone primarily sits.
+      // Walk top→bottom. The isochrone sits in the gap after the last
+      // row that has only "above" people (or is mixed but the outliers
+      // on the above-side can be looped).
+      //
+      // Simple rule: find the first row that has ANY "below" people.
+      // The isochrone sits in the gap ABOVE that row.
+      let firstBelowRowIdx = -1;
+      for (let ri = 0; ri < rowClassification.length; ri++) {
+        if (rowClassification[ri].below.length > 0) {
+          firstBelowRowIdx = ri;
           break;
         }
       }
-      if (defaultGapIdx === -1) defaultGapIdx = sortedGenYs.length - 1; // all above
 
-      // Default Y: midpoint of the gap, or above/below the tree
-      let defaultY;
-      if (defaultGapIdx < 0) {
-        // Boundary is above all people
-        defaultY = sortedGenYs[0] - NODE_H / 2 - PAD - 20;
-      } else if (defaultGapIdx >= sortedGenYs.length - 1) {
-        // Boundary is below all people
-        defaultY = sortedGenYs[sortedGenYs.length - 1] + NODE_H / 2 + PAD + 20;
+      if (firstBelowRowIdx === -1) continue; // no one below → skip
+
+      // Primary Y: gap above the firstBelowRow
+      let primaryY;
+      if (firstBelowRowIdx === 0) {
+        // Above the first row
+        primaryY = sortedGenYs[0] - GEN_GAP / 2;
       } else {
-        defaultY = gapMidpoints[defaultGapIdx];
+        primaryY = (sortedGenYs[firstBelowRowIdx - 1] + sortedGenYs[firstBelowRowIdx]) / 2;
       }
 
-      // ─── Build the path by scanning left-to-right ───
-      // Collect all people who are in rows that need looping
-      // (i.e., they are in the same gen-row but on the wrong side of the boundary)
+      // ─── Collect outlier nodes that need looping ───
+      //
+      // "Up outliers": people born >= boundaryYear (should be below)
+      //   but their row Y < primaryY (they're above the isochrone).
+      //   → isochrone must go UP above their box to include them below.
+      //
+      // "Down outliers": people born < boundaryYear (should be above)
+      //   but their row Y >= primaryY (they're below/at the isochrone).
+      //   → isochrone must go DOWN below their box to keep them above.
+
       const outliers = [];
       for (const p of people) {
-        // Person is an outlier if their box center is on the wrong side of defaultY
-        // relative to their bucket.
-        // Person born BEFORE boundaryYear should be ABOVE defaultY (lower Y value)
-        // Person born AT/AFTER boundaryYear should be BELOW defaultY (higher Y value)
-        const shouldBeAbove = p.year < boundaryYear;
-        const isAbove = p.y < defaultY;
-        if (shouldBeAbove !== isAbove) {
-          outliers.push(p);
+        const shouldBeBelow = p.year >= boundaryYear;
+        if (shouldBeBelow && p.y < primaryY) {
+          outliers.push({ ...p, dir: 'up' });
+        }
+        if (!shouldBeBelow && p.y >= primaryY) {
+          outliers.push({ ...p, dir: 'down' });
         }
       }
 
-      // Sort outliers by X
+      // Sort by X coordinate
       outliers.sort((a, b) => a.x - b.x);
 
-      // Build waypoints (H/V only)
-      const waypoints = [];
-      waypoints.push({ x: xMin, y: defaultY });
-
-      // Group overlapping outliers by proximity in X (they might be side-by-side couples)
+      // Group nearby outliers at same Y with same direction
       const groups = [];
       for (const o of outliers) {
-        const lastGroup = groups[groups.length - 1];
-        if (lastGroup && Math.abs(o.x - lastGroup[lastGroup.length - 1].x) < NODE_W + SPOUSE_GAP + 20) {
-          lastGroup.push(o);
+        const last = groups[groups.length - 1];
+        if (last && last[0].y === o.y && last[0].dir === o.dir
+            && o.x - last[last.length - 1].x < NODE_W + SPOUSE_GAP + 40) {
+          last.push(o);
         } else {
           groups.push([o]);
         }
       }
 
+      // ─── Build waypoints (H/V segments only) ───
+      const waypoints = [];
+      waypoints.push({ x: xMin, y: primaryY });
+
       for (const group of groups) {
-        // Compute bounding box of the group
-        const gxMin = Math.min(...group.map(p => p.x)) - NODE_W / 2 - PAD;
-        const gxMax = Math.max(...group.map(p => p.x)) + NODE_W / 2 + PAD;
-        const gyMin = Math.min(...group.map(p => p.y)) - NODE_H / 2 - PAD;
-        const gyMax = Math.max(...group.map(p => p.y)) + NODE_H / 2 + PAD;
+        const dir = group[0].dir;
+        const groupY = group[0].y;
 
-        // Determine loop direction: if person should be above defaultY but is below,
-        // isochrone must go BELOW the person's box (loop down).
-        // If person should be below defaultY but is above,
-        // isochrone must go ABOVE the person's box (loop up).
-        const shouldBeAbove = group[0].year < boundaryYear;
-        // If should be above but is below defaultY → isochrone needs to go below them
-        // (the isochrone needs to be between them and the boundary)
-        const loopBelow = shouldBeAbove; // person is below but should be above → loop below person
+        const gxMin = Math.min(...group.map(p => p.x)) - hW;
+        const gxMax = Math.max(...group.map(p => p.x)) + hW;
 
-        if (loopBelow) {
-          // Route: go right to left edge of group, down below group, across, back up
-          const loopY = gyMax;
-          waypoints.push({ x: gxMin, y: defaultY }); // approach
-          waypoints.push({ x: gxMin, y: loopY });     // down
-          waypoints.push({ x: gxMax, y: loopY });     // across below
-          waypoints.push({ x: gxMax, y: defaultY });  // back up
+        if (dir === 'up') {
+          // Go above these boxes
+          const loopY = groupY - hH;
+          waypoints.push({ x: gxMin, y: primaryY });
+          waypoints.push({ x: gxMin, y: loopY });
+          waypoints.push({ x: gxMax, y: loopY });
+          waypoints.push({ x: gxMax, y: primaryY });
         } else {
-          // Route: go right to left edge of group, up above group, across, back down
-          const loopY = gyMin;
-          waypoints.push({ x: gxMin, y: defaultY }); // approach
-          waypoints.push({ x: gxMin, y: loopY });     // up
-          waypoints.push({ x: gxMax, y: loopY });     // across above
-          waypoints.push({ x: gxMax, y: defaultY });  // back down
+          // Go below these boxes
+          const loopY = groupY + hH;
+          waypoints.push({ x: gxMin, y: primaryY });
+          waypoints.push({ x: gxMin, y: loopY });
+          waypoints.push({ x: gxMax, y: loopY });
+          waypoints.push({ x: gxMax, y: primaryY });
         }
       }
 
-      waypoints.push({ x: xMax, y: defaultY });
+      waypoints.push({ x: xMax, y: primaryY });
 
-      // Convert waypoints to SVG path (straight line segments only)
+      // Convert to SVG path
       let pathData = `M ${waypoints[0].x} ${waypoints[0].y}`;
       for (let i = 1; i < waypoints.length; i++) {
         pathData += ` L ${waypoints[i].x} ${waypoints[i].y}`;

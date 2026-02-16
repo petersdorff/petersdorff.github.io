@@ -703,10 +703,30 @@ const Tree = (() => {
     //   "below" = born >= boundaryYear (younger or same bucket)
     //   "above" = born < boundaryYear (older buckets)
     //
-    // prevCeiling tracks the maximum Y (lowest on screen) that the
-    // next isochrone can use. Starts at bottom of tree.
+    // prevWaypoints stores the previous (younger) isochrone's contour
+    // so we can do per-X ceiling checks (not a single scalar).
+    // yAtX(x) returns the Y of the previous isochrone at position x.
 
-    let prevCeiling = genRows[genRows.length - 1] + GEN_GAP;
+    let prevWaypoints = null; // null means "no ceiling yet"
+    const defaultCeiling = genRows[genRows.length - 1] + GEN_GAP;
+
+    function ceilingAtX(x) {
+      if (!prevWaypoints || prevWaypoints.length === 0) return defaultCeiling;
+      // Walk the waypoints to find what Y the previous isochrone has at x
+      for (let i = 0; i < prevWaypoints.length - 1; i++) {
+        const a = prevWaypoints[i];
+        const b = prevWaypoints[i + 1];
+        if (a.x === b.x) continue; // vertical segment
+        if (x >= Math.min(a.x, b.x) && x <= Math.max(a.x, b.x)) {
+          // Horizontal segment — return Y
+          return a.y; // H segments have same Y for a and b
+        }
+      }
+      // x is outside the contour range — use the nearest endpoint
+      if (x <= prevWaypoints[0].x) return prevWaypoints[0].y;
+      return prevWaypoints[prevWaypoints.length - 1].y;
+    }
+
     const isochroneData = [];
 
     for (let bi = 0; bi < bucketsDesc.length - 1; bi++) {
@@ -735,19 +755,21 @@ const Tree = (() => {
       // Primary Y for this isochrone (in the best gap)
       let primaryY = gapMid[bestGapIdx];
 
-      // Enforce stacking: must be above (smaller Y) the previous isochrone
-      if (primaryY >= prevCeiling) {
+      // Enforce stacking: primaryY must be above the previous isochrone's
+      // primary level at the center of the tree
+      const midCeiling = ceilingAtX((xMin + xMax) / 2);
+      if (primaryY >= midCeiling) {
         // Try to find a gap above the ceiling
         for (let gi = bestGapIdx - 1; gi >= 0; gi--) {
-          if (gapMid[gi] < prevCeiling - 10) {
+          if (gapMid[gi] < midCeiling - 10) {
             bestGapIdx = gi;
             primaryY = gapMid[gi];
             break;
           }
         }
         // If still too low, force it above the ceiling
-        if (primaryY >= prevCeiling) {
-          primaryY = prevCeiling - 20;
+        if (primaryY >= midCeiling) {
+          primaryY = midCeiling - 20;
         }
       }
 
@@ -834,8 +856,9 @@ const Tree = (() => {
             .filter(m => m.type === 'above')
             .map(m => m.y + hH));
           detourY = maxBoxBottom + 5;
-          // Constrain by ceiling
-          detourY = Math.min(detourY, prevCeiling - 10);
+          // Constrain by per-X ceiling from previous isochrone
+          const localCeiling = ceilingAtX((cluster.xLeft + cluster.xRight) / 2);
+          detourY = Math.min(detourY, localCeiling - 10);
         } else {
           detourY = primaryY;
         }
@@ -877,10 +900,8 @@ const Tree = (() => {
         type: 'zigzag',
       });
 
-      // Update ceiling for next (older) isochrone
-      // Use the minimum Y across the contour (highest point on screen)
-      const minContourY = Math.min(...cleanWaypoints.map(w => w.y));
-      prevCeiling = Math.min(primaryY, minContourY);
+      // Update ceiling for next (older) isochrone: store this contour's waypoints
+      prevWaypoints = cleanWaypoints;
     }
 
     // Reverse so they're ordered oldest-first (for consistent rendering)

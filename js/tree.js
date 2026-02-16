@@ -76,14 +76,13 @@ const Tree = (() => {
       }
     });
 
-    // Re-render highlights on tab switch
+    // Re-render highlights on tab switch (without zoom animation)
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && cy) {
         cy.resize();
         if (highlightedFromId && highlightedToId) {
-          const savedFrom = highlightedFromId;
-          const savedTo = highlightedToId;
-          highlightConnection(savedFrom, savedTo);
+          // Just restore the highlight styling — don't re-zoom/animate
+          restoreHighlight();
         } else {
           cy.style().update();
         }
@@ -682,8 +681,9 @@ const Tree = (() => {
   function computeZigZagIsochrones(members, positions, generation, memberMap) {
     const PERIOD = 25;
     const PAD = 8;
-    const hH = NODE_H / 2 + PAD;
-    const hW = NODE_W / 2 + PAD;
+    const hH = NODE_H / 2 + PAD;     // half-height with padding
+    const hW = NODE_W / 2 + PAD;     // half-width with padding
+    const MIN_BAND_H = 20;           // minimum vertical thickness for any band
 
     // ─── 1. Collect people with positions + birth years ───
     const people = [];
@@ -726,30 +726,24 @@ const Tree = (() => {
 
     // ─── 4. Process boundaries youngest-to-oldest ───
     //
-    // For i=0..len-2, boundaryYear = bucketsDesc[i]
-    //   "below" = born >= boundaryYear (younger or same bucket)
-    //   "above" = born < boundaryYear (older buckets)
-    //
     // prevWaypoints stores the previous (younger) isochrone's contour
-    // so we can do per-X ceiling checks (not a single scalar).
-    // yAtX(x) returns the Y of the previous isochrone at position x.
+    // so we can enforce per-X ceiling and minimum band thickness.
 
-    let prevWaypoints = null; // null means "no ceiling yet"
+    let prevWaypoints = null;
     const defaultCeiling = genRows[genRows.length - 1] + GEN_GAP;
 
     function ceilingAtX(x) {
       if (!prevWaypoints || prevWaypoints.length === 0) return defaultCeiling;
-      // Walk the waypoints to find what Y the previous isochrone has at x
       for (let i = 0; i < prevWaypoints.length - 1; i++) {
         const a = prevWaypoints[i];
         const b = prevWaypoints[i + 1];
-        if (a.x === b.x) continue; // vertical segment
+        if (a.x === b.x) continue;
         if (x >= Math.min(a.x, b.x) && x <= Math.max(a.x, b.x)) {
-          // Horizontal segment — return Y
-          return a.y; // H segments have same Y for a and b
+          // Linear interpolation for non-horizontal segments
+          const t = (x - a.x) / (b.x - a.x);
+          return a.y + t * (b.y - a.y);
         }
       }
-      // x is outside the contour range — use the nearest endpoint
       if (x <= prevWaypoints[0].x) return prevWaypoints[0].y;
       return prevWaypoints[prevWaypoints.length - 1].y;
     }
@@ -764,12 +758,9 @@ const Tree = (() => {
       if (belowPeople.length === 0 || abovePeople.length === 0) continue;
 
       // ─── Find the best gap for this boundary ───
-      // Score each gap by how few outliers it creates
       let bestGapIdx = 0;
       let bestOutliers = Infinity;
       for (let gi = 0; gi < gapMid.length; gi++) {
-        const gy = gapMid[gi];
-        // Outliers: below people above the gap, or above people below the gap
         const belowAboveGap = belowPeople.filter(p => p.y <= genRows[gi]).length;
         const aboveBelowGap = abovePeople.filter(p => p.y >= genRows[gi + 1]).length;
         const total = belowAboveGap + aboveBelowGap;
@@ -779,55 +770,36 @@ const Tree = (() => {
         }
       }
 
-      // Primary Y for this isochrone (in the best gap)
       let primaryY = gapMid[bestGapIdx];
 
-      // Enforce stacking: primaryY must be above the previous isochrone's
-      // primary level at the center of the tree
+      // Enforce stacking: primaryY must be above the previous isochrone
       const midCeiling = ceilingAtX((xMin + xMax) / 2);
-      if (primaryY >= midCeiling) {
-        // Try to find a gap above the ceiling
+      if (primaryY >= midCeiling - MIN_BAND_H) {
         for (let gi = bestGapIdx - 1; gi >= 0; gi--) {
-          if (gapMid[gi] < midCeiling - 10) {
+          if (gapMid[gi] < midCeiling - MIN_BAND_H) {
             bestGapIdx = gi;
             primaryY = gapMid[gi];
             break;
           }
         }
-        // If still too low, force it above the ceiling
-        if (primaryY >= midCeiling) {
-          primaryY = midCeiling - 20;
+        if (primaryY >= midCeiling - MIN_BAND_H) {
+          primaryY = midCeiling - MIN_BAND_H - 10;
         }
       }
 
-      // ─── Identify outliers and build contour ───
-      //
-      // "Below-outliers": people born >= boundaryYear but positioned
-      //   above (smaller Y) the primary gap → isochrone must loop
-      //   ABOVE their box (go to smaller Y).
-      //
-      // "Above-outliers": people born < boundaryYear but positioned
-      //   below (larger Y) the primary gap → isochrone must loop
-      //   BELOW their box (go to larger Y, but constrained by ceiling).
-
+      // ─── Identify outliers ───
       const belowOutliers = belowPeople.filter(p => p.y < primaryY);
       const aboveOutliers = abovePeople.filter(p => p.y > primaryY);
 
-      // All outlier people that need box-avoidance routing
       const allOutliers = [
-        ...belowOutliers.map(p => ({ ...p, type: 'below' })),  // loop above
-        ...aboveOutliers.map(p => ({ ...p, type: 'above' })),   // loop below
+        ...belowOutliers.map(p => ({ ...p, type: 'below' })),
+        ...aboveOutliers.map(p => ({ ...p, type: 'above' })),
       ];
 
-      // ─── Build the contour as waypoints ───
-      //
-      // Strategy: walk left→right at primaryY. When approaching an
-      // outlier box, make an H/V detour around it, then return to primaryY.
-
-      // Sort outliers by x position
+      // Sort outliers by x position (left to right)
       allOutliers.sort((a, b) => a.x - b.x);
 
-      // Group nearby outliers (boxes that overlap in X) into clusters
+      // Group nearby outliers into clusters
       const clusters = [];
       for (const out of allOutliers) {
         const boxLeft = out.x - hW;
@@ -835,7 +807,6 @@ const Tree = (() => {
         if (clusters.length > 0) {
           const lastCluster = clusters[clusters.length - 1];
           if (boxLeft <= lastCluster.xRight + 20) {
-            // Merge into existing cluster
             lastCluster.xRight = Math.max(lastCluster.xRight, boxRight);
             lastCluster.members.push(out);
             continue;
@@ -848,60 +819,83 @@ const Tree = (() => {
         });
       }
 
-      // Build waypoints
+      // ─── Build waypoints with left-anchoring ───
+      //
+      // Key idea: The leftmost region defines the "natural" level.
+      // On the left side, if there are no outliers, the isochrone
+      // sits at primaryY. When we encounter an outlier, we do a
+      // SMOOTH transition (not abrupt H/V) — a gradual slope leading
+      // into the detour, then back. This keeps bends gentle on the
+      // left and only becomes more abrupt further right if needed.
+
       const waypoints = [];
       let curX = xMin;
+      const SLOPE_RUN = 40; // horizontal distance for gradual transitions
 
       for (const cluster of clusters) {
-        // Horizontal segment at primaryY up to the cluster
-        if (curX < cluster.xLeft - 5) {
+        // Horizontal at primaryY up to the slope start before the cluster
+        const slopeStartX = cluster.xLeft - SLOPE_RUN;
+        if (curX < slopeStartX) {
+          waypoints.push({ x: curX, y: primaryY });
+          waypoints.push({ x: slopeStartX, y: primaryY });
+          curX = slopeStartX;
+        } else if (curX < cluster.xLeft - 5) {
           waypoints.push({ x: curX, y: primaryY });
           waypoints.push({ x: cluster.xLeft - 5, y: primaryY });
           curX = cluster.xLeft - 5;
         }
 
         // Determine detour Y for this cluster
-        // Check if cluster has below-outliers (need to go above = smaller Y)
-        // or above-outliers (need to go below = larger Y)
         const hasBelow = cluster.members.some(m => m.type === 'below');
         const hasAbove = cluster.members.some(m => m.type === 'above');
 
         let detourY;
         if (hasBelow) {
-          // Need to go above all below-outlier boxes in this cluster
           const minBoxTop = Math.min(...cluster.members
             .filter(m => m.type === 'below')
             .map(m => m.y - hH));
           detourY = minBoxTop - 5;
-
-          // Also check: is there an above-outlier in this cluster?
-          // That would mean conflicting requirements. In this case,
-          // prioritize going above the below-outlier (since it's "our" person).
         } else if (hasAbove) {
-          // Need to go below all above-outlier boxes
           const maxBoxBottom = Math.max(...cluster.members
             .filter(m => m.type === 'above')
             .map(m => m.y + hH));
           detourY = maxBoxBottom + 5;
-          // Constrain by per-X ceiling from previous isochrone
+          // Constrain by per-X ceiling (keep MIN_BAND_H from previous isochrone)
           const localCeiling = ceilingAtX((cluster.xLeft + cluster.xRight) / 2);
-          detourY = Math.min(detourY, localCeiling - 10);
+          detourY = Math.min(detourY, localCeiling - MIN_BAND_H);
         } else {
           detourY = primaryY;
         }
 
-        // Detour: vertical move to detourY, horizontal across cluster, vertical back
+        // Gradual slope into the detour
         waypoints.push({ x: curX, y: primaryY });
-        waypoints.push({ x: curX, y: detourY });
+        waypoints.push({ x: cluster.xLeft - 5, y: detourY });
+        // Horizontal across the cluster at detourY
         waypoints.push({ x: cluster.xRight + 5, y: detourY });
-        waypoints.push({ x: cluster.xRight + 5, y: primaryY });
-        curX = cluster.xRight + 5;
+        // Gradual slope back to primaryY
+        const slopeEndX = Math.min(cluster.xRight + SLOPE_RUN, xMax);
+        waypoints.push({ x: slopeEndX, y: primaryY });
+        curX = slopeEndX;
       }
 
       // Final segment to the right edge
       if (curX < xMax) {
         waypoints.push({ x: curX, y: primaryY });
         waypoints.push({ x: xMax, y: primaryY });
+      }
+
+      // If no clusters at all, just one horizontal line
+      if (waypoints.length === 0) {
+        waypoints.push({ x: xMin, y: primaryY });
+        waypoints.push({ x: xMax, y: primaryY });
+      }
+
+      // ─── Enforce minimum band thickness against previous isochrone ───
+      for (const wp of waypoints) {
+        const ceil = ceilingAtX(wp.x);
+        if (wp.y > ceil - MIN_BAND_H) {
+          wp.y = ceil - MIN_BAND_H;
+        }
       }
 
       // Clean up: remove duplicate consecutive waypoints
@@ -913,7 +907,7 @@ const Tree = (() => {
         }
       }
 
-      // Build SVG path
+      // Build SVG path (straight segments for the line)
       let pathData = `M ${cleanWaypoints[0].x} ${cleanWaypoints[0].y}`;
       for (let i = 1; i < cleanWaypoints.length; i++) {
         pathData += ` L ${cleanWaypoints[i].x} ${cleanWaypoints[i].y}`;
@@ -927,7 +921,6 @@ const Tree = (() => {
         type: 'zigzag',
       });
 
-      // Update ceiling for next (older) isochrone: store this contour's waypoints
       prevWaypoints = cleanWaypoints;
     }
 
@@ -1433,6 +1426,86 @@ const Tree = (() => {
     highlightedFromId = null;
     highlightedToId = null;
     cy.elements().removeClass('dimmed highlighted');
+  }
+
+  /**
+   * Restore highlight styling after tab switch without re-zooming.
+   * Re-applies dimmed/highlighted classes to the current path.
+   */
+  function restoreHighlight() {
+    if (!cy || !highlightedFromId || !highlightedToId) return;
+
+    const fromId = highlightedFromId;
+    const toId = highlightedToId;
+    const pathNodeIds = Relationship.getPathNodeIds(fromId, toId, members, relationships);
+    const pathEdgePairs = Relationship.getPathEdgePairs(fromId, toId, members, relationships);
+    if (pathNodeIds.length === 0) return;
+
+    const personToCouple = new Map();
+    cy.nodes('.couple-midpoint').forEach(cpNode => {
+      const cpId = cpNode.id();
+      const inner = cpId.substring('couple-'.length);
+      if (inner.length >= 73) {
+        personToCouple.set(inner.substring(0, 36), cpId);
+        personToCouple.set(inner.substring(37), cpId);
+      }
+    });
+
+    // Re-apply classes
+    cy.elements().addClass('dimmed');
+
+    for (const nodeId of pathNodeIds) {
+      const node = cy.getElementById(nodeId);
+      if (node.length) node.removeClass('dimmed').addClass('highlighted');
+    }
+
+    function highlightEdge(edge) {
+      edge.removeClass('dimmed').addClass('highlighted');
+      const s = edge.data('source'), t = edge.data('target');
+      if (s.startsWith('couple-')) cy.getElementById(s).removeClass('dimmed');
+      if (t.startsWith('couple-')) cy.getElementById(t).removeClass('dimmed');
+    }
+
+    function findEdges(idA, idB) {
+      return cy.edges().filter(e => {
+        const s = e.data('source'), t = e.data('target');
+        return (s === idA && t === idB) || (s === idB && t === idA);
+      });
+    }
+
+    for (const [from, to] of pathEdgePairs) {
+      const coupleOfFrom = personToCouple.get(from);
+      const coupleOfTo = personToCouple.get(to);
+
+      const directEdges = findEdges(from, to);
+      if (directEdges.length > 0) { directEdges.forEach(e => highlightEdge(e)); continue; }
+
+      if (coupleOfFrom && coupleOfFrom === coupleOfTo) {
+        findEdges(from, coupleOfFrom).forEach(e => highlightEdge(e));
+        findEdges(coupleOfFrom, to).forEach(e => highlightEdge(e));
+        continue;
+      }
+
+      let found = false;
+      if (coupleOfFrom) {
+        const midToChild = findEdges(coupleOfFrom, to);
+        if (midToChild.length > 0) {
+          findEdges(from, coupleOfFrom).forEach(e => highlightEdge(e));
+          midToChild.forEach(e => highlightEdge(e));
+          found = true;
+        }
+      }
+      if (!found && coupleOfTo) {
+        const midToParent = findEdges(coupleOfTo, from);
+        if (midToParent.length > 0) {
+          midToParent.forEach(e => highlightEdge(e));
+          findEdges(to, coupleOfTo).forEach(e => highlightEdge(e));
+        }
+      }
+    }
+
+    // NO zoom animation — just update styles in place
+    cy.style().update();
   }
 
   // ═══════════════════════════════════════════════════════════

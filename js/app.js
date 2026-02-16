@@ -27,9 +27,10 @@ const App = (() => {
     // Register auth state listener BEFORE Auth.init() so we don't miss
     // the initial onAuthStateChange event that fires immediately
     Auth.onAuthChange(async (user, member, event) => {
-      // On TOKEN_REFRESHED (e.g. tab regains focus), skip navigation
+      // Once the app is fully initialized, ignore re-auth events
+      // (TOKEN_REFRESHED or SIGNED_IN triggered by tab regaining focus)
       // to avoid closing the profile page or connection overlay.
-      if (event === 'TOKEN_REFRESHED' && isInitialized) {
+      if (isInitialized && (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN')) {
         return;
       }
 

@@ -352,7 +352,7 @@ const Tree = (() => {
    */
   function buildElements(base) {
     const elements = [];
-    const { spouseEdges, parentChildEdges, siblingEdges, inCouple, couples, coupleMap } = base;
+    const { spouseEdges, parentChildEdges, siblingEdges, inCouple, couples, coupleMap, parentsOf } = base;
 
     // Person nodes
     for (const m of members) {
@@ -408,9 +408,15 @@ const Tree = (() => {
       }
     }
 
-    // Sibling edges
+    // Sibling edges — only show if siblings don't already share a parent
+    // (shared parents make the relationship obvious from the tree structure)
     for (const se of siblingEdges) {
-      elements.push({ group: 'edges', data: { id: `e-${se.id}`, source: se.from, target: se.to, relType: 'sibling' }, classes: 'sibling-edge' });
+      const parentsA = parentsOf.get(se.from) || [];
+      const parentsB = parentsOf.get(se.to) || [];
+      const sharedParent = parentsA.some(p => parentsB.includes(p));
+      if (!sharedParent) {
+        elements.push({ group: 'edges', data: { id: `e-${se.id}`, source: se.from, target: se.to, relType: 'sibling' }, classes: 'sibling-edge' });
+      }
     }
 
     return elements;
@@ -689,7 +695,7 @@ const Tree = (() => {
     const PAD = 12;               // padding around boxes
     const hH = NODE_H / 2 + PAD;
     const hW = NODE_W / 2 + PAD;
-    const MIN_BAND_H = 20;
+    const MIN_BAND_H = 30;
 
     // ─── 1. Collect people with birth years + positions ───
     const people = [];
@@ -887,12 +893,13 @@ const Tree = (() => {
               const segMembers = sorted.slice(segStart, si);
               const segXLeft = Math.min(...segMembers.map(m => m.x - hW));
               const segXRight = Math.max(...segMembers.map(m => m.x + hW));
+              const lc = ceilingAtX((segXLeft + segXRight) / 2);
               let dy;
               if (prevType === 'goAbove') {
                 dy = Math.min(...segMembers.map(m => m.y - hH)) - TOUCH_PAD;
+                dy = Math.min(dy, lc - MIN_BAND_H);
               } else {
                 dy = Math.max(...segMembers.map(m => m.y + hH)) + TOUCH_PAD;
-                const lc = ceilingAtX((segXLeft + segXRight) / 2);
                 dy = Math.min(dy, lc - MIN_BAND_H);
               }
               segments.push({ xLeft: segXLeft, xRight: segXRight, type: prevType, detourY: dy });
@@ -922,17 +929,19 @@ const Tree = (() => {
         } else {
           // ─── Uniform cluster: all goAbove or all goBelow ───
           let detourY;
+          const localCeiling = ceilingAtX((cluster.xLeft + cluster.xRight) / 2);
           if (hasGoAbove) {
             const minBoxTop = Math.min(...cluster.members
               .filter(m => m.type === 'goAbove')
               .map(m => m.y - hH));
             detourY = minBoxTop - TOUCH_PAD;
+            // Ensure minimum distance from previous (younger) isochrone
+            detourY = Math.min(detourY, localCeiling - MIN_BAND_H);
           } else if (hasGoBelow) {
             const maxBoxBottom = Math.max(...cluster.members
               .filter(m => m.type === 'goBelow')
               .map(m => m.y + hH));
             detourY = maxBoxBottom + TOUCH_PAD;
-            const localCeiling = ceilingAtX((cluster.xLeft + cluster.xRight) / 2);
             detourY = Math.min(detourY, localCeiling - MIN_BAND_H);
           } else {
             detourY = myHomeY;
@@ -960,12 +969,35 @@ const Tree = (() => {
       }
 
       // ─── Enforce minimum band thickness ───
+      // First pass: check each waypoint
       for (const wp of waypoints) {
         const ceil = ceilingAtX(wp.x);
         if (wp.y > ceil - MIN_BAND_H) {
           wp.y = ceil - MIN_BAND_H;
         }
       }
+      // Second pass: add intermediate points along long segments
+      // to prevent the line from dipping too close mid-segment
+      const refined = [waypoints[0]];
+      for (let wi = 1; wi < waypoints.length; wi++) {
+        const a = waypoints[wi - 1];
+        const b = waypoints[wi];
+        const dx = b.x - a.x;
+        if (Math.abs(dx) > 30) {
+          const steps = Math.ceil(Math.abs(dx) / 30);
+          for (let s = 1; s < steps; s++) {
+            const t = s / steps;
+            const mx = a.x + t * dx;
+            const my = a.y + t * (b.y - a.y);
+            const ceil = ceilingAtX(mx);
+            refined.push({ x: mx, y: Math.min(my, ceil - MIN_BAND_H) });
+          }
+        }
+        const ceil = ceilingAtX(b.x);
+        refined.push({ x: b.x, y: Math.min(b.y, ceil - MIN_BAND_H) });
+      }
+      waypoints.length = 0;
+      waypoints.push(...refined);
 
       // Clean up duplicates
       const clean = [waypoints[0]];

@@ -3,6 +3,10 @@
    Couple-centered layout: spouses side-by-side with shared
    descent line from the midpoint of the couple connector.
    PCB / Circuit Board aesthetic
+
+   Supports two view modes:
+   - "generational" : members at generation-based Y with zig-zag isochrones
+   - "temporal"      : members at birth-year-proportional Y (timeline)
    ═══════════════════════════════════════════════════════════ */
 
 const Tree = (() => {
@@ -14,6 +18,10 @@ const Tree = (() => {
   let highlightedToId = null;
   let onNodeTapCallback = null;
   let currentUserId = null;
+
+  // View mode state
+  let viewMode = localStorage.getItem('stammbaum_viewMode') || 'generational';
+  let isochroneSvg = null; // SVG overlay element
 
   const COLORS = {
     trace: '#1a1a1a',
@@ -35,6 +43,11 @@ const Tree = (() => {
   const SIBLING_GAP = 50;    // gap between sibling nodes
   const GEN_GAP = 140;       // vertical gap between generations
   const COUPLE_NODE_SIZE = 1; // invisible midpoint node
+  const YEAR_PX = 5;          // pixels per year in temporal mode
+
+  // ═══════════════════════════════════════════════════════════
+  //  INIT
+  // ═══════════════════════════════════════════════════════════
 
   function init(containerId) {
     cy = cytoscape({
@@ -46,13 +59,13 @@ const Tree = (() => {
       wheelSensitivity: 0.3,
       boxSelectionEnabled: false,
       selectionType: 'single',
-      autoungrabify: true,  // disable node dragging
+      autoungrabify: true,
     });
 
     // Tap on node
     cy.on('tap', 'node', (evt) => {
       const nodeId = evt.target.id();
-      if (nodeId.startsWith('couple-')) return; // Skip couple midpoint nodes
+      if (nodeId.startsWith('couple-')) return;
       if (onNodeTapCallback) onNodeTapCallback(nodeId);
     });
 
@@ -63,23 +76,25 @@ const Tree = (() => {
       }
     });
 
-    // When the page becomes visible again (tab switch, app resume),
-    // Cytoscape may lose its rendered styles entirely (canvas cleared while hidden).
-    // Simple cy.style().update() isn't enough — we must fully reapply the highlight.
+    // Re-render highlights on tab switch
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && cy) {
         cy.resize();
-        // If a highlight was active, reapply it completely
         if (highlightedFromId && highlightedToId) {
           const savedFrom = highlightedFromId;
           const savedTo = highlightedToId;
-          // Re-run the full highlight logic (clearHighlight is called inside)
           highlightConnection(savedFrom, savedTo);
         } else {
           cy.style().update();
         }
       }
     });
+
+    // Init isochrone overlay
+    initIsochroneOverlay(containerId);
+
+    // Sync isochrone overlay on viewport changes
+    cy.on('viewport', updateIsochroneTransform);
   }
 
   function onNodeTap(callback) {
@@ -90,63 +105,43 @@ const Tree = (() => {
     currentUserId = memberId;
   }
 
-  /**
-   * Load data and render the tree with couple-centered layout.
-   */
-  function render(memberData, relationshipData) {
-    members = memberData;
-    relationships = relationshipData;
+  // ═══════════════════════════════════════════════════════════
+  //  VIEW MODE
+  // ═══════════════════════════════════════════════════════════
 
-    const { elements, positions } = buildCoupleLayout(members, relationships);
-
-    cy.elements().remove();
-    cy.add(elements);
-
-    // Apply positions
-    for (const [id, pos] of Object.entries(positions)) {
-      const node = cy.getElementById(id);
-      if (node.length) {
-        node.position(pos);
-      }
+  function setViewMode(mode) {
+    if (mode !== 'generational' && mode !== 'temporal') return;
+    if (mode === viewMode) return;
+    viewMode = mode;
+    localStorage.setItem('stammbaum_viewMode', mode);
+    if (members.length > 0) {
+      renderWithAnimation();
     }
-
-    // Mark current user's node
-    if (currentUserId) {
-      const node = cy.getElementById(currentUserId);
-      if (node.length) {
-        node.addClass('current-user');
-      }
-    }
-
-    // Fit view
-    cy.fit(undefined, 60);
-
-    // Short animation: fade in
-    cy.style().update();
   }
 
+  function getViewMode() {
+    return viewMode;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  SHARED LAYOUT HELPERS
+  // ═══════════════════════════════════════════════════════════
+
   /**
-   * Build the couple-centered layout.
-   *
-   * Strategy:
-   * 1. Identify "couples" (pairs connected by spouse edge) and singletons
-   * 2. Build a generation tree: each couple/singleton → their children
-   * 3. Assign generations (BFS from roots)
-   * 4. Position: couples side-by-side, children centered below couple midpoint
-   * 5. Add invisible "couple midpoint" nodes for edge routing
+   * Build adjacency structures, identify couples, assign generations,
+   * compute family units, and calculate subtree widths.
+   * Shared between generational and temporal layouts.
    */
-  function buildCoupleLayout(members, relationships) {
-    const elements = [];
-    const positions = {};
+  function buildLayoutBase(members, relationships) {
     const memberMap = new Map(members.map(m => [m.id, m]));
 
     // ─── Build adjacency structures ───
-    const spouseEdges = [];   // {from, to, id}
-    const parentChildEdges = []; // {parent, child, id}
-    const siblingEdges = [];  // {from, to, id}
-    const spouseOf = new Map();  // personId -> [spouseId]
-    const childrenOf = new Map(); // parentId -> [childId]
-    const parentsOf = new Map();  // childId -> [parentId]
+    const spouseEdges = [];
+    const parentChildEdges = [];
+    const siblingEdges = [];
+    const spouseOf = new Map();
+    const childrenOf = new Map();
+    const parentsOf = new Map();
 
     for (const m of members) {
       spouseOf.set(m.id, []);
@@ -169,10 +164,8 @@ const Tree = (() => {
     }
 
     // ─── Identify couples ───
-    // A couple is a pair connected by a spouse edge.
-    // One person can only be in one couple for layout purposes.
-    const inCouple = new Map(); // personId -> coupleId
-    const couples = []; // [{id, a, b}]
+    const inCouple = new Map();
+    const couples = [];
 
     for (const se of spouseEdges) {
       if (!inCouple.has(se.from) && !inCouple.has(se.to)) {
@@ -183,43 +176,25 @@ const Tree = (() => {
       }
     }
 
-    // ─── Build "family units" ───
-    // A family unit is a couple (or singleton parent) and their children.
-    // Children of a couple = intersection of children of both partners,
-    // OR children of either partner if only one parent_child edge exists.
     const coupleMap = new Map(couples.map(c => [c.id, c]));
 
     function getCoupleChildren(couple) {
       const childrenA = new Set(childrenOf.get(couple.a) || []);
       const childrenB = new Set(childrenOf.get(couple.b) || []);
-      // Union of children from both partners
-      const allChildren = new Set([...childrenA, ...childrenB]);
-      return [...allChildren];
+      return [...new Set([...childrenA, ...childrenB])];
     }
 
     // ─── Assign generations ───
-    // Phase 1: Use ONLY parent-child edges to assign generations via BFS.
-    //          This avoids the problem where a spouse link (Beate→Stephan)
-    //          pulls a person to the wrong generation before the parent-child
-    //          link (Werner→Stephan) is processed.
-    // Phase 2: Align spouses to the same generation (take the max gen).
-    const generation = new Map(); // personId -> gen number
-
-    // Find true roots: people with no parents in parent_child edges
-    const roots = members.filter(m => {
-      const parents = parentsOf.get(m.id) || [];
-      return parents.length === 0;
-    });
-
-    // Phase 1: BFS using ONLY parent→child edges (no spouse traversal)
+    const generation = new Map();
+    const roots = members.filter(m => (parentsOf.get(m.id) || []).length === 0);
     const queue = [];
+
     for (const root of roots) {
       if (!generation.has(root.id)) {
         generation.set(root.id, 0);
         queue.push(root.id);
       }
     }
-
     if (queue.length === 0 && members.length > 0) {
       generation.set(members[0].id, 0);
       queue.push(members[0].id);
@@ -228,16 +203,12 @@ const Tree = (() => {
     while (queue.length > 0) {
       const personId = queue.shift();
       const gen = generation.get(personId);
-
-      // Children are next generation
       for (const childId of (childrenOf.get(personId) || [])) {
         if (!generation.has(childId)) {
           generation.set(childId, gen + 1);
           queue.push(childId);
         }
       }
-
-      // Parents are previous generation (for people reached via other paths)
       for (const parentId of (parentsOf.get(personId) || [])) {
         if (!generation.has(parentId)) {
           generation.set(parentId, gen - 1);
@@ -246,9 +217,7 @@ const Tree = (() => {
       }
     }
 
-    // Phase 2: Align spouses — each spouse gets the same generation
-    // as their partner (use the generation of whichever was already assigned
-    // via parent-child). If a spouse has no gen yet, inherit from partner.
+    // Align spouses
     for (const se of spouseEdges) {
       const genA = generation.get(se.from);
       const genB = generation.get(se.to);
@@ -257,16 +226,10 @@ const Tree = (() => {
       } else if (genB !== undefined && genA === undefined) {
         generation.set(se.from, genB);
       } else if (genA !== undefined && genB !== undefined && genA !== genB) {
-        // Both assigned but different — align to the one with parent-child links
-        // The one who is a child of someone takes priority
         const aHasParents = (parentsOf.get(se.from) || []).length > 0;
         const bHasParents = (parentsOf.get(se.to) || []).length > 0;
-        if (aHasParents && !bHasParents) {
-          generation.set(se.to, genA);
-        } else if (bHasParents && !aHasParents) {
-          generation.set(se.from, genB);
-        }
-        // If both or neither have parents, keep whichever is larger (deeper)
+        if (aHasParents && !bHasParents) generation.set(se.to, genA);
+        else if (bHasParents && !aHasParents) generation.set(se.from, genB);
         else {
           const maxGen = Math.max(genA, genB);
           generation.set(se.from, maxGen);
@@ -275,82 +238,55 @@ const Tree = (() => {
       }
     }
 
-    // Handle any remaining disconnected members
     for (const m of members) {
-      if (!generation.has(m.id)) {
-        generation.set(m.id, 0);
-      }
+      if (!generation.has(m.id)) generation.set(m.id, 0);
     }
 
-    // Normalize generations so minimum is 0
     const minGen = Math.min(...generation.values());
     if (minGen < 0) {
-      for (const [id, gen] of generation) {
-        generation.set(id, gen - minGen);
-      }
+      for (const [id, gen] of generation) generation.set(id, gen - minGen);
     }
 
-    // ─── Build layout tree (couples and their children) ───
-    // Group by generation for layout
     const maxGen = Math.max(...generation.values(), 0);
-    const genGroups = []; // genGroups[gen] = [{type:'couple'|'single', ...}]
+
+    // ─── Build generation groups ───
+    const genGroups = [];
     for (let g = 0; g <= maxGen; g++) genGroups.push([]);
+    const placed = new Set();
 
-    const placed = new Set(); // track placed members
-
-    // Place couples first
     for (const couple of couples) {
       const gen = generation.get(couple.a) || 0;
       genGroups[gen].push({
-        type: 'couple',
-        id: couple.id,
-        a: couple.a,
-        b: couple.b,
+        type: 'couple', id: couple.id, a: couple.a, b: couple.b,
         children: getCoupleChildren(couple),
       });
       placed.add(couple.a);
       placed.add(couple.b);
     }
 
-    // Place singles (not in a couple)
     for (const m of members) {
       if (!placed.has(m.id)) {
         const gen = generation.get(m.id) || 0;
-        const children = childrenOf.get(m.id) || [];
         genGroups[gen].push({
-          type: 'single',
-          id: m.id,
-          children: children,
+          type: 'single', id: m.id, children: childrenOf.get(m.id) || [],
         });
         placed.add(m.id);
       }
     }
 
-    // ─── Recursive positioning ───
-    // We position top-down. Each unit (couple or single) gets a width,
-    // and children are placed centered below.
-
-    // Calculate subtree widths
-    const unitWidth = new Map(); // unitKey -> width
-    const childPlaced = new Set(); // children that have been assigned to a parent unit
-
-    // Map each person to their "unit" for child attribution
+    // ─── Unit children + width calculation ───
     function getUnitForPerson(personId) {
-      if (inCouple.has(personId)) return inCouple.get(personId);
-      return personId;
+      return inCouple.has(personId) ? inCouple.get(personId) : personId;
     }
 
-    // Build parent-unit → children mapping
-    // Children belong to the couple their parent is in
-    const unitChildren = new Map(); // unitId -> [childId, ...]
+    const unitChildren = new Map();
+    const childPlaced = new Set();
 
     for (const couple of couples) {
       const children = getCoupleChildren(couple);
       unitChildren.set(couple.id, children);
       for (const c of children) childPlaced.add(c);
     }
-
-    // Singles with children
     for (const m of members) {
       if (!inCouple.has(m.id)) {
         const children = (childrenOf.get(m.id) || []).filter(c => !childPlaced.has(c));
@@ -361,39 +297,16 @@ const Tree = (() => {
       }
     }
 
-    // Calculate the width needed for each unit, recursively
+    const unitWidth = new Map();
     function calcWidth(unitId) {
       if (unitWidth.has(unitId)) return unitWidth.get(unitId);
-
       const children = unitChildren.get(unitId) || [];
+      const selfWidth = coupleMap.has(unitId) ? NODE_W * 2 + SPOUSE_GAP : NODE_W;
+      if (children.length === 0) { unitWidth.set(unitId, selfWidth); return selfWidth; }
 
-      // Base width of this unit
-      let selfWidth;
-      if (coupleMap.has(unitId)) {
-        selfWidth = NODE_W * 2 + SPOUSE_GAP;
-      } else {
-        selfWidth = NODE_W;
-      }
-
-      if (children.length === 0) {
-        unitWidth.set(unitId, selfWidth);
-        return selfWidth;
-      }
-
-      // Width = sum of children subtree widths + gaps
-      let childrenTotalWidth = 0;
-      for (const childId of children) {
-        const childUnit = getUnitForPerson(childId);
-        // Only count each unit once
-        const w = calcWidth(childUnit);
-        childrenTotalWidth += w;
-      }
-      // Add gaps between children
       const uniqueChildUnits = [...new Set(children.map(c => getUnitForPerson(c)))];
-      childrenTotalWidth = 0;
-      for (const cu of uniqueChildUnits) {
-        childrenTotalWidth += calcWidth(cu);
-      }
+      let childrenTotalWidth = 0;
+      for (const cu of uniqueChildUnits) childrenTotalWidth += calcWidth(cu);
       childrenTotalWidth += (uniqueChildUnits.length - 1) * SIBLING_GAP;
 
       const totalWidth = Math.max(selfWidth, childrenTotalWidth);
@@ -401,147 +314,36 @@ const Tree = (() => {
       return totalWidth;
     }
 
-    // Calculate all widths
     for (const couple of couples) calcWidth(couple.id);
-    for (const m of members) {
-      if (!inCouple.has(m.id)) calcWidth(m.id);
-    }
+    for (const m of members) { if (!inCouple.has(m.id)) calcWidth(m.id); }
 
-    // ─── Position units ───
-    // Find root units (units in generation 0, or units with no parents)
-    const rootUnits = [];
-    for (const group of genGroups[0]) {
-      rootUnits.push(group);
-    }
+    return {
+      memberMap, spouseEdges, parentChildEdges, siblingEdges,
+      spouseOf, childrenOf, parentsOf,
+      inCouple, couples, coupleMap,
+      generation, genGroups, maxGen,
+      unitChildren, unitWidth, getUnitForPerson, calcWidth,
+    };
+  }
 
-    // If there are orphan units in other generations, add them
-    const allUnitsPlaced = new Set();
-
-    function positionUnit(unit, centerX, y) {
-      if (allUnitsPlaced.has(unit.id || unit.a || unit)) return;
-      allUnitsPlaced.add(unit.id || unit.a || unit);
-
-      if (unit.type === 'couple') {
-        const couple = coupleMap.get(unit.id);
-        // Place A to the left, B to the right of center
-        const ax = centerX - (SPOUSE_GAP / 2) - (NODE_W / 2);
-        const bx = centerX + (SPOUSE_GAP / 2) + (NODE_W / 2);
-
-        positions[couple.a] = { x: ax, y: y };
-        positions[couple.b] = { x: bx, y: y };
-
-        // Couple midpoint node
-        positions[unit.id] = { x: centerX, y: y };
-
-      } else {
-        // Single person
-        positions[unit.id] = { x: centerX, y: y };
-      }
-
-      // Position children
-      const children = unit.children || [];
-      if (children.length === 0) return;
-
-      const childY = y + GEN_GAP;
-
-      // Get unique child units
-      const childUnitIds = [];
-      const seen = new Set();
-      for (const childId of children) {
-        const cu = getUnitForPerson(childId);
-        if (!seen.has(cu)) {
-          seen.add(cu);
-          childUnitIds.push(cu);
-        }
-      }
-
-      // Calculate total children width
-      let totalChildWidth = 0;
-      for (const cuId of childUnitIds) {
-        totalChildWidth += (unitWidth.get(cuId) || NODE_W);
-      }
-      totalChildWidth += (childUnitIds.length - 1) * SIBLING_GAP;
-
-      // Start from left
-      let childX = centerX - totalChildWidth / 2;
-
-      for (const cuId of childUnitIds) {
-        const w = unitWidth.get(cuId) || NODE_W;
-        const childCenterX = childX + w / 2;
-
-        // Find the unit info
-        const coupleInfo = coupleMap.get(cuId);
-        if (coupleInfo) {
-          // This child is part of a couple
-          const gen = generation.get(coupleInfo.a) || 0;
-          const unitInfo = {
-            type: 'couple',
-            id: cuId,
-            a: coupleInfo.a,
-            b: coupleInfo.b,
-            children: unitChildren.get(cuId) || [],
-          };
-          positionUnit(unitInfo, childCenterX, childY);
-        } else {
-          // Single child
-          const unitInfo = {
-            type: 'single',
-            id: cuId,
-            children: unitChildren.get(cuId) || [],
-          };
-          positionUnit(unitInfo, childCenterX, childY);
-        }
-
-        childX += w + SIBLING_GAP;
-      }
-    }
-
-    // Position all root units side by side
-    let totalRootWidth = 0;
-    for (const ru of rootUnits) {
-      const uid = ru.type === 'couple' ? ru.id : ru.id;
-      totalRootWidth += (unitWidth.get(uid) || NODE_W);
-    }
-    totalRootWidth += (rootUnits.length - 1) * SIBLING_GAP * 2;
-
-    let rootX = -totalRootWidth / 2;
-    for (const ru of rootUnits) {
-      const uid = ru.type === 'couple' ? ru.id : ru.id;
-      const w = unitWidth.get(uid) || NODE_W;
-      const cx = rootX + w / 2;
-      positionUnit(ru, cx, 0);
-      rootX += w + SIBLING_GAP * 2;
-    }
-
-    // Position any remaining unpositioned units (disconnected subtrees)
-    for (let g = 0; g <= maxGen; g++) {
-      for (const unit of genGroups[g]) {
-        const uid = unit.type === 'couple' ? unit.id : unit.id;
-        if (!allUnitsPlaced.has(uid)) {
-          rootX += SIBLING_GAP * 2;
-          const w = unitWidth.get(uid) || NODE_W;
-          positionUnit(unit, rootX + w / 2, g * GEN_GAP);
-          rootX += w;
-        }
-      }
-    }
-
-    // ─── Build Cytoscape elements ───
+  /**
+   * Build Cytoscape elements (nodes + edges) from layout base.
+   * Shared between both layout modes.
+   */
+  function buildElements(base) {
+    const elements = [];
+    const { spouseEdges, parentChildEdges, siblingEdges, inCouple, couples, coupleMap } = base;
 
     // Person nodes
     for (const m of members) {
       const displayName = `${m.firstName} ${m.lastName}`;
-      const subLabel = m.birthName || '';
-      const yearLabel = getYearLabel(m.birthDate, m.deathDate);
-
       elements.push({
         group: 'nodes',
         data: {
-          id: m.id,
-          label: displayName,
+          id: m.id, label: displayName,
           initials: getInitials(m.firstName, m.lastName),
-          subLabel: subLabel,
-          yearLabel: yearLabel,
+          subLabel: m.birthName || '',
+          yearLabel: getYearLabel(m.birthDate, m.deathDate),
           isDeceased: m.isDeceased || false,
           isPlaceholder: m.isPlaceholder || false,
         },
@@ -553,123 +355,602 @@ const Tree = (() => {
       });
     }
 
-    // Couple midpoint nodes (invisible, for edge routing)
+    // Couple midpoint nodes
     for (const couple of couples) {
       elements.push({
         group: 'nodes',
-        data: {
-          id: couple.id,
-          label: '',
-          coupleNode: true,
-        },
+        data: { id: couple.id, label: '', coupleNode: true },
         classes: 'couple-midpoint',
       });
     }
 
-    // Spouse edges: split into two halves through the couple midpoint
-    // so that each half can be independently highlighted in red.
-    // If no couple midpoint exists (shouldn't happen), fall back to direct edge.
+    // Spouse edges (split halves)
     for (const se of spouseEdges) {
       const coupleId = inCouple.get(se.from);
       if (coupleId) {
-        // Two half-edges through the midpoint
-        elements.push({
-          group: 'edges',
-          data: {
-            id: `e-spouse-${se.from}-mid`,
-            source: se.from,
-            target: coupleId,
-            relType: 'spouse',
-            spouseHalf: 'a',
-          },
-          classes: 'spouse-edge',
-        });
-        elements.push({
-          group: 'edges',
-          data: {
-            id: `e-spouse-mid-${se.to}`,
-            source: coupleId,
-            target: se.to,
-            relType: 'spouse',
-            spouseHalf: 'b',
-          },
-          classes: 'spouse-edge',
-        });
+        elements.push({ group: 'edges', data: { id: `e-spouse-${se.from}-mid`, source: se.from, target: coupleId, relType: 'spouse', spouseHalf: 'a' }, classes: 'spouse-edge' });
+        elements.push({ group: 'edges', data: { id: `e-spouse-mid-${se.to}`, source: coupleId, target: se.to, relType: 'spouse', spouseHalf: 'b' }, classes: 'spouse-edge' });
       } else {
-        // Fallback: direct edge
-        elements.push({
-          group: 'edges',
-          data: {
-            id: `e-${se.id}`,
-            source: se.from,
-            target: se.to,
-            relType: 'spouse',
-          },
-          classes: 'spouse-edge',
-        });
+        elements.push({ group: 'edges', data: { id: `e-${se.id}`, source: se.from, target: se.to, relType: 'spouse' }, classes: 'spouse-edge' });
       }
     }
 
-    // Parent-child edges: route through couple midpoint
-    // If the parent is in a couple, the edge goes from the couple midpoint to the child
-    // Otherwise from the parent directly to the child
+    // Parent-child edges
     for (const pc of parentChildEdges) {
       const parentCoupleId = inCouple.get(pc.parent);
-
       if (parentCoupleId) {
-        // Check if we already have an edge from this couple midpoint to this child
         const edgeId = `e-family-${parentCoupleId}-${pc.child}`;
-        const existing = elements.find(e => e.data?.id === edgeId);
-        if (!existing) {
-          elements.push({
-            group: 'edges',
-            data: {
-              id: edgeId,
-              source: parentCoupleId,
-              target: pc.child,
-              relType: 'parent_child',
-            },
-            classes: 'parent-child-edge',
-          });
+        if (!elements.find(e => e.data?.id === edgeId)) {
+          elements.push({ group: 'edges', data: { id: edgeId, source: parentCoupleId, target: pc.child, relType: 'parent_child' }, classes: 'parent-child-edge' });
         }
       } else {
-        elements.push({
-          group: 'edges',
-          data: {
-            id: `e-${pc.id}`,
-            source: pc.parent,
-            target: pc.child,
-            relType: 'parent_child',
-          },
-          classes: 'parent-child-edge',
-        });
+        elements.push({ group: 'edges', data: { id: `e-${pc.id}`, source: pc.parent, target: pc.child, relType: 'parent_child' }, classes: 'parent-child-edge' });
       }
     }
 
-    // Sibling edges (for display if explicit sibling relationships exist
-    // that aren't already implied by shared parents)
+    // Sibling edges
     for (const se of siblingEdges) {
-      elements.push({
-        group: 'edges',
-        data: {
-          id: `e-${se.id}`,
-          source: se.from,
-          target: se.to,
-          relType: 'sibling',
-        },
-        classes: 'sibling-edge',
+      elements.push({ group: 'edges', data: { id: `e-${se.id}`, source: se.from, target: se.to, relType: 'sibling' }, classes: 'sibling-edge' });
+    }
+
+    return elements;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  GENERATIONAL LAYOUT
+  // ═══════════════════════════════════════════════════════════
+
+  function buildGenerationalLayout(members, relationships) {
+    const base = buildLayoutBase(members, relationships);
+    const positions = {};
+    const { coupleMap, genGroups, maxGen, generation, unitChildren, unitWidth, getUnitForPerson, inCouple } = base;
+    const elements = buildElements(base);
+
+    const allUnitsPlaced = new Set();
+
+    function positionUnit(unit, centerX, y) {
+      if (allUnitsPlaced.has(unit.id)) return;
+      allUnitsPlaced.add(unit.id);
+
+      if (unit.type === 'couple') {
+        const couple = coupleMap.get(unit.id);
+        positions[couple.a] = { x: centerX - (SPOUSE_GAP / 2) - (NODE_W / 2), y };
+        positions[couple.b] = { x: centerX + (SPOUSE_GAP / 2) + (NODE_W / 2), y };
+        positions[unit.id] = { x: centerX, y };
+      } else {
+        positions[unit.id] = { x: centerX, y };
+      }
+
+      const children = unit.children || [];
+      if (children.length === 0) return;
+      const childY = y + GEN_GAP;
+
+      const childUnitIds = [];
+      const seen = new Set();
+      for (const childId of children) {
+        const cu = getUnitForPerson(childId);
+        if (!seen.has(cu)) { seen.add(cu); childUnitIds.push(cu); }
+      }
+
+      let totalChildWidth = 0;
+      for (const cuId of childUnitIds) totalChildWidth += (unitWidth.get(cuId) || NODE_W);
+      totalChildWidth += (childUnitIds.length - 1) * SIBLING_GAP;
+
+      let childX = centerX - totalChildWidth / 2;
+      for (const cuId of childUnitIds) {
+        const w = unitWidth.get(cuId) || NODE_W;
+        const childCenterX = childX + w / 2;
+        const coupleInfo = coupleMap.get(cuId);
+        if (coupleInfo) {
+          positionUnit({ type: 'couple', id: cuId, a: coupleInfo.a, b: coupleInfo.b, children: unitChildren.get(cuId) || [] }, childCenterX, childY);
+        } else {
+          positionUnit({ type: 'single', id: cuId, children: unitChildren.get(cuId) || [] }, childCenterX, childY);
+        }
+        childX += w + SIBLING_GAP;
+      }
+    }
+
+    // Position root units
+    const rootUnits = genGroups[0] || [];
+    let totalRootWidth = 0;
+    for (const ru of rootUnits) totalRootWidth += (unitWidth.get(ru.id) || NODE_W);
+    totalRootWidth += (rootUnits.length - 1) * SIBLING_GAP * 2;
+
+    let rootX = -totalRootWidth / 2;
+    for (const ru of rootUnits) {
+      const w = unitWidth.get(ru.id) || NODE_W;
+      positionUnit(ru, rootX + w / 2, 0);
+      rootX += w + SIBLING_GAP * 2;
+    }
+
+    // Disconnected subtrees
+    for (let g = 0; g <= maxGen; g++) {
+      for (const unit of genGroups[g]) {
+        if (!allUnitsPlaced.has(unit.id)) {
+          rootX += SIBLING_GAP * 2;
+          const w = unitWidth.get(unit.id) || NODE_W;
+          positionUnit(unit, rootX + w / 2, g * GEN_GAP);
+          rootX += w;
+        }
+      }
+    }
+
+    // Compute zig-zag isochrones
+    const isochroneData = computeZigZagIsochrones(members, positions, generation, base.memberMap);
+
+    return { elements, positions, isochroneData };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  TEMPORAL LAYOUT
+  // ═══════════════════════════════════════════════════════════
+
+  function buildTemporalLayout(members, relationships) {
+    const base = buildLayoutBase(members, relationships);
+    const positions = {};
+    const { coupleMap, genGroups, maxGen, generation, unitChildren, unitWidth, getUnitForPerson, inCouple, couples } = base;
+    const elements = buildElements(base);
+
+    // ─── Compute birth years ───
+    const birthYears = new Map();
+    let minYear = Infinity, maxYear = -Infinity;
+
+    for (const m of members) {
+      if (m.birthDate) {
+        const y = parseInt(m.birthDate.substring(0, 4));
+        if (!isNaN(y)) {
+          birthYears.set(m.id, y);
+          minYear = Math.min(minYear, y);
+          maxYear = Math.max(maxYear, y);
+        }
+      }
+    }
+
+    // Average birth year per generation (for fallback)
+    const genYears = new Map();
+    for (const [id, year] of birthYears) {
+      const gen = generation.get(id) || 0;
+      if (!genYears.has(gen)) genYears.set(gen, []);
+      genYears.get(gen).push(year);
+    }
+    const genAvgYear = new Map();
+    for (const [gen, years] of genYears) {
+      genAvgYear.set(gen, years.reduce((a, b) => a + b, 0) / years.length);
+    }
+
+    // Assign missing birth years from generation average
+    for (const m of members) {
+      if (!birthYears.has(m.id)) {
+        const gen = generation.get(m.id) || 0;
+        const avg = genAvgYear.get(gen);
+        birthYears.set(m.id, avg ? Math.round(avg) : (minYear !== Infinity ? minYear + gen * 25 : 1950 + gen * 25));
+      }
+    }
+
+    if (minYear === Infinity) minYear = 1920;
+    if (maxYear === -Infinity) maxYear = 2030;
+    const baseYear = Math.floor(minYear / 10) * 10;
+
+    function yearToY(year) {
+      return (year - baseYear) * YEAR_PX;
+    }
+
+    // ─── Compute Y for each member ───
+    const memberY = new Map();
+    for (const m of members) {
+      memberY.set(m.id, yearToY(birthYears.get(m.id)));
+    }
+
+    // Couples: average Y so spouses sit side-by-side
+    const coupleY = new Map();
+    for (const couple of couples) {
+      const ya = memberY.get(couple.a) || 0;
+      const yb = memberY.get(couple.b) || 0;
+      const avg = (ya + yb) / 2;
+      coupleY.set(couple.id, avg);
+      memberY.set(couple.a, avg);
+      memberY.set(couple.b, avg);
+    }
+
+    // ─── Position units (X from width calc, Y from birth year) ───
+    const allUnitsPlaced = new Set();
+
+    function positionUnit(unit, centerX) {
+      if (allUnitsPlaced.has(unit.id)) return;
+      allUnitsPlaced.add(unit.id);
+
+      let y;
+      if (unit.type === 'couple') {
+        y = coupleY.get(unit.id) || 0;
+        const couple = coupleMap.get(unit.id);
+        positions[couple.a] = { x: centerX - (SPOUSE_GAP / 2) - (NODE_W / 2), y };
+        positions[couple.b] = { x: centerX + (SPOUSE_GAP / 2) + (NODE_W / 2), y };
+        positions[unit.id] = { x: centerX, y };
+      } else {
+        y = memberY.get(unit.id) || 0;
+        positions[unit.id] = { x: centerX, y };
+      }
+
+      const children = unit.children || [];
+      if (children.length === 0) return;
+
+      const childUnitIds = [];
+      const seen = new Set();
+      for (const childId of children) {
+        const cu = getUnitForPerson(childId);
+        if (!seen.has(cu)) { seen.add(cu); childUnitIds.push(cu); }
+      }
+
+      let totalChildWidth = 0;
+      for (const cuId of childUnitIds) totalChildWidth += (unitWidth.get(cuId) || NODE_W);
+      totalChildWidth += (childUnitIds.length - 1) * SIBLING_GAP;
+
+      let childX = centerX - totalChildWidth / 2;
+      for (const cuId of childUnitIds) {
+        const w = unitWidth.get(cuId) || NODE_W;
+        const childCenterX = childX + w / 2;
+        const coupleInfo = coupleMap.get(cuId);
+        if (coupleInfo) {
+          positionUnit({ type: 'couple', id: cuId, a: coupleInfo.a, b: coupleInfo.b, children: unitChildren.get(cuId) || [] }, childCenterX);
+        } else {
+          positionUnit({ type: 'single', id: cuId, children: unitChildren.get(cuId) || [] }, childCenterX);
+        }
+        childX += w + SIBLING_GAP;
+      }
+    }
+
+    // Position root units
+    const rootUnits = genGroups[0] || [];
+    let totalRootWidth = 0;
+    for (const ru of rootUnits) totalRootWidth += (unitWidth.get(ru.id) || NODE_W);
+    totalRootWidth += (rootUnits.length - 1) * SIBLING_GAP * 2;
+
+    let rootX = -totalRootWidth / 2;
+    for (const ru of rootUnits) {
+      const w = unitWidth.get(ru.id) || NODE_W;
+      positionUnit(ru, rootX + w / 2);
+      rootX += w + SIBLING_GAP * 2;
+    }
+
+    // Disconnected subtrees
+    for (let g = 0; g <= maxGen; g++) {
+      for (const unit of genGroups[g]) {
+        if (!allUnitsPlaced.has(unit.id)) {
+          rootX += SIBLING_GAP * 2;
+          const w = unitWidth.get(unit.id) || NODE_W;
+          positionUnit(unit, rootX + w / 2);
+          rootX += w;
+        }
+      }
+    }
+
+    // Compute straight horizontal decade lines
+    const isochroneData = [];
+    const startDecade = baseYear;
+    const endDecade = Math.ceil(maxYear / 10) * 10 + 10;
+    for (let decade = startDecade; decade <= endDecade; decade += 10) {
+      isochroneData.push({ year: decade, y: yearToY(decade), type: 'straight' });
+    }
+
+    return { elements, positions, isochroneData };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  ZIG-ZAG ISOCHRONES (for generational view)
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Compute zig-zag isochrone paths that weave between members
+   * to group same-decade births, even across different generation levels.
+   */
+  function computeZigZagIsochrones(members, positions, generation, memberMap) {
+    // Collect members with birth years + positions
+    const points = [];
+    for (const m of members) {
+      if (!m.birthDate || !positions[m.id]) continue;
+      const year = parseInt(m.birthDate.substring(0, 4));
+      if (isNaN(year)) continue;
+      points.push({
+        id: m.id,
+        x: positions[m.id].x,
+        y: positions[m.id].y,
+        year,
+        decade: Math.floor(year / 10) * 10,
+        gen: generation.get(m.id) || 0,
       });
     }
 
-    return { elements, positions };
+    if (points.length < 2) return [];
+
+    // Find all decades present
+    const decades = [...new Set(points.map(p => p.decade))].sort((a, b) => a - b);
+    if (decades.length < 2) return [];
+
+    // Get X range with padding
+    const allX = points.map(p => p.x);
+    const xMin = Math.min(...allX) - NODE_W;
+    const xMax = Math.max(...allX) + NODE_W;
+
+    // For each decade boundary, build a zig-zag path
+    const isochroneData = [];
+
+    for (let i = 0; i < decades.length; i++) {
+      const decadeBoundary = decades[i] + 10; // e.g., boundary between 1950s and 1960s
+
+      // Find members near this boundary (born in decade before or after)
+      const nearbyPoints = points.filter(p =>
+        Math.abs(p.decade - decades[i]) <= 10
+      );
+      if (nearbyPoints.length === 0) continue;
+
+      // Sort by X position
+      nearbyPoints.sort((a, b) => a.x - b.x);
+
+      // Build waypoints for the zig-zag path
+      const waypoints = [];
+
+      // Start from left edge
+      // Default Y: average Y of members in the boundary decades
+      const abovePoints = nearbyPoints.filter(p => p.decade <= decades[i]);
+      const belowPoints = nearbyPoints.filter(p => p.decade > decades[i]);
+
+      let defaultY;
+      if (abovePoints.length > 0 && belowPoints.length > 0) {
+        const avgAboveY = abovePoints.reduce((s, p) => s + p.y, 0) / abovePoints.length;
+        const avgBelowY = belowPoints.reduce((s, p) => s + p.y, 0) / belowPoints.length;
+        defaultY = (avgAboveY + avgBelowY) / 2;
+      } else if (abovePoints.length > 0) {
+        defaultY = abovePoints.reduce((s, p) => s + p.y, 0) / abovePoints.length + GEN_GAP / 2;
+      } else {
+        defaultY = belowPoints.reduce((s, p) => s + p.y, 0) / belowPoints.length - GEN_GAP / 2;
+      }
+
+      waypoints.push({ x: xMin - 50, y: defaultY });
+
+      // Walk through members left to right
+      for (const p of nearbyPoints) {
+        const nodeHalfH = NODE_H / 2 + 10; // padding around node
+        if (p.year < decadeBoundary) {
+          // Member is born BEFORE the boundary → isochrone goes BELOW
+          waypoints.push({ x: p.x, y: p.y + nodeHalfH });
+        } else {
+          // Member is born AT or AFTER the boundary → isochrone goes ABOVE
+          waypoints.push({ x: p.x, y: p.y - nodeHalfH });
+        }
+      }
+
+      // End at right edge
+      waypoints.push({ x: xMax + 50, y: defaultY });
+
+      // Convert waypoints to smooth SVG path
+      const pathData = waypointsToSmoothPath(waypoints);
+
+      isochroneData.push({
+        year: decadeBoundary,
+        pathData,
+        type: 'zigzag',
+      });
+    }
+
+    return isochroneData;
   }
 
   /**
-   * Get Cytoscape stylesheet (PCB aesthetic).
+   * Convert waypoints to a smooth SVG path using cubic bezier curves.
    */
+  function waypointsToSmoothPath(waypoints) {
+    if (waypoints.length < 2) return '';
+
+    let d = `M ${waypoints[0].x} ${waypoints[0].y}`;
+
+    for (let i = 1; i < waypoints.length; i++) {
+      const prev = waypoints[i - 1];
+      const curr = waypoints[i];
+      const dx = curr.x - prev.x;
+
+      // Use cubic bezier with horizontal control points for smooth curves
+      const cx1 = prev.x + dx * 0.4;
+      const cy1 = prev.y;
+      const cx2 = curr.x - dx * 0.4;
+      const cy2 = curr.y;
+
+      d += ` C ${cx1} ${cy1}, ${cx2} ${cy2}, ${curr.x} ${curr.y}`;
+    }
+
+    return d;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  ISOCHRONE OVERLAY (SVG)
+  // ═══════════════════════════════════════════════════════════
+
+  function initIsochroneOverlay(containerId) {
+    const container = document.getElementById(containerId);
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'isochrone-overlay';
+    svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:1;';
+    container.insertBefore(svg, container.firstChild);
+    isochroneSvg = svg;
+  }
+
+  let currentIsochroneData = [];
+
+  function renderIsochrones(data) {
+    currentIsochroneData = data || [];
+    updateIsochroneTransform();
+  }
+
+  function updateIsochroneTransform() {
+    if (!isochroneSvg || !cy) return;
+
+    // Clear existing
+    while (isochroneSvg.firstChild) isochroneSvg.removeChild(isochroneSvg.firstChild);
+
+    if (currentIsochroneData.length === 0) return;
+
+    const pan = cy.pan();
+    const zoom = cy.zoom();
+    const containerW = cy.width();
+    const containerH = cy.height();
+
+    // Create a group with the viewport transform
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('transform', `translate(${pan.x}, ${pan.y}) scale(${zoom})`);
+
+    for (const iso of currentIsochroneData) {
+      if (iso.type === 'zigzag' && iso.pathData) {
+        // SVG path for zig-zag isochrone
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', iso.pathData);
+        path.setAttribute('class', 'isochrone-path');
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', '#d0d0d0');
+        path.setAttribute('stroke-width', String(1.5 / zoom)); // keep consistent screen width
+        path.setAttribute('stroke-dasharray', `${4 / zoom} ${4 / zoom}`);
+        path.setAttribute('opacity', '0.7');
+        g.appendChild(path);
+
+        // Label — place at left side of path
+        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        label.setAttribute('class', 'isochrone-label');
+        // Find leftmost waypoint from the path data
+        const firstMove = iso.pathData.match(/^M\s+([-\d.]+)\s+([-\d.]+)/);
+        if (firstMove) {
+          label.setAttribute('x', String(parseFloat(firstMove[1]) + 5));
+          label.setAttribute('y', String(parseFloat(firstMove[2]) - 5 / zoom));
+        }
+        label.setAttribute('font-size', String(11 / zoom));
+        label.setAttribute('font-family', "'IBM Plex Mono', monospace");
+        label.setAttribute('fill', '#9ca3af');
+        label.setAttribute('font-weight', '500');
+        label.textContent = String(iso.year);
+        g.appendChild(label);
+
+      } else if (iso.type === 'straight') {
+        // Get model-space X range from all member positions
+        let modelXMin = Infinity, modelXMax = -Infinity;
+        for (const m of members) {
+          const node = cy.getElementById(m.id);
+          if (node.length) {
+            const pos = node.position();
+            modelXMin = Math.min(modelXMin, pos.x);
+            modelXMax = Math.max(modelXMax, pos.x);
+          }
+        }
+        const padding = NODE_W;
+        modelXMin -= padding;
+        modelXMax += padding;
+
+        // Straight horizontal line
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', String(modelXMin));
+        line.setAttribute('y1', String(iso.y));
+        line.setAttribute('x2', String(modelXMax));
+        line.setAttribute('y2', String(iso.y));
+        line.setAttribute('stroke', '#d0d0d0');
+        line.setAttribute('stroke-width', String(1 / zoom));
+        line.setAttribute('stroke-dasharray', `${4 / zoom} ${4 / zoom}`);
+        line.setAttribute('opacity', '0.6');
+        g.appendChild(line);
+
+        // Label
+        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        label.setAttribute('x', String(modelXMin + 5));
+        label.setAttribute('y', String(iso.y - 5 / zoom));
+        label.setAttribute('font-size', String(11 / zoom));
+        label.setAttribute('font-family', "'IBM Plex Mono', monospace");
+        label.setAttribute('fill', '#9ca3af');
+        label.setAttribute('font-weight', '500');
+        label.textContent = String(iso.year);
+        g.appendChild(label);
+      }
+    }
+
+    isochroneSvg.appendChild(g);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  RENDER
+  // ═══════════════════════════════════════════════════════════
+
+  function render(memberData, relationshipData) {
+    members = memberData;
+    relationships = relationshipData;
+
+    let elements, positions, isochroneData;
+
+    if (viewMode === 'temporal') {
+      const result = buildTemporalLayout(members, relationships);
+      elements = result.elements;
+      positions = result.positions;
+      isochroneData = result.isochroneData;
+    } else {
+      const result = buildGenerationalLayout(members, relationships);
+      elements = result.elements;
+      positions = result.positions;
+      isochroneData = result.isochroneData;
+    }
+
+    cy.elements().remove();
+    cy.add(elements);
+
+    for (const [id, pos] of Object.entries(positions)) {
+      const node = cy.getElementById(id);
+      if (node.length) node.position(pos);
+    }
+
+    if (currentUserId) {
+      const node = cy.getElementById(currentUserId);
+      if (node.length) node.addClass('current-user');
+    }
+
+    cy.fit(undefined, 60);
+    cy.style().update();
+    renderIsochrones(isochroneData);
+  }
+
+  /**
+   * Animated re-render for view mode switching.
+   */
+  function renderWithAnimation() {
+    let positions, isochroneData;
+
+    if (viewMode === 'temporal') {
+      const result = buildTemporalLayout(members, relationships);
+      positions = result.positions;
+      isochroneData = result.isochroneData;
+    } else {
+      const result = buildGenerationalLayout(members, relationships);
+      positions = result.positions;
+      isochroneData = result.isochroneData;
+    }
+
+    // Hide isochrones during animation
+    renderIsochrones([]);
+
+    // Animate nodes to new positions
+    const duration = 700;
+    for (const [id, pos] of Object.entries(positions)) {
+      const node = cy.getElementById(id);
+      if (node.length) {
+        node.animate({ position: pos }, { duration, easing: 'ease-in-out-cubic' });
+      }
+    }
+
+    // After animation, fit and show isochrones
+    setTimeout(() => {
+      cy.animate({ fit: { padding: 60 }, duration: 400, easing: 'ease-out' });
+      setTimeout(() => renderIsochrones(isochroneData), 400);
+    }, duration);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  CYTOSCAPE STYLE
+  // ═══════════════════════════════════════════════════════════
+
   function getCytoscapeStyle() {
     return [
-      // ─── Default Node (IC Chip style) ───
       {
         selector: 'node',
         style: {
@@ -696,8 +977,6 @@ const Tree = (() => {
           'z-index': 10,
         },
       },
-
-      // Year label / birth name below the name
       {
         selector: 'node[yearLabel]',
         style: {
@@ -726,161 +1005,91 @@ const Tree = (() => {
           },
         },
       },
-
-      // ─── Couple Midpoint (invisible node) ───
       {
         selector: 'node.couple-midpoint',
         style: {
-          'width': COUPLE_NODE_SIZE,
-          'height': COUPLE_NODE_SIZE,
-          'background-opacity': 0,
-          'border-width': 0,
-          'label': '',
-          'events': 'no',
-          'z-index': 1,
+          'width': COUPLE_NODE_SIZE, 'height': COUPLE_NODE_SIZE,
+          'background-opacity': 0, 'border-width': 0, 'label': '',
+          'events': 'no', 'z-index': 1,
         },
       },
-
-      // ─── Deceased Node ───
       {
         selector: 'node.deceased',
         style: {
-          'border-style': 'dashed',
-          'border-color': COLORS.textMuted,
-          'color': COLORS.textMuted,
-          'background-color': COLORS.bgSecondary,
+          'border-style': 'dashed', 'border-color': COLORS.textMuted,
+          'color': COLORS.textMuted, 'background-color': COLORS.bgSecondary,
         },
       },
-
-      // ─── Placeholder (not claimed) ───
       {
         selector: 'node.placeholder',
-        style: {
-          'border-style': 'dotted',
-        },
+        style: { 'border-style': 'dotted' },
       },
-
-      // ─── Current User ───
       {
         selector: 'node.current-user',
         style: {
-          'border-color': COLORS.red,
-          'border-width': 3,
-          'background-color': '#fff5f5',
+          'border-color': COLORS.red, 'border-width': 3, 'background-color': '#fff5f5',
         },
       },
-
-      // ─── Highlighted Node (on path) ───
       {
         selector: 'node.highlighted',
         style: {
-          'border-color': COLORS.red,
-          'border-width': 3,
-          'background-color': '#fff5f5',
-          'z-index': 100,
+          'border-color': COLORS.red, 'border-width': 3,
+          'background-color': '#fff5f5', 'z-index': 100,
         },
       },
-
-      // ─── Dimmed Node (not on path) ───
       {
         selector: 'node.dimmed',
-        style: {
-          'opacity': 0.15,
-        },
+        style: { 'opacity': 0.15 },
       },
-
-      // ─── Selected Node ───
       {
         selector: 'node:selected',
-        style: {
-          'border-color': COLORS.red,
-          'border-width': 3,
-        },
+        style: { 'border-color': COLORS.red, 'border-width': 3 },
       },
-
-      // ─── Parent-Child Edge (PCB trace) ───
       {
         selector: 'edge.parent-child-edge',
         style: {
-          'width': 2,
-          'line-color': COLORS.trace,
-          'target-arrow-shape': 'none',
-          'curve-style': 'taxi',
-          'taxi-direction': 'downward',
-          'taxi-turn': 40,
-          'taxi-turn-min-distance': 20,
+          'width': 2, 'line-color': COLORS.trace, 'target-arrow-shape': 'none',
+          'curve-style': 'taxi', 'taxi-direction': 'downward',
+          'taxi-turn': 40, 'taxi-turn-min-distance': 20,
           'transition-property': 'line-color, width, opacity',
-          'transition-duration': '300ms',
-          'z-index': 5,
+          'transition-duration': '300ms', 'z-index': 5,
         },
       },
-
-      // ─── Spouse Edge (solid, blue) ───
       {
         selector: 'edge.spouse-edge',
         style: {
-          'width': 2,
-          'line-color': COLORS.spouseLine,
-          'line-style': 'solid',
-          'target-arrow-shape': 'none',
-          'curve-style': 'straight',
+          'width': 2, 'line-color': COLORS.spouseLine, 'line-style': 'solid',
+          'target-arrow-shape': 'none', 'curve-style': 'straight',
           'transition-property': 'line-color, width, opacity',
-          'transition-duration': '300ms',
-          'z-index': 5,
+          'transition-duration': '300ms', 'z-index': 5,
         },
       },
-
-      // ─── Sibling Edge (dotted, green) ───
       {
         selector: 'edge.sibling-edge',
         style: {
-          'width': 2,
-          'line-color': '#6b9e78',
-          'line-style': 'dotted',
-          'line-dash-pattern': [4, 4],
-          'target-arrow-shape': 'none',
-          'curve-style': 'straight',
-          'transition-property': 'line-color, width, opacity',
-          'transition-duration': '300ms',
-          'z-index': 5,
+          'width': 2, 'line-color': '#6b9e78', 'line-style': 'dotted',
+          'line-dash-pattern': [4, 4], 'target-arrow-shape': 'none',
+          'curve-style': 'straight', 'transition-property': 'line-color, width, opacity',
+          'transition-duration': '300ms', 'z-index': 5,
         },
       },
-
-      // ─── Highlighted Edge (red) ───
       {
         selector: 'edge.highlighted',
         style: {
-          'line-color': COLORS.red,
-          'width': 4,
-          'z-index': 100,
-          'line-style': 'solid',
+          'line-color': COLORS.red, 'width': 4, 'z-index': 100, 'line-style': 'solid',
         },
       },
-
-      // ─── Dimmed Edge ───
       {
         selector: 'edge.dimmed',
-        style: {
-          'opacity': 0.1,
-        },
+        style: { 'opacity': 0.1 },
       },
     ];
   }
 
-  /**
-   * Highlight the path between two members.
-   *
-   * Edge routing in Cytoscape:
-   * - Parent→child edges go through invisible couple-midpoint nodes.
-   * - Spouse edges are SPLIT into two halves: Person↔Midpoint and Midpoint↔Person.
-   *   This allows us to highlight only the relevant half when the path goes
-   *   through one spouse down to a child (without lighting up the other spouse's half).
-   *
-   * The BFS path returns person IDs only, so for each pair [A, B]:
-   * 1. Try direct Cytoscape edge A↔B.
-   * 2. If spouse pair: highlight both halves A↔mid and mid↔B.
-   * 3. If parent→child through midpoint: highlight A↔mid (spouse half) + mid→Child.
-   */
+  // ═══════════════════════════════════════════════════════════
+  //  HIGHLIGHT CONNECTION
+  // ═══════════════════════════════════════════════════════════
+
   function highlightConnection(fromId, toId) {
     clearHighlight();
 
@@ -893,111 +1102,74 @@ const Tree = (() => {
     highlightedFromId = fromId;
     highlightedToId = toId;
 
-    // Build a lookup: personId → coupleNodeId
     const personToCouple = new Map();
     cy.nodes('.couple-midpoint').forEach(cpNode => {
       const cpId = cpNode.id();
       const inner = cpId.substring('couple-'.length);
       if (inner.length >= 73) {
-        const memberA = inner.substring(0, 36);
-        const memberB = inner.substring(37);
-        personToCouple.set(memberA, cpId);
-        personToCouple.set(memberB, cpId);
+        personToCouple.set(inner.substring(0, 36), cpId);
+        personToCouple.set(inner.substring(37), cpId);
       }
     });
 
-    // Dim everything
     cy.elements().addClass('dimmed');
 
-    // Highlight path nodes
     for (const nodeId of pathNodeIds) {
       const node = cy.getElementById(nodeId);
-      if (node.length) {
-        node.removeClass('dimmed').addClass('highlighted');
-      }
+      if (node.length) node.removeClass('dimmed').addClass('highlighted');
     }
 
-    // Helper: highlight an edge + un-dim any couple midpoint it touches
     function highlightEdge(edge) {
       edge.removeClass('dimmed').addClass('highlighted');
-      const s = edge.data('source');
-      const t = edge.data('target');
+      const s = edge.data('source'), t = edge.data('target');
       if (s.startsWith('couple-')) cy.getElementById(s).removeClass('dimmed');
       if (t.startsWith('couple-')) cy.getElementById(t).removeClass('dimmed');
     }
 
-    // Helper: find edges between two Cytoscape node IDs
     function findEdges(idA, idB) {
       return cy.edges().filter(e => {
-        const s = e.data('source');
-        const t = e.data('target');
+        const s = e.data('source'), t = e.data('target');
         return (s === idA && t === idB) || (s === idB && t === idA);
       });
     }
 
-    // Highlight path edges
     for (const [from, to] of pathEdgePairs) {
       const coupleOfFrom = personToCouple.get(from);
       const coupleOfTo = personToCouple.get(to);
 
-      // 1) Direct edge (e.g. sibling edge, or single parent → child)
       const directEdges = findEdges(from, to);
-      if (directEdges.length > 0) {
-        directEdges.forEach(e => highlightEdge(e));
-        continue;
-      }
+      if (directEdges.length > 0) { directEdges.forEach(e => highlightEdge(e)); continue; }
 
-      // 2) Both are in the SAME couple → spouse connection
-      //    Highlight both halves: from↔mid AND mid↔to
       if (coupleOfFrom && coupleOfFrom === coupleOfTo) {
         findEdges(from, coupleOfFrom).forEach(e => highlightEdge(e));
         findEdges(coupleOfFrom, to).forEach(e => highlightEdge(e));
         continue;
       }
 
-      // 3) Parent→child through couple midpoint
-      //    BFS says [Parent, Child] but Cytoscape has Parent↔mid + mid→Child
       let found = false;
-
       if (coupleOfFrom) {
-        // Try: from's couple midpoint → to  (parent going down to child)
         const midToChild = findEdges(coupleOfFrom, to);
         if (midToChild.length > 0) {
-          // Highlight the spouse half: from → couple midpoint
           findEdges(from, coupleOfFrom).forEach(e => highlightEdge(e));
-          // Highlight the parent-child edge: couple midpoint → child
           midToChild.forEach(e => highlightEdge(e));
           found = true;
         }
       }
-
       if (!found && coupleOfTo) {
-        // Try: to's couple midpoint → from  (child going up to parent)
         const midToParent = findEdges(coupleOfTo, from);
         if (midToParent.length > 0) {
-          // Highlight the parent-child edge: couple midpoint → child(from)
           midToParent.forEach(e => highlightEdge(e));
-          // Highlight the spouse half: to → couple midpoint
           findEdges(to, coupleOfTo).forEach(e => highlightEdge(e));
-          found = true;
         }
       }
     }
 
-    // Fit to highlighted path with padding
     const pathNodes = cy.nodes().filter(n => pathNodeIds.includes(n.id()));
     if (pathNodes.length > 0) {
-      cy.animate({
-        fit: { eles: pathNodes, padding: 100 },
-        duration: 600,
-        easing: 'ease-out',
-      });
+      cy.animate({ fit: { eles: pathNodes, padding: 100 }, duration: 600, easing: 'ease-out' });
     }
   }
 
-  /**
-   * Clear all highlights.
-   */
   function clearHighlight() {
     highlightedPath = [];
     highlightedFromId = null;
@@ -1005,51 +1177,31 @@ const Tree = (() => {
     cy.elements().removeClass('dimmed highlighted');
   }
 
-  /**
-   * Center on a specific member.
-   */
+  // ═══════════════════════════════════════════════════════════
+  //  NAVIGATION
+  // ═══════════════════════════════════════════════════════════
+
   function centerOn(memberId, zoom = 1.5) {
     const node = cy.getElementById(memberId);
     if (node.length) {
-      cy.animate({
-        center: { eles: node },
-        zoom: zoom,
-        duration: 500,
-        easing: 'ease-out',
-      });
+      cy.animate({ center: { eles: node }, zoom, duration: 500, easing: 'ease-out' });
     }
   }
 
-  /**
-   * Fit the entire tree in view.
-   */
   function fitAll() {
-    cy.animate({
-      fit: { padding: 60 },
-      duration: 500,
-      easing: 'ease-out',
-    });
+    cy.animate({ fit: { padding: 60 }, duration: 500, easing: 'ease-out' });
   }
 
-  /**
-   * Get node position for external use.
-   */
   function getNodePosition(memberId) {
     const node = cy.getElementById(memberId);
-    if (node.length) {
-      return node.position();
-    }
-    return null;
+    return node.length ? node.position() : null;
   }
 
-  /**
-   * Get the Cytoscape instance.
-   */
-  function getCy() {
-    return cy;
-  }
+  function getCy() { return cy; }
 
-  // ─── Helpers ───
+  // ═══════════════════════════════════════════════════════════
+  //  HELPERS
+  // ═══════════════════════════════════════════════════════════
 
   function getInitials(firstName, lastName) {
     return `${(firstName || '?')[0]}${(lastName || '?')[0]}`.toUpperCase();
@@ -1057,15 +1209,14 @@ const Tree = (() => {
 
   function getYearLabel(birthDate, deathDate) {
     const birth = birthDate ? birthDate.substring(0, 4) : '?';
-    if (deathDate) {
-      const death = deathDate.substring(0, 4);
-      return `* ${birth}  † ${death}`;
-    }
-    if (birthDate) {
-      return `* ${birth}`;
-    }
+    if (deathDate) return `* ${birth}  \u2020 ${deathDate.substring(0, 4)}`;
+    if (birthDate) return `* ${birth}`;
     return '';
   }
+
+  // ═══════════════════════════════════════════════════════════
+  //  PUBLIC API
+  // ═══════════════════════════════════════════════════════════
 
   return {
     init,
@@ -1078,5 +1229,7 @@ const Tree = (() => {
     fitAll,
     getNodePosition,
     getCy,
+    setViewMode,
+    getViewMode,
   };
 })();

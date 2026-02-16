@@ -52,7 +52,8 @@ const Auth = (() => {
           return; // Don't proceed with normal sign-in flow
         }
         // Defer the DB lookup to avoid AbortError during auth transitions
-        setTimeout(() => resolveAndNotify(), 500);
+        // Pass the event type so the callback can distinguish TOKEN_REFRESHED
+        setTimeout(() => resolveAndNotify(event), 500);
       }
     });
 
@@ -85,9 +86,9 @@ const Auth = (() => {
     }
   }
 
-  async function resolveAndNotify() {
+  async function resolveAndNotify(event) {
     if (!currentUser) {
-      if (onAuthChangeCallback) onAuthChangeCallback(null, null);
+      if (onAuthChangeCallback) onAuthChangeCallback(null, null, event);
       return;
     }
     try {
@@ -97,7 +98,7 @@ const Auth = (() => {
       console.error('[Auth] findMemberByUid failed:', err);
       currentMember = null;
     }
-    if (onAuthChangeCallback) onAuthChangeCallback(currentUser, currentMember);
+    if (onAuthChangeCallback) onAuthChangeCallback(currentUser, currentMember, event);
   }
 
   function onAuthChange(callback) {

@@ -26,7 +26,13 @@ const App = (() => {
 
     // Register auth state listener BEFORE Auth.init() so we don't miss
     // the initial onAuthStateChange event that fires immediately
-    Auth.onAuthChange(async (user, member) => {
+    Auth.onAuthChange(async (user, member, event) => {
+      // On TOKEN_REFRESHED (e.g. tab regains focus), skip navigation
+      // to avoid closing the profile page or connection overlay.
+      if (event === 'TOKEN_REFRESHED' && isInitialized) {
+        return;
+      }
+
       if (user) {
         if (member) {
           // User has a linked profile → go to tree

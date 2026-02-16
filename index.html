@@ -200,9 +200,9 @@
         </svg>
       </button>
       <button id="btn-scan" class="icon-btn" aria-label="QR scannen">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-          <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+          <circle cx="12" cy="13" r="4"/>
         </svg>
       </button>
     </header>
@@ -296,6 +296,10 @@
       <p id="profile-birthname" class="profile-birthname"></p>
       <div id="profile-badges" class="profile-badges"></div>
 
+      <div id="profile-connection-action" style="padding:0 16px 8px;">
+        <button id="btn-show-connection" class="btn btn-primary" style="width:100%;">Wie sind wir verwandt?</button>
+      </div>
+
       <div class="profile-section">
         <h3>Details</h3>
         <div class="profile-field">
@@ -328,7 +332,6 @@
       </div>
 
       <div class="profile-actions">
-        <button id="btn-show-connection" class="btn btn-primary">Wie sind wir verwandt?</button>
         <button id="btn-show-qr" class="btn btn-secondary">QR-Code zeigen</button>
         <button id="btn-show-in-tree" class="btn btn-secondary">Im Stammbaum zeigen</button>
         <button id="btn-delete-member" class="btn btn-danger" style="display:none; margin-top:16px;">Platzhalter löschen</button>
@@ -511,12 +514,12 @@
 
   <!-- App modules -->
   <script src="js/db.js?v=18"></script>
-  <script src="js/auth.js?v=18"></script>
+  <script src="js/auth.js?v=23"></script>
   <script src="js/relationship.js?v=18"></script>
-  <script src="js/tree.js?v=22"></script>
+  <script src="js/tree.js?v=23"></script>
   <script src="js/qr.js?v=18"></script>
   <script src="js/profile.js?v=18"></script>
   <script src="js/search.js?v=18"></script>
-  <script src="js/app.js?v=18"></script>
+  <script src="js/app.js?v=23"></script>
 </body>
 </html>

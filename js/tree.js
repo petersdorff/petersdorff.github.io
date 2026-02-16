@@ -317,12 +317,33 @@ const Tree = (() => {
     for (const couple of couples) calcWidth(couple.id);
     for (const m of members) { if (!inCouple.has(m.id)) calcWidth(m.id); }
 
+    // Helper: get the earliest birth year for a unit (for sibling sorting)
+    function unitBirthYear(unitId) {
+      const couple = coupleMap.get(unitId);
+      let people;
+      if (couple) {
+        people = [memberMap.get(couple.a), memberMap.get(couple.b)].filter(Boolean);
+      } else {
+        const m = memberMap.get(unitId);
+        people = m ? [m] : [];
+      }
+      let earliest = Infinity;
+      for (const p of people) {
+        if (p.birthDate) {
+          const y = parseInt(p.birthDate.substring(0, 4));
+          if (!isNaN(y) && y < earliest) earliest = y;
+        }
+      }
+      return earliest === Infinity ? 9999 : earliest;
+    }
+
     return {
       memberMap, spouseEdges, parentChildEdges, siblingEdges,
       spouseOf, childrenOf, parentsOf,
       inCouple, couples, coupleMap,
       generation, genGroups, maxGen,
       unitChildren, unitWidth, getUnitForPerson, calcWidth,
+      unitBirthYear,
     };
   }
 
@@ -431,6 +452,9 @@ const Tree = (() => {
         const cu = getUnitForPerson(childId);
         if (!seen.has(cu)) { seen.add(cu); childUnitIds.push(cu); }
       }
+
+      // Sort siblings: oldest (smallest birth year) on left
+      childUnitIds.sort((a, b) => unitBirthYear(a) - unitBirthYear(b));
 
       let totalChildWidth = 0;
       for (const cuId of childUnitIds) totalChildWidth += (unitWidth.get(cuId) || NODE_W);
@@ -582,6 +606,9 @@ const Tree = (() => {
         const cu = getUnitForPerson(childId);
         if (!seen.has(cu)) { seen.add(cu); childUnitIds.push(cu); }
       }
+
+      // Sort siblings: oldest (smallest birth year) on left
+      childUnitIds.sort((a, b) => unitBirthYear(a) - unitBirthYear(b));
 
       let totalChildWidth = 0;
       for (const cuId of childUnitIds) totalChildWidth += (unitWidth.get(cuId) || NODE_W);

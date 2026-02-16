@@ -33,7 +33,7 @@ const Tree = (() => {
     bgSecondary: '#f8f9fa',
     textSecondary: '#6b7280',
     textMuted: '#9ca3af',
-    spouseLine: '#457b9d',
+    spouseLine: '#1a1a1a',
   };
 
   // Layout constants
@@ -643,98 +643,121 @@ const Tree = (() => {
   // ═══════════════════════════════════════════════════════════
 
   /**
-   * Compute zig-zag isochrone paths that weave between members
-   * to group same-decade births, even across different generation levels.
+   * Compute isochrone lines that sit in the gaps between generation rows.
+   * Each isochrone is a straight horizontal line at the midpoint between
+   * two consecutive generation Y-levels, labelled with a representative year.
+   *
+   * Strategy:
+   * 1. Find unique generation Y-levels and the average birth year per generation
+   * 2. Place isochrones between consecutive generation rows (in the GEN_GAP)
+   * 3. Label each isochrone with the midpoint year between the two generations
+   * 4. Also add boundary isochrones above the top and below the bottom generation
    */
   function computeZigZagIsochrones(members, positions, generation, memberMap) {
-    const PERIOD = 25; // years per isochrone interval
-
-    // Collect members with birth years + positions
-    const points = [];
+    // Collect members with birth years + positions, grouped by generation
+    const genData = new Map(); // gen → { y, years: [] }
     for (const m of members) {
-      if (!m.birthDate || !positions[m.id]) continue;
-      const year = parseInt(m.birthDate.substring(0, 4));
-      if (isNaN(year)) continue;
-      points.push({
-        id: m.id,
-        x: positions[m.id].x,
-        y: positions[m.id].y,
-        year,
-        period: Math.floor(year / PERIOD) * PERIOD,
-        gen: generation.get(m.id) || 0,
-      });
+      if (!positions[m.id]) continue;
+      const gen = generation.get(m.id);
+      if (gen === undefined) continue;
+      const y = positions[m.id].y;
+      let year = null;
+      if (m.birthDate) {
+        year = parseInt(m.birthDate.substring(0, 4));
+        if (isNaN(year)) year = null;
+      }
+      if (!genData.has(gen)) genData.set(gen, { y, years: [] });
+      if (year !== null) genData.get(gen).years.push(year);
     }
 
-    if (points.length < 2) return [];
+    if (genData.size < 2) return [];
 
-    // Find all 25-year periods present
-    const periods = [...new Set(points.map(p => p.period))].sort((a, b) => a - b);
-    if (periods.length < 2) return [];
+    // Sort generations by Y position (top to bottom)
+    const sortedGens = [...genData.entries()].sort((a, b) => a[1].y - b[1].y);
 
-    // Get X range with padding
-    const allX = points.map(p => p.x);
+    // Get X range
+    const allX = Object.values(positions).map(p => p.x);
     const xMin = Math.min(...allX) - NODE_W;
     const xMax = Math.max(...allX) + NODE_W;
 
-    // For each period boundary, build a zig-zag path
     const isochroneData = [];
 
-    for (let i = 0; i < periods.length; i++) {
-      const boundary = periods[i] + PERIOD;
+    // Add isochrone above the top generation
+    {
+      const topGen = sortedGens[0][1];
+      const topAvgYear = topGen.years.length > 0
+        ? Math.round(topGen.years.reduce((s, y) => s + y, 0) / topGen.years.length)
+        : null;
+      if (topAvgYear !== null) {
+        const isoY = topGen.y - GEN_GAP / 2;
+        const PERIOD = 25;
+        const label = Math.floor(topAvgYear / PERIOD) * PERIOD;
+        const waypoints = [{ x: xMin - 50, y: isoY }, { x: xMax + 50, y: isoY }];
+        isochroneData.push({
+          year: label,
+          y: isoY,
+          pathData: `M ${xMin - 50} ${isoY} L ${xMax + 50} ${isoY}`,
+          waypoints,
+          type: 'zigzag',
+        });
+      }
+    }
 
-      // Find members near this boundary (born in period before or after)
-      const nearbyPoints = points.filter(p =>
-        Math.abs(p.period - periods[i]) <= PERIOD
-      );
-      if (nearbyPoints.length === 0) continue;
+    // Add isochrones between consecutive generation rows
+    for (let i = 0; i < sortedGens.length - 1; i++) {
+      const upper = sortedGens[i][1];
+      const lower = sortedGens[i + 1][1];
 
-      // Sort by X position
-      nearbyPoints.sort((a, b) => a.x - b.x);
+      // Isochrone Y is midway between the two generation rows
+      const isoY = (upper.y + lower.y) / 2;
 
-      // Build waypoints for the zig-zag path
-      const waypoints = [];
+      // Label: average of the two generations' average birth years, rounded to nearest 25
+      const upperAvgYear = upper.years.length > 0
+        ? upper.years.reduce((s, y) => s + y, 0) / upper.years.length : null;
+      const lowerAvgYear = lower.years.length > 0
+        ? lower.years.reduce((s, y) => s + y, 0) / lower.years.length : null;
 
-      // Default Y: average Y of members in the boundary periods
-      const abovePoints = nearbyPoints.filter(p => p.period <= periods[i]);
-      const belowPoints = nearbyPoints.filter(p => p.period > periods[i]);
-
-      let defaultY;
-      if (abovePoints.length > 0 && belowPoints.length > 0) {
-        const avgAboveY = abovePoints.reduce((s, p) => s + p.y, 0) / abovePoints.length;
-        const avgBelowY = belowPoints.reduce((s, p) => s + p.y, 0) / belowPoints.length;
-        defaultY = (avgAboveY + avgBelowY) / 2;
-      } else if (abovePoints.length > 0) {
-        defaultY = abovePoints.reduce((s, p) => s + p.y, 0) / abovePoints.length + GEN_GAP / 2;
+      let label;
+      const PERIOD = 25;
+      if (upperAvgYear !== null && lowerAvgYear !== null) {
+        label = Math.round((upperAvgYear + lowerAvgYear) / 2 / PERIOD) * PERIOD;
+      } else if (upperAvgYear !== null) {
+        label = Math.round(upperAvgYear / PERIOD) * PERIOD + PERIOD;
+      } else if (lowerAvgYear !== null) {
+        label = Math.round(lowerAvgYear / PERIOD) * PERIOD;
       } else {
-        defaultY = belowPoints.reduce((s, p) => s + p.y, 0) / belowPoints.length - GEN_GAP / 2;
+        continue; // no year data, skip this isochrone
       }
 
-      waypoints.push({ x: xMin - 50, y: defaultY });
-
-      // Walk through members left to right
-      for (const p of nearbyPoints) {
-        const nodeHalfH = NODE_H / 2 + 10; // padding around node
-        if (p.year < boundary) {
-          // Member is born BEFORE the boundary → isochrone goes BELOW
-          waypoints.push({ x: p.x, y: p.y + nodeHalfH });
-        } else {
-          // Member is born AT or AFTER the boundary → isochrone goes ABOVE
-          waypoints.push({ x: p.x, y: p.y - nodeHalfH });
-        }
-      }
-
-      // End at right edge
-      waypoints.push({ x: xMax + 50, y: defaultY });
-
-      // Convert waypoints to smooth SVG path
-      const pathData = waypointsToSmoothPath(waypoints);
-
+      const waypoints = [{ x: xMin - 50, y: isoY }, { x: xMax + 50, y: isoY }];
       isochroneData.push({
-        year: boundary,
-        pathData,
-        waypoints, // stored for zebra fill regions
+        year: label,
+        y: isoY,
+        pathData: `M ${xMin - 50} ${isoY} L ${xMax + 50} ${isoY}`,
+        waypoints,
         type: 'zigzag',
       });
+    }
+
+    // Add isochrone below the bottom generation
+    {
+      const bottomGen = sortedGens[sortedGens.length - 1][1];
+      const bottomAvgYear = bottomGen.years.length > 0
+        ? Math.round(bottomGen.years.reduce((s, y) => s + y, 0) / bottomGen.years.length)
+        : null;
+      if (bottomAvgYear !== null) {
+        const isoY = bottomGen.y + GEN_GAP / 2;
+        const PERIOD = 25;
+        const label = Math.ceil(bottomAvgYear / PERIOD) * PERIOD;
+        const waypoints = [{ x: xMin - 50, y: isoY }, { x: xMax + 50, y: isoY }];
+        isochroneData.push({
+          year: label,
+          y: isoY,
+          pathData: `M ${xMin - 50} ${isoY} L ${xMax + 50} ${isoY}`,
+          waypoints,
+          type: 'zigzag',
+        });
+      }
     }
 
     return isochroneData;
@@ -1105,10 +1128,7 @@ const Tree = (() => {
         style: {
           'width': 2, 'line-color': COLORS.spouseLine, 'line-style': 'solid',
           'target-arrow-shape': 'none',
-          'curve-style': 'taxi',
-          'taxi-direction': 'rightward',
-          'taxi-turn': 50,
-          'taxi-turn-min-distance': 10,
+          'curve-style': 'straight',
           'transition-property': 'line-color, width, opacity',
           'transition-duration': '300ms', 'z-index': 5,
         },

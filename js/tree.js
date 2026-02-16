@@ -730,42 +730,46 @@ const Tree = (() => {
 
     // ─── 4. Compute anchor Y for each boundary ───
     //
-    // For each boundary, find the leftmost person born >= boundary
-    // (the person who should be just below the line). The line's
-    // anchor Y is placed at the top edge of that person's box.
-    // This ensures the label aligns with the generation.
+    // Strategy: find the leftmost person in each bucket. The
+    // boundary between bucket A (older) and bucket B (younger)
+    // sits at the midpoint between the bottom edge of bucket A's
+    // leftmost person and the top edge of bucket B's leftmost
+    // person.
     //
-    // Fallback: midpoint between the lowest "above" box bottom
-    // and the highest "below" box top among leftmost people.
+    // This naturally spaces the boundaries according to the
+    // leftmost column of people (usually the oldest siblings
+    // in each generation), so labels align with actual positions.
+
+    // Find leftmost person per bucket
+    const leftmostPerBucket = new Map();
+    for (const p of people) {
+      const existing = leftmostPerBucket.get(p.bucket);
+      if (!existing || p.x < existing.x) {
+        leftmostPerBucket.set(p.bucket, p);
+      }
+    }
 
     const homeY = [];
     for (let bi = 0; bi < numBounds; bi++) {
       const boundaryYear = boundaries[bi];
-      const belowPeople = people.filter(p => p.year >= boundaryYear);
-      const abovePeople = people.filter(p => p.year < boundaryYear);
+      // Bucket above = bucketsAsc[bi], bucket below = bucketsAsc[bi+1]
+      const aboveBucket = bucketsAsc[bi];
+      const belowBucket = bucketsAsc[bi + 1];
 
-      // Find the leftmost "below" person (born >= boundary)
-      let leftmostBelow = null;
-      for (const p of belowPeople) {
-        if (!leftmostBelow || p.x < leftmostBelow.x) leftmostBelow = p;
-      }
-      // Find the leftmost "above" person (born < boundary)
-      let leftmostAbove = null;
-      for (const p of abovePeople) {
-        if (!leftmostAbove || p.x < leftmostAbove.x) leftmostAbove = p;
-      }
+      const aboveRep = leftmostPerBucket.get(aboveBucket);
+      const belowRep = leftmostPerBucket.get(belowBucket);
 
-      if (leftmostBelow) {
-        // Place line at the top edge of the leftmost below person's box
-        homeY.push(leftmostBelow.y - hH);
-      } else if (leftmostAbove) {
-        homeY.push(leftmostAbove.y + hH);
+      if (aboveRep && belowRep) {
+        // Midpoint between bottom of above rep and top of below rep
+        const aboveBottom = aboveRep.y + hH;
+        const belowTop = belowRep.y - hH;
+        homeY.push((aboveBottom + belowTop) / 2);
+      } else if (belowRep) {
+        homeY.push(belowRep.y - hH - 5);
+      } else if (aboveRep) {
+        homeY.push(aboveRep.y + hH + 5);
       } else {
-        // Fallback: even spacing
-        const allYs = people.map(p => p.y);
-        const yTop = Math.min(...allYs) - hH - 10;
-        const yBottom = Math.max(...allYs) + hH + 10;
-        homeY.push(yTop + (bi + 1) * (yBottom - yTop) / (numBounds + 1));
+        homeY.push(0); // should never happen
       }
     }
 

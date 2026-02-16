@@ -759,14 +759,14 @@ const Tree = (() => {
     const yTop = spinePeople[0].y - hH;
     const yBottom = spinePeople[spinePeople.length - 1].y + hH;
 
-    // Equal band height: divide vertical extent by number of buckets
-    const numBuckets = bucketsAsc.length;
-    const bandH = (yBottom - yTop) / numBuckets;
+    // Equal band height: divide vertical extent by number of boundaries.
+    // The first boundary sits at yTop + bandH, the last at yBottom.
+    // This places the youngest boundary (e.g. 2025) at the bottom edge
+    // of the lowest person, so people at the bottom row are ABOVE it.
+    const bandH = (yBottom - yTop) / numBounds;
 
     const homeY = [];
     for (let bi = 0; bi < numBounds; bi++) {
-      // boundary[0] is first boundary (separates bucket 0 from bucket 1)
-      // It sits one bandH below yTop
       homeY.push(yTop + (bi + 1) * bandH);
     }
 

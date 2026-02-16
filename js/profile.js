@@ -351,6 +351,7 @@ const Profile = (() => {
             await DB.addRelationship(newId, targetId, 'spouse');
           } else if (relType === 'sibling') {
             await DB.addRelationship(newId, targetId, 'sibling');
+            await inheritParentsForSibling(targetId, newId);
           }
           pendingFirstRelation = null;
           App.toast('Person angelegt & verbunden', 'success');
@@ -499,6 +500,7 @@ const Profile = (() => {
             await DB.addRelationship(sourceId, newId, 'spouse');
           } else if (relType === 'sibling') {
             await DB.addRelationship(sourceId, newId, 'sibling');
+            await inheritParentsForSibling(sourceId, newId);
           }
           App.toast(`${firstName} ${lastName} angelegt & verbunden`, 'success');
         }
@@ -518,6 +520,31 @@ const Profile = (() => {
         App.toast('Fehler beim Anlegen', 'error');
       }
     });
+  }
+
+  /**
+   * When adding a sibling, copy parent relationships from the existing sibling
+   * so the new person is placed correctly in the tree layout.
+   * The layout positions people based on parent-child edges, so a sibling-only
+   * connection would leave the new person floating as a disconnected root.
+   */
+  async function inheritParentsForSibling(existingSiblingId, newSiblingId) {
+    const rels = await DB.getRelationshipsForMember(existingSiblingId);
+    for (const r of rels) {
+      if (r.type !== 'parent_child') continue;
+      // existingSibling is child → fromId is parent, toId is existingSibling
+      if (r.toId === existingSiblingId) {
+        const parentId = r.fromId;
+        // Check if this parent-child link already exists
+        const existingRels = await DB.getRelationshipsForMember(newSiblingId);
+        const alreadyLinked = existingRels.some(
+          er => er.type === 'parent_child' && er.fromId === parentId && er.toId === newSiblingId
+        );
+        if (!alreadyLinked) {
+          await DB.addRelationship(parentId, newSiblingId, 'parent_child');
+        }
+      }
+    }
   }
 
   /**
@@ -665,6 +692,9 @@ const Profile = (() => {
         await DB.addRelationship(editingMemberId, selectedRelTarget, 'spouse');
       } else if (relType === 'sibling') {
         await DB.addRelationship(editingMemberId, selectedRelTarget, 'sibling');
+        // Copy parents in both directions so both siblings share the same parents
+        await inheritParentsForSibling(editingMemberId, selectedRelTarget);
+        await inheritParentsForSibling(selectedRelTarget, editingMemberId);
       }
 
       App.toast('Verbindung hinzugefügt', 'success');

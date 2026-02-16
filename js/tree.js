@@ -1169,22 +1169,10 @@ const Tree = (() => {
    */
   function applySpouseEdgeStyle() {
     if (!cy) return;
-    const spouseEdges = cy.edges('.spouse-edge');
-    if (viewMode === 'temporal') {
-      spouseEdges.style({
-        'curve-style': 'taxi',
-        'taxi-direction': 'rightward',
-        'taxi-turn': 20,
-        'taxi-turn-min-distance': 5,
-      });
-    } else {
-      spouseEdges.style({
-        'curve-style': 'straight',
-        'taxi-direction': 'rightward',  // reset even though unused
-        'taxi-turn': 50,
-        'taxi-turn-min-distance': 10,
-      });
-    }
+    // Straight lines in both views: horizontal in generational (same Y),
+    // diagonal in temporal (different birth-year Y). Avoids broken taxi
+    // rendering and transition glitches.
+    cy.edges('.spouse-edge').style({ 'curve-style': 'straight' });
   }
 
   // ═══════════════════════════════════════════════════════════

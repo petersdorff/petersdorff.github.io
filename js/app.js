@@ -21,6 +21,7 @@ const App = (() => {
   let cachedMembers = [];
   let cachedRelationships = [];
   let isInitialized = false;
+  let authHandled = false; // Prevent duplicate auth processing on page load
 
   // ─── Initialize ───
 
@@ -34,40 +35,56 @@ const App = (() => {
     Search.init();
     Tree.init('tree-container');
 
+    // Init EmailJS
+    if (typeof emailjs !== 'undefined' && EMAILJS_PUBLIC_KEY) {
+      emailjs.init(EMAILJS_PUBLIC_KEY);
+    }
+
     // Register auth state listener BEFORE Auth.init() so we don't miss
     // the initial onAuthStateChange event that fires immediately
     Auth.onAuthChange(async (user, member, event) => {
-      // Once the app is fully initialized, ignore re-auth events
-      // (TOKEN_REFRESHED or SIGNED_IN triggered by tab regaining focus)
-      // to avoid closing the profile page or connection overlay.
-      if (isInitialized && (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN')) {
+      // Ignore token refreshes (tab regaining focus) – not a real login
+      if (event === 'TOKEN_REFRESHED') {
         return;
       }
+
+      // On page load, checkSession (event=undefined) and onAuthStateChange
+      // (event=SIGNED_IN) both fire. Deduplicate but always run approval check.
+      if (isInitialized && event === 'SIGNED_IN' && authHandled) {
+        return;
+      }
+      authHandled = true;
 
       if (user) {
         // Check approval status (admin bypasses)
         const isAdmin = user.email === ADMIN_EMAIL;
 
         if (!isAdmin) {
-          const approval = await DB.getApprovalStatus(user.id);
-          if (!approval) {
-            // No approval request exists — create one
-            const displayName = user.user_metadata?.display_name || user.email || '';
-            await DB.createApprovalRequest(user.id, user.email, displayName);
-            sendAdminNotification(user.email, displayName);
+          try {
+            const approval = await DB.getApprovalStatus(user.id);
+            if (!approval) {
+              // No approval request exists — create one
+              const displayName = user.user_metadata?.display_name || user.email || '';
+              await DB.createApprovalRequest(user.id, user.email, displayName);
+              sendAdminNotification(user.email, displayName);
+              showView('view-pending');
+              return;
+            }
+            if (approval.status === 'pending') {
+              showView('view-pending');
+              return;
+            }
+            if (approval.status === 'rejected') {
+              toast('Dein Zugang wurde abgelehnt. Bitte kontaktiere den Administrator.', 'error');
+              showView('view-pending');
+              return;
+            }
+            // approval.status === 'approved' → continue normally
+          } catch (err) {
+            console.error('[App] Approval check failed:', err);
             showView('view-pending');
             return;
           }
-          if (approval.status === 'pending') {
-            showView('view-pending');
-            return;
-          }
-          if (approval.status === 'rejected') {
-            toast('Dein Zugang wurde abgelehnt. Bitte kontaktiere den Administrator.', 'error');
-            showView('view-pending');
-            return;
-          }
-          // approval.status === 'approved' → continue normally
         }
 
         if (member) {
@@ -81,7 +98,8 @@ const App = (() => {
           showView('view-claim');
         }
       } else {
-        // Not logged in
+        // Not logged in — reset authHandled so next login triggers properly
+        authHandled = false;
         showView('view-auth');
       }
     });
@@ -257,7 +275,27 @@ const App = (() => {
       e.preventDefault(); closeMenu(); showAdminPanel();
     });
 
-    // Pending approval logout
+    // Pending approval – refresh status / logout
+    document.getElementById('btn-pending-refresh').addEventListener('click', async () => {
+      const user = Auth.getUser();
+      if (!user) return;
+      try {
+        const approval = await DB.getApprovalStatus(user.id);
+        if (approval && approval.status === 'approved') {
+          toast('Zugang freigeschaltet!');
+          // Re-trigger full auth flow
+          authHandled = false;
+          const member = Auth.getMember();
+          Auth.onAuthChange && Auth.onAuthChange(user, member, 'SIGNED_IN');
+          // Simpler: just reload
+          window.location.reload();
+        } else {
+          toast('Dein Zugang wird noch geprüft…');
+        }
+      } catch (err) {
+        toast('Fehler beim Prüfen. Bitte versuche es nochmal.', 'error');
+      }
+    });
     document.getElementById('btn-pending-logout').addEventListener('click', () => Auth.logout());
 
     // Admin panel back button

@@ -1279,7 +1279,13 @@ a {
   height: 100%;
   pointer-events: none;
   overflow: visible;
-  z-index: 1;
+  z-index: 0;
+}
+
+/* Ensure Cytoscape canvases render above isochrone overlay */
+#tree-container canvas {
+  position: relative;
+  z-index: 2;
 }
 
 .isochrone-path {

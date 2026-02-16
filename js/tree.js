@@ -541,15 +541,14 @@ const Tree = (() => {
       memberY.set(m.id, yearToY(birthYears.get(m.id)));
     }
 
-    // Couples: average Y so spouses sit side-by-side
+    // Couples: each spouse keeps their birth-year Y, midpoint at average
     const coupleY = new Map();
     for (const couple of couples) {
       const ya = memberY.get(couple.a) || 0;
       const yb = memberY.get(couple.b) || 0;
       const avg = (ya + yb) / 2;
       coupleY.set(couple.id, avg);
-      memberY.set(couple.a, avg);
-      memberY.set(couple.b, avg);
+      // DO NOT override memberY — each spouse keeps their own birth-year Y
     }
 
     // ─── Position units (X from width calc, Y from birth year) ───
@@ -561,11 +560,14 @@ const Tree = (() => {
 
       let y;
       if (unit.type === 'couple') {
-        y = coupleY.get(unit.id) || 0;
         const couple = coupleMap.get(unit.id);
-        positions[couple.a] = { x: centerX - (SPOUSE_GAP / 2) - (NODE_W / 2), y };
-        positions[couple.b] = { x: centerX + (SPOUSE_GAP / 2) + (NODE_W / 2), y };
-        positions[unit.id] = { x: centerX, y };
+        const ya = memberY.get(couple.a) || 0;
+        const yb = memberY.get(couple.b) || 0;
+        const midY = coupleY.get(unit.id) || 0;
+        positions[couple.a] = { x: centerX - (SPOUSE_GAP / 2) - (NODE_W / 2), y: ya };
+        positions[couple.b] = { x: centerX + (SPOUSE_GAP / 2) + (NODE_W / 2), y: yb };
+        positions[unit.id] = { x: centerX, y: midY };
+        y = midY; // for child positioning reference
       } else {
         y = memberY.get(unit.id) || 0;
         positions[unit.id] = { x: centerX, y };
@@ -624,12 +626,13 @@ const Tree = (() => {
       }
     }
 
-    // Compute straight horizontal decade lines
+    // Compute straight horizontal lines at 25-year intervals
+    const PERIOD = 25;
     const isochroneData = [];
-    const startDecade = baseYear;
-    const endDecade = Math.ceil(maxYear / 10) * 10 + 10;
-    for (let decade = startDecade; decade <= endDecade; decade += 10) {
-      isochroneData.push({ year: decade, y: yearToY(decade), type: 'straight' });
+    const startPeriod = Math.floor(baseYear / PERIOD) * PERIOD;
+    const endPeriod = Math.ceil(maxYear / PERIOD) * PERIOD + PERIOD;
+    for (let year = startPeriod; year <= endPeriod; year += PERIOD) {
+      isochroneData.push({ year: year, y: yearToY(year), type: 'straight' });
     }
 
     return { elements, positions, isochroneData };
@@ -644,6 +647,8 @@ const Tree = (() => {
    * to group same-decade births, even across different generation levels.
    */
   function computeZigZagIsochrones(members, positions, generation, memberMap) {
+    const PERIOD = 25; // years per isochrone interval
+
     // Collect members with birth years + positions
     const points = [];
     for (const m of members) {
@@ -655,31 +660,31 @@ const Tree = (() => {
         x: positions[m.id].x,
         y: positions[m.id].y,
         year,
-        decade: Math.floor(year / 10) * 10,
+        period: Math.floor(year / PERIOD) * PERIOD,
         gen: generation.get(m.id) || 0,
       });
     }
 
     if (points.length < 2) return [];
 
-    // Find all decades present
-    const decades = [...new Set(points.map(p => p.decade))].sort((a, b) => a - b);
-    if (decades.length < 2) return [];
+    // Find all 25-year periods present
+    const periods = [...new Set(points.map(p => p.period))].sort((a, b) => a - b);
+    if (periods.length < 2) return [];
 
     // Get X range with padding
     const allX = points.map(p => p.x);
     const xMin = Math.min(...allX) - NODE_W;
     const xMax = Math.max(...allX) + NODE_W;
 
-    // For each decade boundary, build a zig-zag path
+    // For each period boundary, build a zig-zag path
     const isochroneData = [];
 
-    for (let i = 0; i < decades.length; i++) {
-      const decadeBoundary = decades[i] + 10; // e.g., boundary between 1950s and 1960s
+    for (let i = 0; i < periods.length; i++) {
+      const boundary = periods[i] + PERIOD;
 
-      // Find members near this boundary (born in decade before or after)
+      // Find members near this boundary (born in period before or after)
       const nearbyPoints = points.filter(p =>
-        Math.abs(p.decade - decades[i]) <= 10
+        Math.abs(p.period - periods[i]) <= PERIOD
       );
       if (nearbyPoints.length === 0) continue;
 
@@ -689,10 +694,9 @@ const Tree = (() => {
       // Build waypoints for the zig-zag path
       const waypoints = [];
 
-      // Start from left edge
-      // Default Y: average Y of members in the boundary decades
-      const abovePoints = nearbyPoints.filter(p => p.decade <= decades[i]);
-      const belowPoints = nearbyPoints.filter(p => p.decade > decades[i]);
+      // Default Y: average Y of members in the boundary periods
+      const abovePoints = nearbyPoints.filter(p => p.period <= periods[i]);
+      const belowPoints = nearbyPoints.filter(p => p.period > periods[i]);
 
       let defaultY;
       if (abovePoints.length > 0 && belowPoints.length > 0) {
@@ -710,7 +714,7 @@ const Tree = (() => {
       // Walk through members left to right
       for (const p of nearbyPoints) {
         const nodeHalfH = NODE_H / 2 + 10; // padding around node
-        if (p.year < decadeBoundary) {
+        if (p.year < boundary) {
           // Member is born BEFORE the boundary → isochrone goes BELOW
           waypoints.push({ x: p.x, y: p.y + nodeHalfH });
         } else {
@@ -726,8 +730,9 @@ const Tree = (() => {
       const pathData = waypointsToSmoothPath(waypoints);
 
       isochroneData.push({
-        year: decadeBoundary,
+        year: boundary,
         pathData,
+        waypoints, // stored for zebra fill regions
         type: 'zigzag',
       });
     }
@@ -769,7 +774,7 @@ const Tree = (() => {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.id = 'isochrone-overlay';
     svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:1;';
+    svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:0;';
     container.insertBefore(svg, container.firstChild);
     isochroneSvg = svg;
   }
@@ -791,13 +796,68 @@ const Tree = (() => {
 
     const pan = cy.pan();
     const zoom = cy.zoom();
-    const containerW = cy.width();
-    const containerH = cy.height();
 
     // Create a group with the viewport transform
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('transform', `translate(${pan.x}, ${pan.y}) scale(${zoom})`);
 
+    // ─── Compute model-space X range (shared by zebra bands + lines) ───
+    let modelXMin = Infinity, modelXMax = -Infinity;
+    for (const m of members) {
+      const node = cy.getElementById(m.id);
+      if (node.length) {
+        const pos = node.position();
+        modelXMin = Math.min(modelXMin, pos.x);
+        modelXMax = Math.max(modelXMax, pos.x);
+      }
+    }
+    modelXMin -= NODE_W;
+    modelXMax += NODE_W;
+
+    // ─── Sort isochrones by year for consistent band ordering ───
+    const sorted = [...currentIsochroneData].sort((a, b) => a.year - b.year);
+
+    // ─── PASS 1: Zebra bands (fill every other gap) ───
+    for (let i = 0; i < sorted.length - 1; i++) {
+      if (i % 2 !== 0) continue; // shade even-indexed gaps only
+      const iso = sorted[i];
+      const nextIso = sorted[i + 1];
+
+      if (iso.type === 'straight' && nextIso.type === 'straight') {
+        // Simple rectangle between two horizontal lines
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', String(modelXMin - 200));
+        rect.setAttribute('y', String(iso.y));
+        rect.setAttribute('width', String(modelXMax - modelXMin + 400));
+        rect.setAttribute('height', String(nextIso.y - iso.y));
+        rect.setAttribute('fill', 'rgba(0,0,0,0.035)');
+        rect.setAttribute('stroke', 'none');
+        g.appendChild(rect);
+
+      } else if (iso.type === 'zigzag' && nextIso.type === 'zigzag'
+                 && iso.waypoints && nextIso.waypoints) {
+        // Closed region between two zigzag paths (line segments for fill)
+        const upper = iso.waypoints;
+        const lower = [...nextIso.waypoints].reverse();
+
+        let d = `M ${upper[0].x} ${upper[0].y}`;
+        for (let j = 1; j < upper.length; j++) {
+          d += ` L ${upper[j].x} ${upper[j].y}`;
+        }
+        for (let j = 0; j < lower.length; j++) {
+          d += ` L ${lower[j].x} ${lower[j].y}`;
+        }
+        d += ' Z';
+
+        const band = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        band.setAttribute('d', d);
+        band.setAttribute('fill', 'rgba(0,0,0,0.035)');
+        band.setAttribute('stroke', 'none');
+        g.appendChild(band);
+      }
+    }
+
+    // ─── PASS 2: Isochrone lines + labels ───
     for (const iso of currentIsochroneData) {
       if (iso.type === 'zigzag' && iso.pathData) {
         // SVG path for zig-zag isochrone
@@ -806,7 +866,7 @@ const Tree = (() => {
         path.setAttribute('class', 'isochrone-path');
         path.setAttribute('fill', 'none');
         path.setAttribute('stroke', '#d0d0d0');
-        path.setAttribute('stroke-width', String(1.5 / zoom)); // keep consistent screen width
+        path.setAttribute('stroke-width', String(1.5 / zoom));
         path.setAttribute('stroke-dasharray', `${4 / zoom} ${4 / zoom}`);
         path.setAttribute('opacity', '0.7');
         g.appendChild(path);
@@ -814,7 +874,6 @@ const Tree = (() => {
         // Label — place at left side of path
         const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         label.setAttribute('class', 'isochrone-label');
-        // Find leftmost waypoint from the path data
         const firstMove = iso.pathData.match(/^M\s+([-\d.]+)\s+([-\d.]+)/);
         if (firstMove) {
           label.setAttribute('x', String(parseFloat(firstMove[1]) + 5));
@@ -828,20 +887,6 @@ const Tree = (() => {
         g.appendChild(label);
 
       } else if (iso.type === 'straight') {
-        // Get model-space X range from all member positions
-        let modelXMin = Infinity, modelXMax = -Infinity;
-        for (const m of members) {
-          const node = cy.getElementById(m.id);
-          if (node.length) {
-            const pos = node.position();
-            modelXMin = Math.min(modelXMin, pos.x);
-            modelXMax = Math.max(modelXMax, pos.x);
-          }
-        }
-        const padding = NODE_W;
-        modelXMin -= padding;
-        modelXMax += padding;
-
         // Straight horizontal line
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         line.setAttribute('x1', String(modelXMin));
@@ -1059,7 +1104,11 @@ const Tree = (() => {
         selector: 'edge.spouse-edge',
         style: {
           'width': 2, 'line-color': COLORS.spouseLine, 'line-style': 'solid',
-          'target-arrow-shape': 'none', 'curve-style': 'straight',
+          'target-arrow-shape': 'none',
+          'curve-style': 'taxi',
+          'taxi-direction': 'rightward',
+          'taxi-turn': 50,
+          'taxi-turn-min-distance': 10,
           'transition-property': 'line-color, width, opacity',
           'transition-duration': '300ms', 'z-index': 5,
         },

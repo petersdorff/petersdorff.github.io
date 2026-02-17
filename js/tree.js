@@ -168,10 +168,19 @@ const Tree = (() => {
 
     for (const se of spouseEdges) {
       if (!inCouple.has(se.from) && !inCouple.has(se.to)) {
-        const coupleId = `couple-${se.from}-${se.to}`;
-        couples.push({ id: coupleId, a: se.from, b: se.to });
-        inCouple.set(se.from, coupleId);
-        inCouple.set(se.to, coupleId);
+        // Blood descendant (has parents in tree) goes left (a),
+        // married-in spouse goes right (b).
+        const fromHasParents = (parentsOf.get(se.from) || []).length > 0;
+        const toHasParents = (parentsOf.get(se.to) || []).length > 0;
+        let left = se.from, right = se.to;
+        if (!fromHasParents && toHasParents) {
+          left = se.to;
+          right = se.from;
+        }
+        const coupleId = `couple-${left}-${right}`;
+        couples.push({ id: coupleId, a: left, b: right });
+        inCouple.set(left, coupleId);
+        inCouple.set(right, coupleId);
       }
     }
 

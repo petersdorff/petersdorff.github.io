@@ -8,13 +8,23 @@ const Profile = (() => {
   let selectedRelTarget = null;
   let pendingFirstRelation = null;
 
-  // ─── German labels for relationship types ───
-  const REL_LABELS = {
-    parent: 'Elternteil',
-    child: 'Kind',
-    spouse: 'Partner',
-    sibling: 'Geschwister',
-  };
+  const REL_LABELS = Utils.REL_LABELS;
+
+  /**
+   * Create a relationship between two members based on the UI direction type.
+   * Handles parent_child direction, spouse, and sibling (with parent inheritance).
+   */
+  async function createRelationByType(fromId, toId, relType) {
+    if (relType === 'parent') {
+      await DB.addRelationship(fromId, toId, Utils.REL_TYPES.PARENT_CHILD);
+    } else if (relType === 'child') {
+      await DB.addRelationship(toId, fromId, Utils.REL_TYPES.PARENT_CHILD);
+    } else if (relType === 'spouse') {
+      await DB.addRelationship(fromId, toId, Utils.REL_TYPES.SPOUSE);
+    } else if (relType === 'sibling') {
+      await DB.addRelationship(fromId, toId, Utils.REL_TYPES.SIBLING);
+    }
+  }
 
   /**
    * Show a member's profile.
@@ -44,11 +54,15 @@ const Profile = (() => {
     birthnameEl.style.display = member.birthName ? '' : 'none';
 
     // Photo
+    photoEl.innerHTML = '';
     if (member.photo) {
-      photoEl.innerHTML = `<img src="${member.photo}" alt="${member.firstName}">`;
+      photoEl.appendChild(Utils.createEl('img', { src: member.photo, alt: member.firstName }));
     } else {
       const initials = `${member.firstName[0]}${member.lastName[0]}`.toUpperCase();
-      photoEl.innerHTML = `<span style="font-size:36px;font-weight:600;color:#9ca3af">${initials}</span>`;
+      photoEl.appendChild(Utils.createEl('span', {
+        style: { fontSize: '36px', fontWeight: '600', color: '#9ca3af' },
+        textContent: initials,
+      }));
     }
 
     // Details
@@ -59,6 +73,17 @@ const Profile = (() => {
     } else {
       deathdateRow.style.display = 'none';
     }
+    // Gender
+    const genderEl = document.getElementById('profile-gender');
+    const genderRow = document.getElementById('profile-gender-row');
+    const genderLabels = { m: 'Männlich', f: 'Weiblich', d: 'Divers' };
+    if (member.gender) {
+      genderEl.textContent = genderLabels[member.gender] || member.gender;
+      genderRow.style.display = '';
+    } else {
+      genderRow.style.display = 'none';
+    }
+
     locationEl.textContent = member.location || '—';
     contactEl.textContent = member.contact || member.email || '—';
     notesEl.textContent = member.notes || '—';
@@ -66,13 +91,12 @@ const Profile = (() => {
     // Badges
     badgesEl.innerHTML = '';
     if (member.isDeceased) {
-      badgesEl.innerHTML += '<span class="badge badge-deceased">✝ Verstorben</span>';
+      badgesEl.appendChild(Utils.createEl('span', { className: 'badge badge-deceased', textContent: '\u2020 Verstorben' }));
     }
     if (member.claimedByUid) {
-      // Claimed members are registered, never show "Platzhalter"
-      badgesEl.innerHTML += '<span class="badge">✓ Registriert</span>';
+      badgesEl.appendChild(Utils.createEl('span', { className: 'badge', textContent: '\u2713 Registriert' }));
     } else if (member.isPlaceholder) {
-      badgesEl.innerHTML += '<span class="badge badge-placeholder">◌ Platzhalter</span>';
+      badgesEl.appendChild(Utils.createEl('span', { className: 'badge badge-placeholder', textContent: '\u25cc Platzhalter' }));
     }
 
     // Everyone can edit any profile (for adding/removing relationships)
@@ -111,19 +135,11 @@ const Profile = (() => {
     section.style.display = '';
     list.innerHTML = '';
 
-    // We need member names for display
-    const memberIds = new Set();
-    for (const r of rels) {
-      memberIds.add(r.fromId);
-      memberIds.add(r.toId);
-    }
-    memberIds.delete(memberId);
-
-    // Get names from cached data (via App) or fetch individually
+    // Build name lookup from cached data to avoid N+1 queries
+    const cachedMembers = App.getCachedMembers();
     const nameMap = new Map();
-    for (const id of memberIds) {
-      const m = await DB.getMember(id);
-      if (m) nameMap.set(id, `${m.firstName} ${m.lastName}`);
+    for (const m of cachedMembers) {
+      nameMap.set(m.id, `${m.firstName} ${m.lastName}`);
     }
 
     for (const r of rels) {
@@ -141,17 +157,10 @@ const Profile = (() => {
         displayType = r.type; // 'spouse' or 'sibling'
       }
 
-      const item = document.createElement('div');
-      item.className = 'rel-item';
-      item.innerHTML = `
-        <span class="rel-type-badge ${displayType}">${REL_LABELS[displayType]}</span>
-        <span class="rel-name">${otherName}</span>
-      `;
-
-      // Click on name → go to that person's profile
-      item.querySelector('.rel-name').addEventListener('click', () => {
-        show(otherId);
-      });
+      const badge = Utils.createEl('span', { className: `rel-type-badge ${displayType}`, textContent: REL_LABELS[displayType] });
+      const nameSpan = Utils.createEl('span', { className: 'rel-name', textContent: otherName });
+      nameSpan.addEventListener('click', () => show(otherId));
+      const item = Utils.createEl('div', { className: 'rel-item' }, [badge, nameSpan]);
 
       list.appendChild(item);
     }
@@ -181,6 +190,7 @@ const Profile = (() => {
     document.getElementById('edit-phone').value = member?.phone || '';
     document.getElementById('edit-photo').value = member?.photo || '';
     document.getElementById('edit-notes').value = member?.notes || '';
+    document.getElementById('edit-gender').value = member?.gender || '';
 
     // Clear relation search
     document.getElementById('edit-rel-type').value = '';
@@ -239,15 +249,10 @@ const Profile = (() => {
     container.innerHTML = '';
 
     const nameMap = new Map();
-    const ids = new Set();
-    for (const r of rels) {
-      ids.add(r.fromId);
-      ids.add(r.toId);
-    }
-    ids.delete(memberId);
-    for (const id of ids) {
-      const m = await DB.getMember(id);
-      if (m) nameMap.set(id, `${m.firstName} ${m.lastName}`);
+    // Use cached members to avoid N+1 queries
+    const cachedMembers = App.getCachedMembers();
+    for (const m of cachedMembers) {
+      nameMap.set(m.id, `${m.firstName} ${m.lastName}`);
     }
 
     for (const r of rels) {
@@ -261,18 +266,15 @@ const Profile = (() => {
         displayType = r.type;
       }
 
-      const item = document.createElement('div');
-      item.className = 'rel-item';
-      item.innerHTML = `
-        <span class="rel-type-badge ${displayType}">${REL_LABELS[displayType]}</span>
-        <span class="rel-name">${otherName}</span>
-        <button class="rel-delete" title="Verbindung löschen">&times;</button>
-      `;
+      const badge = Utils.createEl('span', { className: `rel-type-badge ${displayType}`, textContent: REL_LABELS[displayType] });
+      const nameSpan = Utils.createEl('span', { className: 'rel-name', textContent: otherName });
+      const deleteBtn = Utils.createEl('button', { className: 'rel-delete', title: 'Verbindung l\u00f6schen', textContent: '\u00d7' });
+      const item = Utils.createEl('div', { className: 'rel-item' }, [badge, nameSpan, deleteBtn]);
 
-      item.querySelector('.rel-delete').addEventListener('click', async (e) => {
+      deleteBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const typeName = REL_LABELS[displayType];
-        if (!confirm(`Verbindung "${typeName}: ${otherName}" wirklich löschen?`)) return;
+        if (!confirm(`Verbindung "${typeName}: ${otherName}" wirklich l\u00f6schen?`)) return;
         try {
           await DB.removeRelationship(r.id);
           App.toast('Verbindung gelöscht', 'success');
@@ -292,8 +294,8 @@ const Profile = (() => {
    * Save profile changes.
    */
   async function save() {
-    const firstName = document.getElementById('edit-firstname').value.trim();
-    const lastName = document.getElementById('edit-lastname').value.trim();
+    const firstName = Utils.sanitizeInput(document.getElementById('edit-firstname').value);
+    const lastName = Utils.sanitizeInput(document.getElementById('edit-lastname').value);
     const birthDate = document.getElementById('edit-birthdate').value;
 
     if (!firstName || !lastName) {
@@ -301,30 +303,58 @@ const Profile = (() => {
       return;
     }
 
+    // Validate lengths
+    if (!Utils.validateLength(firstName, 100) || !Utils.validateLength(lastName, 100)) {
+      App.toast('Name darf maximal 100 Zeichen lang sein', 'error');
+      return;
+    }
+
     // Birthdate is mandatory for NEW persons (so they can be placed correctly)
     if (!editingMemberId && !birthDate) {
-      App.toast('Geburtsdatum ist Pflichtfeld für neue Personen', 'error');
+      App.toast('Geburtsdatum ist Pflichtfeld f\u00fcr neue Personen', 'error');
       return;
     }
 
     // New person: must have a relationship
     if (!editingMemberId && !pendingFirstRelation) {
-      App.toast('Bitte wähle eine Verbindung zu einer bestehenden Person', 'error');
+      App.toast('Bitte w\u00e4hle eine Verbindung zu einer bestehenden Person', 'error');
       return;
     }
+
+    const photoUrl = document.getElementById('edit-photo').value.trim();
+    if (photoUrl && !Utils.isValidUrl(photoUrl)) {
+      App.toast('Foto-URL muss mit https:// beginnen', 'error');
+      return;
+    }
+
+    const email = document.getElementById('edit-email').value.trim();
+    if (email && !Utils.isValidEmail(email)) {
+      App.toast('Bitte gib eine g\u00fcltige E-Mail-Adresse ein', 'error');
+      return;
+    }
+
+    const notes = document.getElementById('edit-notes').value.trim();
+    if (!Utils.validateLength(notes, 5000)) {
+      App.toast('Notizen d\u00fcrfen maximal 5000 Zeichen lang sein', 'error');
+      return;
+    }
+
+    const saveBtn = document.getElementById('btn-edit-save');
+    Utils.setButtonLoading(saveBtn, true);
 
     const data = {
       firstName,
       lastName,
-      birthName: document.getElementById('edit-birthname').value.trim(),
+      birthName: Utils.sanitizeInput(document.getElementById('edit-birthname').value),
       birthDate,
       deathDate: document.getElementById('edit-deathdate').value,
       isDeceased: !!document.getElementById('edit-deathdate').value,
-      location: document.getElementById('edit-location').value.trim(),
-      contact: document.getElementById('edit-email').value.trim(),
-      phone: document.getElementById('edit-phone').value.trim(),
-      photo: document.getElementById('edit-photo').value.trim(),
-      notes: document.getElementById('edit-notes').value.trim(),
+      location: Utils.sanitizeInput(document.getElementById('edit-location').value),
+      contact: email,
+      phone: Utils.sanitizePhone(document.getElementById('edit-phone').value),
+      photo: photoUrl,
+      notes: Utils.sanitizeInput(notes),
+      gender: document.getElementById('edit-gender').value || null,
     };
 
     try {
@@ -343,16 +373,8 @@ const Profile = (() => {
         if (pendingFirstRelation) {
           const { targetId, relType } = pendingFirstRelation;
           await cleanConflictingRelations(newId, targetId, relType);
-          if (relType === 'parent') {
-            await DB.addRelationship(newId, targetId, 'parent_child');
-          } else if (relType === 'child') {
-            await DB.addRelationship(targetId, newId, 'parent_child');
-          } else if (relType === 'spouse') {
-            await DB.addRelationship(newId, targetId, 'spouse');
-          } else if (relType === 'sibling') {
-            await DB.addRelationship(newId, targetId, 'sibling');
-            await inheritParentsForSibling(targetId, newId);
-          }
+          await createRelationByType(newId, targetId, relType);
+          if (relType === 'sibling') await inheritParentsForSibling(targetId, newId);
           pendingFirstRelation = null;
           App.toast('Person angelegt & verbunden', 'success');
         }
@@ -370,6 +392,8 @@ const Profile = (() => {
     } catch (err) {
       console.error('Save error:', err);
       App.toast('Fehler beim Speichern', 'error');
+    } finally {
+      Utils.setButtonLoading(saveBtn, false);
     }
   }
 
@@ -389,22 +413,21 @@ const Profile = (() => {
 
     if (filtered.length > 0) {
       // Show matching results
-      resultsEl.innerHTML = filtered.slice(0, 5).map(m => `
-        <div class="mini-result-item" data-id="${m.id}">
-          ${m.firstName} ${m.lastName}
-          ${m.birthDate ? ` (* ${m.birthDate.substring(0, 4)})` : ''}
-        </div>
-      `).join('');
-
-      resultsEl.querySelectorAll('.mini-result-item').forEach(el => {
-        el.addEventListener('click', () => {
-          selectedRelTarget = el.dataset.id;
-          document.getElementById('edit-rel-search').value = el.textContent.trim();
+      resultsEl.innerHTML = '';
+      for (const m of filtered.slice(0, 5)) {
+        const label = m.birthDate
+          ? `${m.firstName} ${m.lastName} (* ${m.birthDate.substring(0, 4)})`
+          : `${m.firstName} ${m.lastName}`;
+        const item = Utils.createEl('div', { className: 'mini-result-item', textContent: label });
+        item.dataset.id = m.id;
+        item.addEventListener('click', () => {
+          selectedRelTarget = m.id;
+          document.getElementById('edit-rel-search').value = label.trim();
           resultsEl.innerHTML = '';
-          // If new person mode, update pending relation display
           if (!editingMemberId) updatePendingRelDisplay();
         });
-      });
+        resultsEl.appendChild(item);
+      }
     } else {
       // No results — show inline creation form with mandatory fields
       showCreateNewPersonForm(query, false);
@@ -424,28 +447,41 @@ const Profile = (() => {
     const preLastName = parts.slice(1).join(' ') || '';
 
     const resultsEl = document.getElementById('edit-rel-results');
-    resultsEl.innerHTML = `
-      <div class="create-new-inline" style="padding:12px; border:2px solid var(--trace-faint); border-radius:4px; margin-top:4px;">
-        <p style="font-size:12px; color:var(--text-secondary); margin-bottom:10px; font-weight:600;">
-          Neue Person anlegen
-        </p>
-        <div class="input-group" style="margin-bottom:8px;">
-          <label>Vorname *</label>
-          <input type="text" id="new-rel-firstname" value="${preFirstName}" placeholder="Vorname">
-        </div>
-        <div class="input-group" style="margin-bottom:8px;">
-          <label>Nachname *</label>
-          <input type="text" id="new-rel-lastname" value="${preLastName}" placeholder="Nachname">
-        </div>
-        <div class="input-group" style="margin-bottom:10px;">
-          <label>Geburtsdatum *</label>
-          <input type="date" id="new-rel-birthdate">
-        </div>
-        <button class="btn btn-primary btn-small btn-confirm-create" style="width:100%;">Anlegen & verbinden</button>
-      </div>
-    `;
+    resultsEl.innerHTML = '';
 
-    resultsEl.querySelector('.btn-confirm-create').addEventListener('click', async () => {
+    const firstNameInput = Utils.createEl('input', { type: 'text', id: 'new-rel-firstname', placeholder: 'Vorname' });
+    firstNameInput.value = preFirstName;
+    const lastNameInput = Utils.createEl('input', { type: 'text', id: 'new-rel-lastname', placeholder: 'Nachname' });
+    lastNameInput.value = preLastName;
+    const birthDateInput = Utils.createEl('input', { type: 'date', id: 'new-rel-birthdate' });
+    const confirmBtn = Utils.createEl('button', {
+      className: 'btn btn-primary btn-small',
+      style: { width: '100%' },
+      textContent: 'Anlegen & verbinden',
+    });
+
+    const formWrap = Utils.createEl('div', {
+      className: 'create-new-inline',
+      style: { padding: '12px', border: '2px solid var(--trace-faint)', borderRadius: '4px', marginTop: '4px' },
+    }, [
+      Utils.createEl('p', {
+        style: { fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px', fontWeight: '600' },
+        textContent: 'Neue Person anlegen',
+      }),
+      Utils.createEl('div', { className: 'input-group', style: { marginBottom: '8px' } }, [
+        Utils.createEl('label', { textContent: 'Vorname *' }), firstNameInput,
+      ]),
+      Utils.createEl('div', { className: 'input-group', style: { marginBottom: '8px' } }, [
+        Utils.createEl('label', { textContent: 'Nachname *' }), lastNameInput,
+      ]),
+      Utils.createEl('div', { className: 'input-group', style: { marginBottom: '10px' } }, [
+        Utils.createEl('label', { textContent: 'Geburtsdatum *' }), birthDateInput,
+      ]),
+      confirmBtn,
+    ]);
+    resultsEl.appendChild(formWrap);
+
+    confirmBtn.addEventListener('click', async () => {
       const firstName = document.getElementById('new-rel-firstname').value.trim();
       const lastName = document.getElementById('new-rel-lastname').value.trim();
       const birthDate = document.getElementById('new-rel-birthdate').value;
@@ -492,16 +528,8 @@ const Profile = (() => {
 
         if (sourceId) {
           await cleanConflictingRelations(sourceId, newId, relType);
-          if (relType === 'parent') {
-            await DB.addRelationship(sourceId, newId, 'parent_child');
-          } else if (relType === 'child') {
-            await DB.addRelationship(newId, sourceId, 'parent_child');
-          } else if (relType === 'spouse') {
-            await DB.addRelationship(sourceId, newId, 'spouse');
-          } else if (relType === 'sibling') {
-            await DB.addRelationship(sourceId, newId, 'sibling');
-            await inheritParentsForSibling(sourceId, newId);
-          }
+          await createRelationByType(sourceId, newId, relType);
+          if (relType === 'sibling') await inheritParentsForSibling(sourceId, newId);
           App.toast(`${firstName} ${lastName} angelegt & verbunden`, 'success');
         }
 
@@ -639,14 +667,16 @@ const Profile = (() => {
     if (relType && selectedRelTarget && searchName) {
       pendingFirstRelation = { targetId: selectedRelTarget, relType };
       const label = REL_LABELS[relType] || relType;
-      displayEl.innerHTML = `
-        <div class="rel-item" style="margin-top:8px;">
-          <span class="rel-type-badge ${relType}">${label}</span>
-          <span class="rel-name">${searchName}</span>
-          <button class="rel-delete" title="Entfernen">&times;</button>
-        </div>
-      `;
-      displayEl.querySelector('.rel-delete').addEventListener('click', () => {
+
+      const badge = Utils.createEl('span', { className: `rel-type-badge ${relType}`, textContent: label });
+      const nameSpan = Utils.createEl('span', { className: 'rel-name', textContent: searchName });
+      const deleteBtn = Utils.createEl('button', { className: 'rel-delete', title: 'Entfernen', textContent: '\u00d7' });
+      const relItem = Utils.createEl('div', { className: 'rel-item', style: { marginTop: '8px' } }, [badge, nameSpan, deleteBtn]);
+
+      displayEl.innerHTML = '';
+      displayEl.appendChild(relItem);
+
+      deleteBtn.addEventListener('click', () => {
         pendingFirstRelation = null;
         selectedRelTarget = null;
         document.getElementById('edit-rel-search').value = '';
@@ -654,7 +684,6 @@ const Profile = (() => {
         displayEl.innerHTML = '';
       });
     } else {
-      // Not enough data yet — clear display but don't reset selection
       pendingFirstRelation = null;
       displayEl.innerHTML = '';
     }
@@ -682,17 +711,8 @@ const Profile = (() => {
         App.toast(`${removed} widersprüchliche Verbindung${removed > 1 ? 'en' : ''} entfernt`, 'info');
       }
 
-      if (relType === 'parent') {
-        // This member is parent of target
-        await DB.addRelationship(editingMemberId, selectedRelTarget, 'parent_child');
-      } else if (relType === 'child') {
-        // This member is child of target (target is parent)
-        await DB.addRelationship(selectedRelTarget, editingMemberId, 'parent_child');
-      } else if (relType === 'spouse') {
-        await DB.addRelationship(editingMemberId, selectedRelTarget, 'spouse');
-      } else if (relType === 'sibling') {
-        await DB.addRelationship(editingMemberId, selectedRelTarget, 'sibling');
-        // Copy parents in both directions so both siblings share the same parents
+      await createRelationByType(editingMemberId, selectedRelTarget, relType);
+      if (relType === 'sibling') {
         await inheritParentsForSibling(editingMemberId, selectedRelTarget);
         await inheritParentsForSibling(selectedRelTarget, editingMemberId);
       }
@@ -711,8 +731,6 @@ const Profile = (() => {
       App.toast('Fehler beim Hinzufügen', 'error');
     }
   }
-
-  // addNewPersonAndRelate has been replaced by showCreateNewPersonForm
 
   function getCurrentProfileId() {
     return currentProfileId;

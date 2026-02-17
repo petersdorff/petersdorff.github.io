@@ -3,11 +3,12 @@
    Basic caching for PWA offline support
    ═══════════════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'stammbaum-v1';
+const CACHE_NAME = 'stammbaum-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/css/style.css',
+  '/js/utils.js',
   '/js/app.js',
   '/js/auth.js',
   '/js/db.js',
@@ -50,10 +51,8 @@ self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (event.request.method !== 'GET') return;
 
-  // Firebase/Firestore requests: network only
-  if (url.hostname.includes('googleapis.com') ||
-      url.hostname.includes('firebaseio.com') ||
-      url.hostname.includes('gstatic.com')) {
+  // Supabase API requests: network only (never cache)
+  if (url.hostname.includes('supabase.co')) {
     return;
   }
 

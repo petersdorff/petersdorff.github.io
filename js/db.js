@@ -34,10 +34,13 @@ const DB = (() => {
     const q = query.toLowerCase().trim();
     if (!q) return getAllMembers();
 
+    // Escape PostgREST filter special characters to prevent filter syntax injection
+    const escaped = q.replace(/[%_\\,.()"']/g, ch => '\\' + ch);
+
     const { data, error } = await supabase
       .from('members')
       .select('*')
-      .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,birth_name.ilike.%${q}%`);
+      .or(`first_name.ilike.%${escaped}%,last_name.ilike.%${escaped}%,birth_name.ilike.%${escaped}%`);
     if (error) throw error;
     return data.map(mapMember);
   }
@@ -329,6 +332,7 @@ const DB = (() => {
       email: row.email || '',
       location: row.location || '',
       notes: row.notes || '',
+      gender: row.gender || null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -351,6 +355,7 @@ const DB = (() => {
     if (m.email !== undefined) row.email = m.email;
     if (m.location !== undefined) row.location = m.location;
     if (m.notes !== undefined) row.notes = m.notes;
+    if (m.gender !== undefined) row.gender = m.gender || null;
     return row;
   }
 

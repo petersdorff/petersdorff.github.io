@@ -865,18 +865,11 @@ const Tree = (() => {
   //  HIGHLIGHT CONNECTION
   // ═══════════════════════════════════════════════════════════
 
-  function highlightConnection(fromId, toId) {
-    clearHighlight();
-
-    const pathNodeIds = Relationship.getPathNodeIds(fromId, toId, members, relationships);
-    const pathEdgePairs = Relationship.getPathEdgePairs(fromId, toId, members, relationships);
-
-    if (pathNodeIds.length === 0) return;
-
-    highlightedPath = pathNodeIds;
-    highlightedFromId = fromId;
-    highlightedToId = toId;
-
+  /**
+   * Apply highlight styling to the given path nodes/edges.
+   * Shared logic between highlightConnection and restoreHighlight.
+   */
+  function applyHighlightStyling(pathNodeIds, pathEdgePairs) {
     const personToCouple = new Map();
     cy.nodes('.couple-midpoint').forEach(cpNode => {
       const cpId = cpNode.id();
@@ -894,7 +887,7 @@ const Tree = (() => {
       if (node.length) node.removeClass('dimmed').addClass('highlighted');
     }
 
-    function highlightEdge(edge) {
+    function markEdge(edge) {
       edge.removeClass('dimmed').addClass('highlighted');
       const s = edge.data('source'), t = edge.data('target');
       if (s.startsWith('couple-')) cy.getElementById(s).removeClass('dimmed');
@@ -913,11 +906,11 @@ const Tree = (() => {
       const coupleOfTo = personToCouple.get(to);
 
       const directEdges = findEdges(from, to);
-      if (directEdges.length > 0) { directEdges.forEach(e => highlightEdge(e)); continue; }
+      if (directEdges.length > 0) { directEdges.forEach(e => markEdge(e)); continue; }
 
       if (coupleOfFrom && coupleOfFrom === coupleOfTo) {
-        findEdges(from, coupleOfFrom).forEach(e => highlightEdge(e));
-        findEdges(coupleOfFrom, to).forEach(e => highlightEdge(e));
+        findEdges(from, coupleOfFrom).forEach(e => markEdge(e));
+        findEdges(coupleOfFrom, to).forEach(e => markEdge(e));
         continue;
       }
 
@@ -925,19 +918,32 @@ const Tree = (() => {
       if (coupleOfFrom) {
         const midToChild = findEdges(coupleOfFrom, to);
         if (midToChild.length > 0) {
-          findEdges(from, coupleOfFrom).forEach(e => highlightEdge(e));
-          midToChild.forEach(e => highlightEdge(e));
+          findEdges(from, coupleOfFrom).forEach(e => markEdge(e));
+          midToChild.forEach(e => markEdge(e));
           found = true;
         }
       }
       if (!found && coupleOfTo) {
         const midToParent = findEdges(coupleOfTo, from);
         if (midToParent.length > 0) {
-          midToParent.forEach(e => highlightEdge(e));
-          findEdges(to, coupleOfTo).forEach(e => highlightEdge(e));
+          midToParent.forEach(e => markEdge(e));
+          findEdges(to, coupleOfTo).forEach(e => markEdge(e));
         }
       }
     }
+  }
+
+  function highlightConnection(fromId, toId) {
+    clearHighlight();
+
+    const { nodeIds: pathNodeIds, edgePairs: pathEdgePairs } = Relationship.getPathData(fromId, toId, members, relationships);
+    if (pathNodeIds.length === 0) return;
+
+    highlightedPath = pathNodeIds;
+    highlightedFromId = fromId;
+    highlightedToId = toId;
+
+    applyHighlightStyling(pathNodeIds, pathEdgePairs);
 
     const pathNodes = cy.nodes().filter(n => pathNodeIds.includes(n.id()));
     if (pathNodes.length > 0) {
@@ -952,83 +958,13 @@ const Tree = (() => {
     cy.elements().removeClass('dimmed highlighted');
   }
 
-  /**
-   * Restore highlight styling after tab switch without re-zooming.
-   * Re-applies dimmed/highlighted classes to the current path.
-   */
   function restoreHighlight() {
     if (!cy || !highlightedFromId || !highlightedToId) return;
 
-    const fromId = highlightedFromId;
-    const toId = highlightedToId;
-    const pathNodeIds = Relationship.getPathNodeIds(fromId, toId, members, relationships);
-    const pathEdgePairs = Relationship.getPathEdgePairs(fromId, toId, members, relationships);
+    const { nodeIds: pathNodeIds, edgePairs: pathEdgePairs } = Relationship.getPathData(highlightedFromId, highlightedToId, members, relationships);
     if (pathNodeIds.length === 0) return;
 
-    const personToCouple = new Map();
-    cy.nodes('.couple-midpoint').forEach(cpNode => {
-      const cpId = cpNode.id();
-      const inner = cpId.substring('couple-'.length);
-      if (inner.length >= 73) {
-        personToCouple.set(inner.substring(0, 36), cpId);
-        personToCouple.set(inner.substring(37), cpId);
-      }
-    });
-
-    // Re-apply classes
-    cy.elements().addClass('dimmed');
-
-    for (const nodeId of pathNodeIds) {
-      const node = cy.getElementById(nodeId);
-      if (node.length) node.removeClass('dimmed').addClass('highlighted');
-    }
-
-    function highlightEdge(edge) {
-      edge.removeClass('dimmed').addClass('highlighted');
-      const s = edge.data('source'), t = edge.data('target');
-      if (s.startsWith('couple-')) cy.getElementById(s).removeClass('dimmed');
-      if (t.startsWith('couple-')) cy.getElementById(t).removeClass('dimmed');
-    }
-
-    function findEdges(idA, idB) {
-      return cy.edges().filter(e => {
-        const s = e.data('source'), t = e.data('target');
-        return (s === idA && t === idB) || (s === idB && t === idA);
-      });
-    }
-
-    for (const [from, to] of pathEdgePairs) {
-      const coupleOfFrom = personToCouple.get(from);
-      const coupleOfTo = personToCouple.get(to);
-
-      const directEdges = findEdges(from, to);
-      if (directEdges.length > 0) { directEdges.forEach(e => highlightEdge(e)); continue; }
-
-      if (coupleOfFrom && coupleOfFrom === coupleOfTo) {
-        findEdges(from, coupleOfFrom).forEach(e => highlightEdge(e));
-        findEdges(coupleOfFrom, to).forEach(e => highlightEdge(e));
-        continue;
-      }
-
-      let found = false;
-      if (coupleOfFrom) {
-        const midToChild = findEdges(coupleOfFrom, to);
-        if (midToChild.length > 0) {
-          findEdges(from, coupleOfFrom).forEach(e => highlightEdge(e));
-          midToChild.forEach(e => highlightEdge(e));
-          found = true;
-        }
-      }
-      if (!found && coupleOfTo) {
-        const midToParent = findEdges(coupleOfTo, from);
-        if (midToParent.length > 0) {
-          midToParent.forEach(e => highlightEdge(e));
-          findEdges(to, coupleOfTo).forEach(e => highlightEdge(e));
-        }
-      }
-    }
-
-    // NO zoom animation — just update styles in place
+    applyHighlightStyling(pathNodeIds, pathEdgePairs);
     cy.style().update();
   }
 
@@ -1051,8 +987,6 @@ const Tree = (() => {
     const node = cy.getElementById(memberId);
     return node.length ? node.position() : null;
   }
-
-  function getCy() { return cy; }
 
   // ═══════════════════════════════════════════════════════════
   //  HELPERS
@@ -1084,7 +1018,6 @@ const Tree = (() => {
     centerOn,
     fitAll,
     getNodePosition,
-    getCy,
     setViewMode,
     getViewMode,
   };

@@ -230,8 +230,11 @@ const App = (() => {
       }
     });
     document.getElementById('btn-edit-save').addEventListener('click', Profile.save);
+    const debouncedRelSearch = Utils.debounce((query) => {
+      Profile.searchForRelation(query);
+    }, 200);
     document.getElementById('edit-rel-search').addEventListener('input', (e) => {
-      Profile.searchForRelation(e.target.value.trim());
+      debouncedRelSearch(e.target.value.trim());
     });
     document.getElementById('btn-add-relation').addEventListener('click', Profile.addRelation);
     // Rel type change — update pending display for new person mode
@@ -283,11 +286,6 @@ const App = (() => {
         const approval = await DB.getApprovalStatus(user.id);
         if (approval && approval.status === 'approved') {
           toast('Zugang freigeschaltet!');
-          // Re-trigger full auth flow
-          authHandled = false;
-          const member = Auth.getMember();
-          Auth.onAuthChange && Auth.onAuthChange(user, member, 'SIGNED_IN');
-          // Simpler: just reload
           window.location.reload();
         } else {
           toast('Dein Zugang wird noch geprüft…');
@@ -324,11 +322,17 @@ const App = (() => {
     const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
     if (!email || !password) {
-      toast('Bitte fülle alle Felder aus', 'error');
+      toast('Bitte f\u00fclle alle Felder aus', 'error');
       return;
     }
-    const result = await Auth.loginWithEmail(email, password);
-    if (!result.success) toast(result.error, 'error');
+    const btn = document.getElementById('btn-login');
+    Utils.setButtonLoading(btn, true);
+    try {
+      const result = await Auth.loginWithEmail(email, password);
+      if (!result.success) toast(result.error, 'error');
+    } finally {
+      Utils.setButtonLoading(btn, false);
+    }
   }
 
   async function handleRegister() {
@@ -338,13 +342,17 @@ const App = (() => {
     const password = document.getElementById('reg-password').value;
 
     if (!firstName || !lastName || !email || !password) {
-      toast('Bitte fülle alle Pflichtfelder aus', 'error');
+      toast('Bitte f\u00fclle alle Pflichtfelder aus', 'error');
       return;
     }
+
+    const btn = document.getElementById('btn-register');
+    Utils.setButtonLoading(btn, true);
 
     const result = await Auth.registerWithEmail(email, password, `${firstName} ${lastName}`);
     if (!result.success) {
       toast(result.error, 'error');
+      Utils.setButtonLoading(btn, false);
       return;
     }
 
@@ -358,9 +366,9 @@ const App = (() => {
     // but if email confirmation is required, we try to sign in explicitly.
     // The onAuthStateChange listener will handle the rest.
     const loginResult = await Auth.loginWithEmail(email, password);
+    Utils.setButtonLoading(btn, false);
     if (!loginResult.success) {
-      // If auto-login fails (e.g. email confirmation required), show message
-      toast('Registrierung erfolgreich! Bitte bestätige deine E-Mail oder melde dich an.', 'success');
+      toast('Registrierung erfolgreich! Bitte best\u00e4tige deine E-Mail oder melde dich an.', 'success');
     } else {
       toast('Willkommen! Registrierung erfolgreich.', 'success');
     }
@@ -424,60 +432,60 @@ const App = (() => {
 
   // ─── Claim Handlers ───
 
-  let claimSearchTimeout = null;
+  const debouncedClaimSearch = Utils.debounce(async (query) => {
+    const resultsEl = document.getElementById('claim-results');
+    if (query.length < 2) {
+      resultsEl.innerHTML = '';
+      return;
+    }
 
-  async function handleClaimSearch() {
-    clearTimeout(claimSearchTimeout);
-    const query = document.getElementById('claim-search').value.trim();
+    const members = await DB.searchMembers(query);
+    const unclaimed = members.filter(m => !m.claimedByUid || m.isPlaceholder);
 
-    claimSearchTimeout = setTimeout(async () => {
-      const resultsEl = document.getElementById('claim-results');
-      if (query.length < 2) {
-        resultsEl.innerHTML = '';
-        return;
+    resultsEl.innerHTML = '';
+
+    if (unclaimed.length === 0 && query.length >= 2) {
+      resultsEl.appendChild(Utils.createEl('div', {
+        style: { padding: '12px', color: 'var(--text-muted)', textAlign: 'center', fontSize: '13px' },
+        textContent: 'Niemand mit diesem Namen gefunden.',
+      }));
+    }
+
+    for (const m of unclaimed.slice(0, 5)) {
+      const yearInfo = m.birthDate ? `* ${m.birthDate.substring(0, 4)}` : '';
+      const loc = m.location || '';
+      const info = [yearInfo, loc].filter(Boolean).join(' \u00b7 ');
+
+      const nameEl = Utils.createEl('div', { className: 'name', textContent: `${m.firstName} ${m.lastName}` });
+      const innerDiv = Utils.createEl('div', {}, [nameEl]);
+      if (info) {
+        innerDiv.appendChild(Utils.createEl('div', { className: 'info', textContent: info }));
       }
 
-      const members = await DB.searchMembers(query);
-      const unclaimed = members.filter(m => !m.claimedByUid || m.isPlaceholder);
-
-      resultsEl.innerHTML = unclaimed.slice(0, 5).map(m => {
-        const yearInfo = m.birthDate ? `* ${m.birthDate.substring(0, 4)}` : '';
-        const loc = m.location || '';
-        const info = [yearInfo, loc].filter(Boolean).join(' · ');
-
-        return `
-          <div class="claim-result-item" data-id="${m.id}">
-            <div>
-              <div class="name">${m.firstName} ${m.lastName}</div>
-              ${info ? `<div class="info">${info}</div>` : ''}
-            </div>
-          </div>
-        `;
-      }).join('');
-
-      if (unclaimed.length === 0 && query.length >= 2) {
-        resultsEl.innerHTML = `
-          <div style="padding:12px; color:var(--text-muted); text-align:center; font-size:13px;">
-            Niemand mit diesem Namen gefunden.
-          </div>
-        `;
-      }
-
-      // Click handler to claim
-      resultsEl.querySelectorAll('.claim-result-item').forEach(el => {
-        el.addEventListener('click', async () => {
-          const memberId = el.dataset.id;
+      const item = Utils.createEl('div', { className: 'claim-result-item' }, [innerDiv]);
+      item.dataset.id = m.id;
+      item.addEventListener('click', async () => {
+        try {
           const user = Auth.getUser();
-          await DB.claimMember(memberId, user.id);
-          const member = await DB.getMember(memberId);
+          await DB.claimMember(m.id, user.id);
+          const member = await DB.getMember(m.id);
           Auth.setMember(member);
-          Tree.setCurrentUser(memberId);
-          toast('Profil erfolgreich verknüpft!', 'success');
+          Tree.setCurrentUser(m.id);
+          toast('Profil erfolgreich verkn\u00fcpft!', 'success');
           await loadTree();
           showView('view-main');
-        });
+        } catch (err) {
+          console.error('Claim error:', err);
+          toast('Fehler beim Verkn\u00fcpfen', 'error');
+        }
       });
-    }, 250);
+      resultsEl.appendChild(item);
+    }
+  }, 250);
+
+  function handleClaimSearch() {
+    const query = document.getElementById('claim-search').value.trim();
+    debouncedClaimSearch(query);
   }
 
   async function handleClaimNew() {
@@ -609,7 +617,9 @@ const App = (() => {
       emailEl.textContent = user?.email || '';
 
       if (member.photo) {
-        photoEl.innerHTML = `<img src="${member.photo}" alt="">`;
+        photoEl.innerHTML = '';
+        const img = Utils.createEl('img', { src: member.photo, alt: '' });
+        photoEl.appendChild(img);
       } else {
         const initials = `${member.firstName[0]}${member.lastName[0]}`.toUpperCase();
         photoEl.textContent = initials;
@@ -698,14 +708,13 @@ const App = (() => {
     const dnaEl = document.getElementById('conn-dna');
     const pathEl = document.getElementById('conn-path');
 
-    personA.innerHTML = `
-      <div class="conn-avatar">${getInitials(memberA)}</div>
-      <div class="conn-name">${memberA.firstName}</div>
-    `;
-    personB.innerHTML = `
-      <div class="conn-avatar">${getInitials(memberB)}</div>
-      <div class="conn-name">${memberB.firstName}</div>
-    `;
+    personA.innerHTML = '';
+    personA.appendChild(Utils.createEl('div', { className: 'conn-avatar', textContent: getInitials(memberA) }));
+    personA.appendChild(Utils.createEl('div', { className: 'conn-name', textContent: memberA.firstName }));
+
+    personB.innerHTML = '';
+    personB.appendChild(Utils.createEl('div', { className: 'conn-avatar', textContent: getInitials(memberB) }));
+    personB.appendChild(Utils.createEl('div', { className: 'conn-name', textContent: memberB.firstName }));
 
     const ancestorEl = document.getElementById('conn-ancestor');
 
@@ -858,40 +867,47 @@ const App = (() => {
 
       listEl.innerHTML = '';
       for (const req of pending) {
-        const card = document.createElement('div');
-        card.className = 'admin-user-card';
-        card.innerHTML = `
-          <div class="user-name">${req.display_name || 'Unbekannt'}</div>
-          <div class="user-email">${req.email}</div>
-          <div class="user-date" style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
-            Registriert: ${new Date(req.created_at).toLocaleDateString('de-DE')}
-          </div>
-          <div class="admin-actions">
-            <button class="btn btn-primary btn-small btn-approve">Freigeben</button>
-            <button class="btn btn-danger btn-small btn-reject">Ablehnen</button>
-          </div>
-        `;
+        const displayName = req.display_name || 'Unbekannt';
+        const dateStr = new Date(req.created_at).toLocaleDateString('de-DE');
 
-        card.querySelector('.btn-approve').addEventListener('click', async () => {
+        const btnApprove = Utils.createEl('button', { className: 'btn btn-primary btn-small', textContent: 'Freigeben' });
+        const btnReject = Utils.createEl('button', { className: 'btn btn-danger btn-small', textContent: 'Ablehnen' });
+
+        const card = Utils.createEl('div', { className: 'admin-user-card' }, [
+          Utils.createEl('div', { className: 'user-name', textContent: displayName }),
+          Utils.createEl('div', { className: 'user-email', textContent: req.email }),
+          Utils.createEl('div', {
+            className: 'user-date',
+            style: { fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' },
+            textContent: `Registriert: ${dateStr}`,
+          }),
+          Utils.createEl('div', { className: 'admin-actions' }, [btnApprove, btnReject]),
+        ]);
+
+        btnApprove.addEventListener('click', async () => {
           const adminUser = Auth.getUser();
           await DB.approveUser(req.id, adminUser.id);
-          toast(`${req.display_name || req.email} freigeschaltet`, 'success');
-          showAdminPanel(); // Refresh list
+          toast(`${displayName} freigeschaltet`, 'success');
+          showAdminPanel();
         });
 
-        card.querySelector('.btn-reject').addEventListener('click', async () => {
-          if (!confirm(`${req.display_name || req.email} wirklich ablehnen?`)) return;
+        btnReject.addEventListener('click', async () => {
+          if (!confirm(`${displayName} wirklich ablehnen?`)) return;
           const adminUser = Auth.getUser();
           await DB.rejectUser(req.id, adminUser.id);
-          toast(`${req.display_name || req.email} abgelehnt`, 'info');
-          showAdminPanel(); // Refresh list
+          toast(`${displayName} abgelehnt`, 'info');
+          showAdminPanel();
         });
 
         listEl.appendChild(card);
       }
     } catch (err) {
       console.error('Admin panel error:', err);
-      listEl.innerHTML = '<p style="color:var(--red);font-size:13px;">Fehler beim Laden.</p>';
+      listEl.innerHTML = '';
+      listEl.appendChild(Utils.createEl('p', {
+        style: { color: 'var(--red)', fontSize: '13px' },
+        textContent: 'Fehler beim Laden.',
+      }));
     }
   }
 
@@ -930,11 +946,21 @@ const App = (() => {
   // ─── Start ───
   document.addEventListener('DOMContentLoaded', init);
 
+  function getCachedMembers() {
+    return cachedMembers;
+  }
+
+  function getCachedRelationships() {
+    return cachedRelationships;
+  }
+
   return {
     showView,
     toast,
     refreshTree,
     loadTree,
     showConnectionOverlay,
+    getCachedMembers,
+    getCachedRelationships,
   };
 })();

@@ -343,6 +343,10 @@
           <span class="field-label">Sterbedatum</span>
           <span class="field-value" id="profile-deathdate">—</span>
         </div>
+        <div class="profile-field" id="profile-gender-row">
+          <span class="field-label">Geschlecht</span>
+          <span class="field-value" id="profile-gender">—</span>
+        </div>
         <div class="profile-field">
           <span class="field-label">Wohnort</span>
           <span class="field-value" id="profile-location">—</span>
@@ -398,6 +402,15 @@
         <div class="input-group">
           <label>Geburtsname</label>
           <input type="text" id="edit-birthname" placeholder="geb. ...">
+        </div>
+        <div class="input-group">
+          <label>Geschlecht</label>
+          <select id="edit-gender">
+            <option value="">— Nicht angegeben —</option>
+            <option value="m">Männlich</option>
+            <option value="f">Weiblich</option>
+            <option value="d">Divers</option>
+          </select>
         </div>
         <div class="input-group">
           <label>Geburtsdatum</label>
@@ -551,6 +564,7 @@
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
   <!-- App modules -->
+  <script src="js/utils.js?v=1"></script>
   <script src="js/db.js?v=19"></script>
   <script src="js/auth.js?v=23"></script>
   <script src="js/relationship.js?v=18"></script>

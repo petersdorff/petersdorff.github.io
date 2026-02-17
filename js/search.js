@@ -3,18 +3,18 @@
    ═══════════════════════════════════════════════════════════ */
 
 const Search = (() => {
-  let searchTimeout = null;
   let allMembers = [];
+  let debouncedSearch = null;
 
   function init() {
     const input = document.getElementById('search-input');
-    const resultsEl = document.getElementById('search-results');
+
+    debouncedSearch = Utils.debounce((query) => {
+      performSearch(query);
+    }, 200);
 
     input.addEventListener('input', () => {
-      clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(() => {
-        performSearch(input.value.trim());
-      }, 200);
+      debouncedSearch(input.value.trim());
     });
 
     input.addEventListener('focus', () => {
@@ -57,42 +57,43 @@ const Search = (() => {
       return full.includes(q);
     }).slice(0, 8);
 
+    resultsEl.innerHTML = '';
+
     if (matches.length === 0) {
-      resultsEl.innerHTML = `
-        <div class="search-result-item" style="justify-content:center; color:var(--text-muted); cursor:default;">
-          Keine Ergebnisse für "${query}"
-        </div>
-      `;
+      const noResult = Utils.createEl('div', {
+        className: 'search-result-item',
+        style: { justifyContent: 'center', color: 'var(--text-muted)', cursor: 'default' },
+      });
+      noResult.appendChild(document.createTextNode('Keine Ergebnisse f\u00fcr "'));
+      noResult.appendChild(document.createTextNode(query));
+      noResult.appendChild(document.createTextNode('"'));
+      resultsEl.appendChild(noResult);
       showResults();
       return;
     }
 
-    resultsEl.innerHTML = matches.map(m => {
+    for (const m of matches) {
       const initials = `${m.firstName[0]}${m.lastName[0]}`.toUpperCase();
       const yearInfo = m.birthDate ? `* ${m.birthDate.substring(0, 4)}` : '';
       const locationInfo = m.location || '';
-      const info = [yearInfo, locationInfo].filter(Boolean).join(' · ');
+      const info = [yearInfo, locationInfo].filter(Boolean).join(' \u00b7 ');
 
-      return `
-        <div class="search-result-item" data-id="${m.id}">
-          <div class="result-avatar">${initials}</div>
-          <div>
-            <div class="result-name">${m.firstName} ${m.lastName}</div>
-            ${info ? `<div class="result-info">${info}</div>` : ''}
-          </div>
-        </div>
-      `;
-    }).join('');
+      const avatar = Utils.createEl('div', { className: 'result-avatar', textContent: initials });
+      const name = Utils.createEl('div', { className: 'result-name', textContent: `${m.firstName} ${m.lastName}` });
+      const infoWrap = Utils.createEl('div', {}, [name]);
+      if (info) {
+        infoWrap.appendChild(Utils.createEl('div', { className: 'result-info', textContent: info }));
+      }
 
-    // Click handlers
-    resultsEl.querySelectorAll('.search-result-item[data-id]').forEach(el => {
-      el.addEventListener('click', () => {
-        const memberId = el.dataset.id;
+      const item = Utils.createEl('div', { className: 'search-result-item' }, [avatar, infoWrap]);
+      item.dataset.id = m.id;
+      item.addEventListener('click', () => {
         hideResults();
         document.getElementById('search-input').value = '';
-        Profile.show(memberId);
+        Profile.show(m.id);
       });
-    });
+      resultsEl.appendChild(item);
+    }
 
     showResults();
   }
@@ -108,7 +109,6 @@ const Search = (() => {
   return {
     init,
     setMembers,
-    performSearch,
     hideResults,
   };
 })();

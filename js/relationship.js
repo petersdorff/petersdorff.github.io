@@ -151,16 +151,20 @@ const Relationship = (() => {
     // Analyze path for edge types
     const edges = path.slice(1).map(p => p.edgeType);
 
+    // Get gender of the target person for gendered terms
+    const targetPerson = membersMap.get(toId);
+    const gender = targetPerson?.gender || null;
+
     // Direct spouse
     if (edges.length === 1 && edges[0] === 'spouse') {
-      const person = membersMap.get(toId);
-      // Could differentiate Ehemann/Ehefrau if gender info available
-      return { term: 'Ehepartner', degree: 0, path };
+      const term = gender === 'm' ? 'Ehemann' : gender === 'f' ? 'Ehefrau' : 'Ehepartner';
+      return { term, degree: 0, path };
     }
 
     // Direct sibling edge
     if (edges.length === 1 && edges[0] === 'sibling') {
-      return { term: 'Geschwister', degree: 1, path };
+      const term = gender === 'm' ? 'Bruder' : gender === 'f' ? 'Schwester' : 'Geschwister';
+      return { term, degree: 1, path };
     }
 
     // Count generations up and down (ignoring spouse and sibling edges)
@@ -173,23 +177,26 @@ const Relationship = (() => {
     // Direct line (no spouse in path or spouse at end/start)
     if (downs === 0 && ups > 0) {
       // Going up: parent, grandparent, etc.
+      const term = getAncestorTerm(ups, gender);
       if (hasSpouse) {
-        return { term: getAncestorTerm(ups) + ' (angeheiratet)', degree: ups, path };
+        return { term: term + ' (angeheiratet)', degree: ups, path };
       }
-      return { term: getAncestorTerm(ups), degree: ups, path };
+      return { term, degree: ups, path };
     }
 
     if (ups === 0 && downs > 0) {
       // Going down: child, grandchild, etc.
+      const term = getDescendantTerm(downs, gender);
       if (hasSpouse) {
-        return { term: getDescendantTerm(downs) + ' (angeheiratet)', degree: downs, path };
+        return { term: term + ' (angeheiratet)', degree: downs, path };
       }
-      return { term: getDescendantTerm(downs), degree: downs, path };
+      return { term, degree: downs, path };
     }
 
     // Sibling
     if (ups === 1 && downs === 1 && !hasSpouse) {
-      return { term: 'Geschwister', degree: 1, path };
+      const term = gender === 'm' ? 'Bruder' : gender === 'f' ? 'Schwester' : 'Geschwister';
+      return { term, degree: 1, path };
     }
 
     // Use common ancestor approach for cousins, etc.
@@ -200,10 +207,13 @@ const Relationship = (() => {
 
       if (stepsA === stepsB) {
         // Same generation
-        if (stepsA === 1) return { term: 'Geschwister', degree: 1, path };
+        if (stepsA === 1) {
+          const term = gender === 'm' ? 'Bruder' : gender === 'f' ? 'Schwester' : 'Geschwister';
+          return { term, degree: 1, path };
+        }
         const cousinDegree = stepsA - 1;
         return {
-          term: getCousinTerm(cousinDegree),
+          term: getCousinTerm(cousinDegree, gender),
           degree: cousinDegree,
           path
         };
@@ -217,15 +227,15 @@ const Relationship = (() => {
           // Aunt/Uncle or Niece/Nephew territory
           if (stepsA < stepsB) {
             // We're going up less, so target is a descendant direction
-            return { term: getAuntUncleTerm(removed), degree: removed, path };
+            return { term: getAuntUncleTerm(removed, gender), degree: removed, path };
           } else {
-            return { term: getNieceNephewTerm(removed), degree: removed, path };
+            return { term: getNieceNephewTerm(removed, gender), degree: removed, path };
           }
         }
 
         const cousinDegree = minSteps - 1;
         return {
-          term: `${getCousinTerm(cousinDegree)} ${removed}x entfernt`,
+          term: `${getCousinTerm(cousinDegree, gender)} ${removed}x entfernt`,
           degree: cousinDegree,
           path
         };
@@ -239,47 +249,60 @@ const Relationship = (() => {
     return { term: `Verwandt über ${edges.length} Verbindungen`, degree: edges.length, path };
   }
 
-  function getAncestorTerm(generations) {
+  function getAncestorTerm(generations, gender) {
     switch (generations) {
-      case 1: return 'Elternteil';
-      case 2: return 'Großelternteil';
-      case 3: return 'Urgroßelternteil';
-      default: return `Ur${'ur'.repeat(generations - 3)}großelternteil`;
+      case 1: return gender === 'm' ? 'Vater' : gender === 'f' ? 'Mutter' : 'Elternteil';
+      case 2: return gender === 'm' ? 'Großvater' : gender === 'f' ? 'Großmutter' : 'Großelternteil';
+      case 3: return gender === 'm' ? 'Urgroßvater' : gender === 'f' ? 'Urgroßmutter' : 'Urgroßelternteil';
+      default: {
+        const prefix = `Ur${'ur'.repeat(generations - 3)}groß`;
+        return gender === 'm' ? `${prefix}vater` : gender === 'f' ? `${prefix}mutter` : `${prefix}elternteil`;
+      }
     }
   }
 
-  function getDescendantTerm(generations) {
+  function getDescendantTerm(generations, gender) {
     switch (generations) {
-      case 1: return 'Kind';
-      case 2: return 'Enkelkind';
-      case 3: return 'Urenkelkind';
-      default: return `Ur${'ur'.repeat(generations - 3)}enkelkind`;
+      case 1: return gender === 'm' ? 'Sohn' : gender === 'f' ? 'Tochter' : 'Kind';
+      case 2: return gender === 'm' ? 'Enkelsohn' : gender === 'f' ? 'Enkeltochter' : 'Enkelkind';
+      case 3: return gender === 'm' ? 'Urenkelsohn' : gender === 'f' ? 'Urenkeltochter' : 'Urenkelkind';
+      default: {
+        const prefix = `Ur${'ur'.repeat(generations - 3)}enkel`;
+        return gender === 'm' ? `${prefix}sohn` : gender === 'f' ? `${prefix}tochter` : `${prefix}kind`;
+      }
     }
   }
 
-  function getCousinTerm(degree) {
+  function getCousinTerm(degree, gender) {
+    const term = gender === 'm' ? 'Cousin' : gender === 'f' ? 'Cousine' : 'Cousin/Cousine';
     switch (degree) {
-      case 1: return 'Cousin/Cousine';
-      case 2: return 'Cousin/Cousine 2. Grades';
-      default: return `Cousin/Cousine ${degree}. Grades`;
+      case 1: return term;
+      case 2: return `${term} 2. Grades`;
+      default: return `${term} ${degree}. Grades`;
     }
   }
 
-  function getAuntUncleTerm(generationsRemoved) {
+  function getAuntUncleTerm(generationsRemoved, gender) {
     switch (generationsRemoved) {
-      case 1: return 'Onkel/Tante';
-      case 2: return 'Großonkel/Großtante';
-      case 3: return 'Urgroßonkel/Urgroßtante';
-      default: return `Ur${'ur'.repeat(generationsRemoved - 3)}großonkel/-tante`;
+      case 1: return gender === 'm' ? 'Onkel' : gender === 'f' ? 'Tante' : 'Onkel/Tante';
+      case 2: return gender === 'm' ? 'Großonkel' : gender === 'f' ? 'Großtante' : 'Großonkel/Großtante';
+      case 3: return gender === 'm' ? 'Urgroßonkel' : gender === 'f' ? 'Urgroßtante' : 'Urgroßonkel/Urgroßtante';
+      default: {
+        const prefix = `Ur${'ur'.repeat(generationsRemoved - 3)}groß`;
+        return gender === 'm' ? `${prefix}onkel` : gender === 'f' ? `${prefix}tante` : `${prefix}onkel/-tante`;
+      }
     }
   }
 
-  function getNieceNephewTerm(generationsRemoved) {
+  function getNieceNephewTerm(generationsRemoved, gender) {
     switch (generationsRemoved) {
-      case 1: return 'Neffe/Nichte';
-      case 2: return 'Großneffe/Großnichte';
-      case 3: return 'Urgroßneffe/Urgroßnichte';
-      default: return `Ur${'ur'.repeat(generationsRemoved - 3)}großneffe/-nichte`;
+      case 1: return gender === 'm' ? 'Neffe' : gender === 'f' ? 'Nichte' : 'Neffe/Nichte';
+      case 2: return gender === 'm' ? 'Großneffe' : gender === 'f' ? 'Großnichte' : 'Großneffe/Großnichte';
+      case 3: return gender === 'm' ? 'Urgroßneffe' : gender === 'f' ? 'Urgroßnichte' : 'Urgroßneffe/Urgroßnichte';
+      default: {
+        const prefix = `Ur${'ur'.repeat(generationsRemoved - 3)}groß`;
+        return gender === 'm' ? `${prefix}neffe` : gender === 'f' ? `${prefix}nichte` : `${prefix}neffe/-nichte`;
+      }
     }
   }
 
@@ -369,38 +392,27 @@ const Relationship = (() => {
 
   /**
    * Get all node IDs on the path between two people (for highlighting).
+   * Builds graph once, shared with getPathEdgePairs via getPathData.
    */
-  function getPathNodeIds(fromId, toId, members, relationships) {
+  function getPathData(fromId, toId, members, relationships) {
     const graph = buildGraph(members, relationships);
     const path = findPath(fromId, toId, graph);
-    if (!path) return [];
-    return path.map(p => p.id);
-  }
+    if (!path) return { nodeIds: [], edgePairs: [] };
 
-  /**
-   * Get all edge IDs on the path between two people (for highlighting).
-   * Returns pairs of [fromId, toId].
-   */
-  function getPathEdgePairs(fromId, toId, members, relationships) {
-    const graph = buildGraph(members, relationships);
-    const path = findPath(fromId, toId, graph);
-    if (!path || path.length < 2) return [];
-
-    const pairs = [];
+    const nodeIds = path.map(p => p.id);
+    const edgePairs = [];
     for (let i = 0; i < path.length - 1; i++) {
-      pairs.push([path[i].id, path[i + 1].id]);
+      edgePairs.push([path[i].id, path[i + 1].id]);
     }
-    return pairs;
+    return { nodeIds, edgePairs };
   }
 
   return {
-    buildGraph,
     findPath,
     findCommonAncestor,
     getRelationshipTerm,
     estimateSharedDNA,
     getConnection,
-    getPathNodeIds,
-    getPathEdgePairs,
+    getPathData,
   };
 })();

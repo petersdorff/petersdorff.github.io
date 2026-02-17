@@ -736,7 +736,13 @@ const Tree = (() => {
   // ═══════════════════════════════════════════════════════════
 
   function render(memberData, relationshipData) {
-    members = memberData;
+    // Filter out orphan members (those with zero relationships)
+    const connectedIds = new Set();
+    for (const r of relationshipData) {
+      connectedIds.add(r.fromId);
+      connectedIds.add(r.toId);
+    }
+    members = memberData.filter(m => connectedIds.has(m.id));
     relationships = relationshipData;
 
     const result = viewMode === 'temporal'

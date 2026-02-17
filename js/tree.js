@@ -184,63 +184,113 @@ const Tree = (() => {
     }
 
     // ─── Assign generations ───
+    // Strategy: find connected components via ALL edge types, then within
+    // each component BFS from the topmost ancestor(s) only. This ensures
+    // people who marry into the family get the correct generation level.
     const generation = new Map();
-    const roots = members.filter(m => (parentsOf.get(m.id) || []).length === 0);
-    const queue = [];
 
-    for (const root of roots) {
-      if (!generation.has(root.id)) {
-        generation.set(root.id, 0);
-        queue.push(root.id);
-      }
+    // Step 1: Build undirected adjacency for finding connected components
+    const adj = new Map();
+    for (const m of members) adj.set(m.id, new Set());
+    for (const r of [...parentChildEdges, ...siblingEdges]) {
+      const a = r.parent || r.from;
+      const b = r.child || r.to;
+      if (adj.has(a) && adj.has(b)) { adj.get(a).add(b); adj.get(b).add(a); }
     }
-    if (queue.length === 0 && members.length > 0) {
-      generation.set(members[0].id, 0);
-      queue.push(members[0].id);
+    for (const se of spouseEdges) {
+      if (adj.has(se.from) && adj.has(se.to)) { adj.get(se.from).add(se.to); adj.get(se.to).add(se.from); }
     }
 
-    while (queue.length > 0) {
-      const personId = queue.shift();
-      const gen = generation.get(personId);
-      for (const childId of (childrenOf.get(personId) || [])) {
-        if (!generation.has(childId)) {
-          generation.set(childId, gen + 1);
-          queue.push(childId);
+    // Step 2: Find connected components
+    const visited = new Set();
+    const components = [];
+    for (const m of members) {
+      if (visited.has(m.id)) continue;
+      const comp = [];
+      const bfsQ = [m.id];
+      visited.add(m.id);
+      while (bfsQ.length > 0) {
+        const pid = bfsQ.shift();
+        comp.push(pid);
+        for (const nbr of adj.get(pid) || []) {
+          if (!visited.has(nbr)) { visited.add(nbr); bfsQ.push(nbr); }
         }
       }
-      for (const parentId of (parentsOf.get(personId) || [])) {
-        if (!generation.has(parentId)) {
-          generation.set(parentId, gen - 1);
-          queue.push(parentId);
+      components.push(comp);
+    }
+
+    // Step 3: Within each component, find topmost ancestor and BFS generations
+    for (const comp of components) {
+      // Find members with no parents (roots of this component)
+      const compRoots = comp.filter(id => (parentsOf.get(id) || []).length === 0);
+      // If no parentless members (cycle), pick the one with the earliest birth year
+      const startNodes = compRoots.length > 0 ? compRoots : [comp[0]];
+
+      // BFS: first propagate via parent→child only (the structural backbone)
+      const queue = [];
+      for (const rootId of startNodes) {
+        if (!generation.has(rootId)) {
+          generation.set(rootId, 0);
+          queue.push(rootId);
+        }
+      }
+
+      while (queue.length > 0) {
+        const personId = queue.shift();
+        const gen = generation.get(personId);
+
+        // Propagate to children
+        for (const childId of (childrenOf.get(personId) || [])) {
+          if (!generation.has(childId)) {
+            generation.set(childId, gen + 1);
+            queue.push(childId);
+          }
+        }
+        // Propagate to parents (for upward traversal from non-root starts)
+        for (const parentId of (parentsOf.get(personId) || [])) {
+          if (!generation.has(parentId)) {
+            generation.set(parentId, gen - 1);
+            queue.push(parentId);
+          }
+        }
+        // Propagate to spouses (same generation)
+        for (const spouseId of (spouseOf.get(personId) || [])) {
+          if (!generation.has(spouseId)) {
+            generation.set(spouseId, gen);
+            queue.push(spouseId);
+          }
         }
       }
     }
 
-    // Align spouses
+    // Step 4: Align spouses that ended up at different generations
+    // (can happen when a spouse was reached via parent_child before spouse edge)
     for (const se of spouseEdges) {
       const genA = generation.get(se.from);
       const genB = generation.get(se.to);
-      if (genA !== undefined && genB === undefined) {
-        generation.set(se.to, genA);
-      } else if (genB !== undefined && genA === undefined) {
-        generation.set(se.from, genB);
-      } else if (genA !== undefined && genB !== undefined && genA !== genB) {
+      if (genA !== undefined && genB !== undefined && genA !== genB) {
+        // Prefer the generation of whichever has a blood-line parent connection
         const aHasParents = (parentsOf.get(se.from) || []).length > 0;
         const bHasParents = (parentsOf.get(se.to) || []).length > 0;
-        if (aHasParents && !bHasParents) generation.set(se.to, genA);
-        else if (bHasParents && !aHasParents) generation.set(se.from, genB);
-        else {
-          const maxGen = Math.max(genA, genB);
-          generation.set(se.from, maxGen);
-          generation.set(se.to, maxGen);
+        if (aHasParents && !bHasParents) {
+          generation.set(se.to, genA);
+        } else if (bHasParents && !aHasParents) {
+          generation.set(se.from, genB);
+        } else {
+          // Both have parents — use the deeper (larger) generation
+          const maxG = Math.max(genA, genB);
+          generation.set(se.from, maxG);
+          generation.set(se.to, maxG);
         }
       }
     }
 
+    // Step 5: Catch any unassigned members
     for (const m of members) {
       if (!generation.has(m.id)) generation.set(m.id, 0);
     }
 
+    // Step 6: Normalize so minimum generation is 0
     const minGen = Math.min(...generation.values());
     if (minGen < 0) {
       for (const [id, gen] of generation) generation.set(id, gen - minGen);

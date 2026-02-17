@@ -63,7 +63,16 @@ const DB = (() => {
       .insert(row)
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      // Retry without unknown columns (e.g. gender before migration)
+      if (error.code === 'PGRST204' && error.message.includes('gender')) {
+        delete row.gender;
+        const { data: d2, error: e2 } = await supabase.from('members').insert(row).select().single();
+        if (e2) throw e2;
+        return d2.id;
+      }
+      throw error;
+    }
     return data.id;
   }
 
@@ -75,7 +84,16 @@ const DB = (() => {
       .from('members')
       .update(row)
       .eq('id', id);
-    if (error) throw error;
+    if (error) {
+      // Retry without unknown columns (e.g. gender before migration)
+      if (error.code === 'PGRST204' && error.message.includes('gender')) {
+        delete row.gender;
+        const { error: retryErr } = await supabase.from('members').update(row).eq('id', id);
+        if (retryErr) throw retryErr;
+        return;
+      }
+      throw error;
+    }
   }
 
   async function claimMember(memberId, uid) {

@@ -4,9 +4,6 @@
    descent line from the midpoint of the couple connector.
    PCB / Circuit Board aesthetic
 
-   Supports two view modes:
-   - "generational" : members at generation-based Y with zig-zag isochrones
-   - "temporal"      : members at birth-year-proportional Y (timeline)
    ═══════════════════════════════════════════════════════════ */
 
 const Tree = (() => {
@@ -19,10 +16,6 @@ const Tree = (() => {
   let onNodeTapCallback = null;
   let onBackgroundTapCallback = null;
   let currentUserId = null;
-
-  // View mode state
-  let viewMode = localStorage.getItem('stammbaum_viewMode') || 'generational';
-  let isochroneSvg = null; // SVG overlay element
 
   const COLORS = {
     trace: '#1a1a1a',
@@ -44,7 +37,6 @@ const Tree = (() => {
   const SIBLING_GAP = 50;    // gap between sibling nodes
   const GEN_GAP = 140;       // vertical gap between generations
   const COUPLE_NODE_SIZE = 1; // invisible midpoint node
-  const YEAR_PX = 5;          // pixels per year in temporal mode
 
   // ═══════════════════════════════════════════════════════════
   //  INIT
@@ -91,11 +83,6 @@ const Tree = (() => {
       }
     });
 
-    // Init isochrone overlay
-    initIsochroneOverlay(containerId);
-
-    // Sync isochrone overlay on viewport changes
-    cy.on('viewport', updateIsochroneTransform);
   }
 
   function onNodeTap(callback) {
@@ -111,31 +98,13 @@ const Tree = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════
-  //  VIEW MODE
-  // ═══════════════════════════════════════════════════════════
-
-  function setViewMode(mode) {
-    if (mode !== 'generational' && mode !== 'temporal') return;
-    if (mode === viewMode) return;
-    viewMode = mode;
-    localStorage.setItem('stammbaum_viewMode', mode);
-    if (members.length > 0) {
-      renderWithAnimation();
-    }
-  }
-
-  function getViewMode() {
-    return viewMode;
-  }
-
-  // ═══════════════════════════════════════════════════════════
   //  SHARED LAYOUT HELPERS
   // ═══════════════════════════════════════════════════════════
 
   /**
    * Build adjacency structures, identify couples, assign generations,
    * compute family units, and calculate subtree widths.
-   * Shared between generational and temporal layouts.
+   * Shared layout helper used by buildGenerationalLayout.
    */
   function buildLayoutBase(members, relationships) {
     const memberMap = new Map(members.map(m => [m.id, m]));
@@ -510,445 +479,7 @@ const Tree = (() => {
       }
     }
 
-    // Compute zig-zag isochrones
-    const isochroneData = computeZigZagIsochrones(members, positions, generation, base.memberMap);
-
-    return { elements, positions, isochroneData };
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  TEMPORAL LAYOUT
-  // ═══════════════════════════════════════════════════════════
-
-  function buildTemporalLayout(members, relationships) {
-    const base = buildLayoutBase(members, relationships);
-    const positions = {};
-    const { coupleMap, genGroups, maxGen, generation, unitChildren, unitWidth, getUnitForPerson, inCouple, couples, unitBirthYear } = base;
-    const elements = buildElements(base);
-
-    // ─── Compute birth years ───
-    const birthYears = new Map();
-    let minYear = Infinity, maxYear = -Infinity;
-
-    for (const m of members) {
-      if (m.birthDate) {
-        const y = parseInt(m.birthDate.substring(0, 4));
-        if (!isNaN(y)) {
-          birthYears.set(m.id, y);
-          minYear = Math.min(minYear, y);
-          maxYear = Math.max(maxYear, y);
-        }
-      }
-    }
-
-    // Average birth year per generation (for fallback)
-    const genYears = new Map();
-    for (const [id, year] of birthYears) {
-      const gen = generation.get(id) || 0;
-      if (!genYears.has(gen)) genYears.set(gen, []);
-      genYears.get(gen).push(year);
-    }
-    const genAvgYear = new Map();
-    for (const [gen, years] of genYears) {
-      genAvgYear.set(gen, years.reduce((a, b) => a + b, 0) / years.length);
-    }
-
-    // Assign missing birth years from generation average
-    for (const m of members) {
-      if (!birthYears.has(m.id)) {
-        const gen = generation.get(m.id) || 0;
-        const avg = genAvgYear.get(gen);
-        birthYears.set(m.id, avg ? Math.round(avg) : (minYear !== Infinity ? minYear + gen * 25 : 1950 + gen * 25));
-      }
-    }
-
-    if (minYear === Infinity) minYear = 1920;
-    if (maxYear === -Infinity) maxYear = 2030;
-    const baseYear = Math.floor(minYear / 10) * 10;
-
-    function yearToY(year) {
-      return (year - baseYear) * YEAR_PX;
-    }
-
-    // ─── Compute Y for each member ───
-    const memberY = new Map();
-    for (const m of members) {
-      memberY.set(m.id, yearToY(birthYears.get(m.id)));
-    }
-
-    // Couples: each spouse keeps their birth-year Y, midpoint at average
-    const coupleY = new Map();
-    for (const couple of couples) {
-      const ya = memberY.get(couple.a) || 0;
-      const yb = memberY.get(couple.b) || 0;
-      const avg = (ya + yb) / 2;
-      coupleY.set(couple.id, avg);
-      // DO NOT override memberY — each spouse keeps their own birth-year Y
-    }
-
-    // ─── Position units (X from width calc, Y from birth year) ───
-    const allUnitsPlaced = new Set();
-
-    function positionUnit(unit, centerX) {
-      if (allUnitsPlaced.has(unit.id)) return;
-      allUnitsPlaced.add(unit.id);
-
-      let y;
-      if (unit.type === 'couple') {
-        const couple = coupleMap.get(unit.id);
-        const ya = memberY.get(couple.a) || 0;
-        const yb = memberY.get(couple.b) || 0;
-        const midY = coupleY.get(unit.id) || 0;
-        positions[couple.a] = { x: centerX - (SPOUSE_GAP / 2) - (NODE_W / 2), y: ya };
-        positions[couple.b] = { x: centerX + (SPOUSE_GAP / 2) + (NODE_W / 2), y: yb };
-        positions[unit.id] = { x: centerX, y: midY };
-        y = midY; // for child positioning reference
-      } else {
-        y = memberY.get(unit.id) || 0;
-        positions[unit.id] = { x: centerX, y };
-      }
-
-      const children = unit.children || [];
-      if (children.length === 0) return;
-
-      const childUnitIds = [];
-      const seen = new Set();
-      for (const childId of children) {
-        const cu = getUnitForPerson(childId);
-        if (!seen.has(cu)) { seen.add(cu); childUnitIds.push(cu); }
-      }
-
-      // Sort siblings: oldest (smallest birth year) on left
-      childUnitIds.sort((a, b) => unitBirthYear(a) - unitBirthYear(b));
-
-      let totalChildWidth = 0;
-      for (const cuId of childUnitIds) totalChildWidth += (unitWidth.get(cuId) || NODE_W);
-      totalChildWidth += (childUnitIds.length - 1) * SIBLING_GAP;
-
-      let childX = centerX - totalChildWidth / 2;
-      for (const cuId of childUnitIds) {
-        const w = unitWidth.get(cuId) || NODE_W;
-        const childCenterX = childX + w / 2;
-        const coupleInfo = coupleMap.get(cuId);
-        if (coupleInfo) {
-          positionUnit({ type: 'couple', id: cuId, a: coupleInfo.a, b: coupleInfo.b, children: unitChildren.get(cuId) || [] }, childCenterX);
-        } else {
-          positionUnit({ type: 'single', id: cuId, children: unitChildren.get(cuId) || [] }, childCenterX);
-        }
-        childX += w + SIBLING_GAP;
-      }
-    }
-
-    // Position root units
-    const rootUnits = genGroups[0] || [];
-    let totalRootWidth = 0;
-    for (const ru of rootUnits) totalRootWidth += (unitWidth.get(ru.id) || NODE_W);
-    totalRootWidth += (rootUnits.length - 1) * SIBLING_GAP * 2;
-
-    let rootX = -totalRootWidth / 2;
-    for (const ru of rootUnits) {
-      const w = unitWidth.get(ru.id) || NODE_W;
-      positionUnit(ru, rootX + w / 2);
-      rootX += w + SIBLING_GAP * 2;
-    }
-
-    // Disconnected subtrees
-    for (let g = 0; g <= maxGen; g++) {
-      for (const unit of genGroups[g]) {
-        if (!allUnitsPlaced.has(unit.id)) {
-          rootX += SIBLING_GAP * 2;
-          const w = unitWidth.get(unit.id) || NODE_W;
-          positionUnit(unit, rootX + w / 2);
-          rootX += w;
-        }
-      }
-    }
-
-    // Compute straight horizontal lines at 25-year intervals
-    const PERIOD = 25;
-    const isochroneData = [];
-    const startPeriod = Math.floor(baseYear / PERIOD) * PERIOD;
-    const endPeriod = Math.ceil(maxYear / PERIOD) * PERIOD + PERIOD;
-    for (let year = startPeriod; year <= endPeriod; year += PERIOD) {
-      isochroneData.push({ year: year, y: yearToY(year), type: 'straight' });
-    }
-
-    return { elements, positions, isochroneData };
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  ISOCHRONES (for generational view)
-  //  Simple zig-zag algorithm: for each 25-year boundary,
-  //  the line goes below people born before the boundary
-  //  and above people born after it.
-  // ═══════════════════════════════════════════════════════════
-
-  function computeZigZagIsochrones(members, positions, generation, memberMap) {
-    const PERIOD = 25; // years per isochrone interval
-
-    // Collect members with birth years + positions
-    const points = [];
-    for (const m of members) {
-      if (!m.birthDate || !positions[m.id]) continue;
-      const year = parseInt(m.birthDate.substring(0, 4));
-      if (isNaN(year)) continue;
-      points.push({
-        id: m.id,
-        x: positions[m.id].x,
-        y: positions[m.id].y,
-        year,
-        period: Math.floor(year / PERIOD) * PERIOD,
-        gen: generation.get(m.id) || 0,
-      });
-    }
-
-    if (points.length < 2) return [];
-
-    // Find all 25-year periods present
-    const periods = [...new Set(points.map(p => p.period))].sort((a, b) => a - b);
-    if (periods.length < 2) return [];
-
-    // Get X range with padding
-    const allX = points.map(p => p.x);
-    const xMin = Math.min(...allX) - NODE_W;
-    const xMax = Math.max(...allX) + NODE_W;
-
-    // For each period boundary, build a zig-zag path
-    const isochroneData = [];
-
-    for (let i = 0; i < periods.length; i++) {
-      const boundary = periods[i] + PERIOD;
-
-      // Find members near this boundary (born in period before or after)
-      const nearbyPoints = points.filter(p =>
-        Math.abs(p.period - periods[i]) <= PERIOD
-      );
-      if (nearbyPoints.length === 0) continue;
-
-      // Sort by X position
-      nearbyPoints.sort((a, b) => a.x - b.x);
-
-      // Build waypoints for the zig-zag path
-      const waypoints = [];
-
-      // Default Y: average Y of members in the boundary periods
-      const abovePoints = nearbyPoints.filter(p => p.period <= periods[i]);
-      const belowPoints = nearbyPoints.filter(p => p.period > periods[i]);
-
-      let defaultY;
-      if (abovePoints.length > 0 && belowPoints.length > 0) {
-        const avgAboveY = abovePoints.reduce((s, p) => s + p.y, 0) / abovePoints.length;
-        const avgBelowY = belowPoints.reduce((s, p) => s + p.y, 0) / belowPoints.length;
-        defaultY = (avgAboveY + avgBelowY) / 2;
-      } else if (abovePoints.length > 0) {
-        defaultY = abovePoints.reduce((s, p) => s + p.y, 0) / abovePoints.length + GEN_GAP / 2;
-      } else {
-        defaultY = belowPoints.reduce((s, p) => s + p.y, 0) / belowPoints.length - GEN_GAP / 2;
-      }
-
-      waypoints.push({ x: xMin - 50, y: defaultY });
-
-      // Walk through members left to right
-      for (const p of nearbyPoints) {
-        const nodeHalfH = NODE_H / 2 + 10; // padding around node
-        if (p.year < boundary) {
-          // Member is born BEFORE the boundary → isochrone goes BELOW
-          waypoints.push({ x: p.x, y: p.y + nodeHalfH });
-        } else {
-          // Member is born AT or AFTER the boundary → isochrone goes ABOVE
-          waypoints.push({ x: p.x, y: p.y - nodeHalfH });
-        }
-      }
-
-      // End at right edge
-      waypoints.push({ x: xMax + 50, y: defaultY });
-
-      // Convert waypoints to smooth SVG path
-      const pathData = waypointsToSmoothPath(waypoints);
-
-      isochroneData.push({
-        year: boundary,
-        pathData,
-        waypoints, // stored for zebra fill regions
-        type: 'zigzag',
-      });
-    }
-
-    return isochroneData;
-  }
-
-  /**
-   * Convert waypoints to a smooth SVG path using cubic bezier curves.
-   */
-  function waypointsToSmoothPath(waypoints) {
-    if (waypoints.length < 2) return '';
-
-    let d = `M ${waypoints[0].x} ${waypoints[0].y}`;
-
-    for (let i = 1; i < waypoints.length; i++) {
-      const prev = waypoints[i - 1];
-      const curr = waypoints[i];
-      const dx = curr.x - prev.x;
-
-      // Use cubic bezier with horizontal control points for smooth curves
-      const cx1 = prev.x + dx * 0.4;
-      const cy1 = prev.y;
-      const cx2 = curr.x - dx * 0.4;
-      const cy2 = curr.y;
-
-      d += ` C ${cx1} ${cy1}, ${cx2} ${cy2}, ${curr.x} ${curr.y}`;
-    }
-
-    return d;
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  ISOCHRONE OVERLAY (SVG)
-  // ═══════════════════════════════════════════════════════════
-
-  function initIsochroneOverlay(containerId) {
-    const container = document.getElementById(containerId);
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.id = 'isochrone-overlay';
-    svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:0;';
-    container.insertBefore(svg, container.firstChild);
-    isochroneSvg = svg;
-  }
-
-  let currentIsochroneData = [];
-
-  function renderIsochrones(data) {
-    currentIsochroneData = data || [];
-    updateIsochroneTransform();
-  }
-
-  function updateIsochroneTransform() {
-    if (!isochroneSvg || !cy) return;
-
-    // Clear existing
-    while (isochroneSvg.firstChild) isochroneSvg.removeChild(isochroneSvg.firstChild);
-
-    if (currentIsochroneData.length === 0) return;
-
-    const pan = cy.pan();
-    const zoom = cy.zoom();
-
-    // Create a group with the viewport transform
-    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    g.setAttribute('transform', `translate(${pan.x}, ${pan.y}) scale(${zoom})`);
-
-    // ─── Compute model-space X range (shared by zebra bands + lines) ───
-    let modelXMin = Infinity, modelXMax = -Infinity;
-    for (const m of members) {
-      const node = cy.getElementById(m.id);
-      if (node.length) {
-        const pos = node.position();
-        modelXMin = Math.min(modelXMin, pos.x);
-        modelXMax = Math.max(modelXMax, pos.x);
-      }
-    }
-    modelXMin -= NODE_W;
-    modelXMax += NODE_W;
-
-    // ─── Sort isochrones by year for consistent band ordering ───
-    const sorted = [...currentIsochroneData].sort((a, b) => a.year - b.year);
-
-    // ─── PASS 1: Zebra bands (fill every other gap) ───
-    for (let i = 0; i < sorted.length - 1; i++) {
-      if (i % 2 !== 0) continue; // shade even-indexed gaps only
-      const iso = sorted[i];
-      const nextIso = sorted[i + 1];
-
-      if (iso.type === 'straight' && nextIso.type === 'straight') {
-        // Simple rectangle between two horizontal lines
-        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        rect.setAttribute('x', String(modelXMin - 200));
-        rect.setAttribute('y', String(iso.y));
-        rect.setAttribute('width', String(modelXMax - modelXMin + 400));
-        rect.setAttribute('height', String(nextIso.y - iso.y));
-        rect.setAttribute('fill', 'rgba(0,0,0,0.035)');
-        rect.setAttribute('stroke', 'none');
-        g.appendChild(rect);
-
-      } else if (iso.type === 'zigzag' && nextIso.type === 'zigzag'
-                 && iso.waypoints && nextIso.waypoints) {
-        // Closed region between two zigzag paths (line segments for fill)
-        const upper = iso.waypoints;
-        const lower = [...nextIso.waypoints].reverse();
-
-        let d = `M ${upper[0].x} ${upper[0].y}`;
-        for (let j = 1; j < upper.length; j++) {
-          d += ` L ${upper[j].x} ${upper[j].y}`;
-        }
-        for (let j = 0; j < lower.length; j++) {
-          d += ` L ${lower[j].x} ${lower[j].y}`;
-        }
-        d += ' Z';
-
-        const band = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        band.setAttribute('d', d);
-        band.setAttribute('fill', 'rgba(0,0,0,0.035)');
-        band.setAttribute('stroke', 'none');
-        g.appendChild(band);
-      }
-    }
-
-    // ─── PASS 2: Isochrone lines + labels ───
-    for (const iso of currentIsochroneData) {
-      if (iso.type === 'zigzag' && iso.pathData) {
-        // SVG path for zig-zag isochrone
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', iso.pathData);
-        path.setAttribute('class', 'isochrone-path');
-        path.setAttribute('fill', 'none');
-        path.setAttribute('stroke', '#d0d0d0');
-        path.setAttribute('stroke-width', String(1.5 / zoom));
-        path.setAttribute('stroke-dasharray', `${4 / zoom} ${4 / zoom}`);
-        path.setAttribute('opacity', '0.7');
-        g.appendChild(path);
-
-        // Label — place at primaryY on the left side
-        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        label.setAttribute('class', 'isochrone-label');
-        const labelX = modelXMin + 5;
-        const labelY = (iso.primaryY != null ? iso.primaryY : parseFloat((iso.pathData.match(/^M\s+[-\d.]+\s+([-\d.]+)/) || [])[1] || 0)) - 5 / zoom;
-        label.setAttribute('x', String(labelX));
-        label.setAttribute('y', String(labelY));
-        label.setAttribute('font-size', String(11 / zoom));
-        label.setAttribute('font-family', "'IBM Plex Mono', monospace");
-        label.setAttribute('fill', '#9ca3af');
-        label.setAttribute('font-weight', '500');
-        label.textContent = String(iso.year);
-        g.appendChild(label);
-
-      } else if (iso.type === 'straight') {
-        // Straight horizontal line
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', String(modelXMin));
-        line.setAttribute('y1', String(iso.y));
-        line.setAttribute('x2', String(modelXMax));
-        line.setAttribute('y2', String(iso.y));
-        line.setAttribute('stroke', '#d0d0d0');
-        line.setAttribute('stroke-width', String(1 / zoom));
-        line.setAttribute('stroke-dasharray', `${4 / zoom} ${4 / zoom}`);
-        line.setAttribute('opacity', '0.6');
-        g.appendChild(line);
-
-        // Label
-        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        label.setAttribute('x', String(modelXMin + 5));
-        label.setAttribute('y', String(iso.y - 5 / zoom));
-        label.setAttribute('font-size', String(11 / zoom));
-        label.setAttribute('font-family', "'IBM Plex Mono', monospace");
-        label.setAttribute('fill', '#9ca3af');
-        label.setAttribute('font-weight', '500');
-        label.textContent = String(iso.year);
-        g.appendChild(label);
-      }
-    }
-
-    isochroneSvg.appendChild(g);
+    return { elements, positions };
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -959,19 +490,8 @@ const Tree = (() => {
     members = memberData;
     relationships = relationshipData;
 
-    let elements, positions, isochroneData;
-
-    if (viewMode === 'temporal') {
-      const result = buildTemporalLayout(members, relationships);
-      elements = result.elements;
-      positions = result.positions;
-      isochroneData = result.isochroneData;
-    } else {
-      const result = buildGenerationalLayout(members, relationships);
-      elements = result.elements;
-      positions = result.positions;
-      isochroneData = result.isochroneData;
-    }
+    const result = buildGenerationalLayout(members, relationships);
+    const { elements, positions } = result;
 
     cy.elements().remove();
     cy.add(elements);
@@ -987,60 +507,8 @@ const Tree = (() => {
     }
 
     cy.fit(undefined, 60);
-    applySpouseEdgeStyle();
-    cy.style().update();
-    renderIsochrones(isochroneData);
-  }
-
-  /**
-   * Animated re-render for view mode switching.
-   */
-  function renderWithAnimation() {
-    let positions, isochroneData;
-
-    if (viewMode === 'temporal') {
-      const result = buildTemporalLayout(members, relationships);
-      positions = result.positions;
-      isochroneData = result.isochroneData;
-    } else {
-      const result = buildGenerationalLayout(members, relationships);
-      positions = result.positions;
-      isochroneData = result.isochroneData;
-    }
-
-    // Hide isochrones during animation
-    renderIsochrones([]);
-
-    // Apply spouse edge style for new view mode
-    applySpouseEdgeStyle();
-
-    // Animate nodes to new positions
-    const duration = 700;
-    for (const [id, pos] of Object.entries(positions)) {
-      const node = cy.getElementById(id);
-      if (node.length) {
-        node.animate({ position: pos }, { duration, easing: 'ease-in-out-cubic' });
-      }
-    }
-
-    // After animation, fit and show isochrones
-    setTimeout(() => {
-      cy.animate({ fit: { padding: 60 }, duration: 400, easing: 'ease-out' });
-      setTimeout(() => renderIsochrones(isochroneData), 400);
-    }, duration);
-  }
-
-  /**
-   * Apply view-mode-specific style to spouse edges.
-   * - generational: straight (same Y, horizontal line)
-   * - temporal: taxi with rightward direction (H/V segments when Y differs)
-   */
-  function applySpouseEdgeStyle() {
-    if (!cy) return;
-    // Straight lines in both views: horizontal in generational (same Y),
-    // diagonal in temporal (different birth-year Y). Avoids broken taxi
-    // rendering and transition glitches.
     cy.edges('.spouse-edge').style({ 'curve-style': 'straight' });
+    cy.style().update();
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1409,7 +877,5 @@ const Tree = (() => {
     fitAll,
     getNodePosition,
     getCy,
-    setViewMode,
-    getViewMode,
   };
 })();

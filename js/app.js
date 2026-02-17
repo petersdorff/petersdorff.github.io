@@ -179,11 +179,7 @@ const App = (() => {
 
     // Top bar
     document.getElementById('btn-menu').addEventListener('click', openMenu);
-    document.getElementById('btn-view-toggle').addEventListener('click', handleViewToggle);
     document.getElementById('btn-scan').addEventListener('click', openScanner);
-
-    // Restore toggle button state from current view mode
-    updateToggleButton();
 
     // FABs
     document.getElementById('fab-add').addEventListener('click', () => Profile.edit(null));
@@ -754,28 +750,6 @@ const App = (() => {
     } catch (err) {
       console.error('Delete error:', err);
       toast('Fehler beim Löschen', 'error');
-    }
-  }
-
-  // ─── View Toggle ───
-
-  function handleViewToggle() {
-    const current = Tree.getViewMode();
-    const next = current === 'generational' ? 'temporal' : 'generational';
-    Tree.setViewMode(next);
-    updateToggleButton();
-  }
-
-  function updateToggleButton() {
-    const btn = document.getElementById('btn-view-toggle');
-    if (!btn) return;
-    const mode = Tree.getViewMode();
-    if (mode === 'temporal') {
-      btn.classList.add('mode-temporal');
-      btn.title = 'Zeitliche Ansicht aktiv – klicken für Generationen-Ansicht';
-    } else {
-      btn.classList.remove('mode-temporal');
-      btn.title = 'Generationen-Ansicht aktiv – klicken für zeitliche Ansicht';
     }
   }
 

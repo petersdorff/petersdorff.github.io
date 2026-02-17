@@ -794,7 +794,6 @@ const Tree = (() => {
     }
 
     const isochroneData = [];
-    window._isoDebug = [];
 
     for (let bi = numBounds - 1; bi >= 0; bi--) {
       const boundaryYear = boundaries[bi];
@@ -841,8 +840,6 @@ const Tree = (() => {
 
       // Sort intervals left→right
       intervals.sort((a, b) => a.xLeft - b.xLeft);
-
-      window._isoDebug.push({ boundaryYear, myHomeY, intervals: intervals.map(iv => ({...iv})) });
 
       // ─── Same-direction-only merge ───
       // Merge intervals with the SAME direction that are within MERGE_GAP of each other.
@@ -901,10 +898,11 @@ const Tree = (() => {
         waypoints.push({ x: xMax, y: myHomeY });
       }
 
-      // ─── Ceiling enforcement (up detours only) ───
+      // ─── Ceiling enforcement ───
       // Ensure minimum band thickness from previous (younger) isochrone.
+      // Apply to ALL waypoints including homeY — when the ceiling is lower
+      // than homeY, the line must be pushed up to maintain the minimum gap.
       for (const wp of waypoints) {
-        if (wp.y >= myHomeY) continue; // down detour or homeY, skip
         const ceil = ceilingAtX(wp.x);
         if (wp.y > ceil - MIN_BAND_H) {
           wp.y = ceil - MIN_BAND_H;
@@ -922,21 +920,16 @@ const Tree = (() => {
           for (let s = 1; s < steps; s++) {
             const t = s / steps;
             const mx = a.x + t * dx;
-            const my = a.y + t * (b.y - a.y);
-            if (my >= myHomeY) {
-              refined.push({ x: mx, y: my }); // down detour, skip ceiling
-            } else {
-              const ceil = ceilingAtX(mx);
-              refined.push({ x: mx, y: Math.min(my, ceil - MIN_BAND_H) });
-            }
+            let my = a.y + t * (b.y - a.y);
+            const ceil = ceilingAtX(mx);
+            if (my > ceil - MIN_BAND_H) my = ceil - MIN_BAND_H;
+            refined.push({ x: mx, y: my });
           }
         }
-        if (b.y >= myHomeY) {
-          refined.push({ x: b.x, y: b.y });
-        } else {
-          const ceil = ceilingAtX(b.x);
-          refined.push({ x: b.x, y: Math.min(b.y, ceil - MIN_BAND_H) });
-        }
+        let by = b.y;
+        const ceil = ceilingAtX(b.x);
+        if (by > ceil - MIN_BAND_H) by = ceil - MIN_BAND_H;
+        refined.push({ x: b.x, y: by });
       }
       waypoints.length = 0;
       waypoints.push(...refined);

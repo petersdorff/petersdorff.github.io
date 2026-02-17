@@ -142,39 +142,6 @@
   </div>
 
   <!-- ═══════════════════════════════════════ -->
-  <!-- PENDING APPROVAL VIEW                    -->
-  <!-- ═══════════════════════════════════════ -->
-  <div id="view-pending" class="view">
-    <div class="pending-container">
-      <div class="pending-icon">
-        <svg width="80" height="80" viewBox="0 0 80 80">
-          <rect x="20" y="20" width="40" height="40" rx="4" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-dasharray="6 4"/>
-          <circle cx="40" cy="40" r="6" fill="#e63946" class="pulse-dot"/>
-        </svg>
-      </div>
-      <h2>Warte auf Freigabe</h2>
-      <p class="pending-text">
-        Dein Konto wurde erstellt. Ein Administrator muss deinen Zugang erst bestätigen.
-        Du wirst per E-Mail benachrichtigt, sobald dein Konto freigeschaltet wird.
-      </p>
-      <button id="btn-pending-refresh" class="btn" style="margin-top:24px;">Status prüfen</button>
-      <button id="btn-pending-logout" class="btn btn-secondary" style="margin-top:12px;">Abmelden</button>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════════════════════ -->
-  <!-- ADMIN APPROVE VIEW                       -->
-  <!-- ═══════════════════════════════════════ -->
-  <div id="view-admin-approve" class="view">
-    <div class="admin-container">
-      <h2>Nutzer-Verwaltung</h2>
-      <p class="admin-subtitle">Ausstehende Freigaben</p>
-      <div id="admin-pending-list"></div>
-      <button id="btn-admin-back" class="btn btn-secondary" style="margin-top:24px;">Zurück zum Stammbaum</button>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════════════════════ -->
   <!-- CLAIM / FIRST LOGIN VIEW                -->
   <!-- ═══════════════════════════════════════ -->
   <div id="view-claim" class="view">
@@ -444,11 +411,12 @@
             </select>
           </div>
           <div class="input-group">
-            <label>Person suchen</label>
+            <label>Person suchen oder neu anlegen</label>
             <input type="text" id="edit-rel-search" placeholder="Name eingeben...">
             <div id="edit-rel-results" class="mini-results"></div>
           </div>
           <button id="btn-add-relation" class="btn btn-secondary">Verbindung hinzufügen</button>
+          <button id="btn-add-new-person" class="btn btn-secondary">Neue Person anlegen & verbinden</button>
         </div>
       </div>
     </div>
@@ -516,9 +484,6 @@
         <li><a href="#" id="menu-scan">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
           QR scannen</a></li>
-        <li id="menu-admin-item" style="display:none;"><a href="#" id="menu-admin">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          Nutzer-Verwaltung</a></li>
         <li class="menu-divider"></li>
         <li><a href="#" id="menu-logout">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -543,21 +508,18 @@
   <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
   <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
 
-  <!-- EmailJS (for admin notification emails) -->
-  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-
   <!-- QR Code libs -->
   <script src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
   <!-- App modules -->
-  <script src="js/db.js?v=19"></script>
+  <script src="js/db.js?v=18"></script>
   <script src="js/auth.js?v=23"></script>
   <script src="js/relationship.js?v=18"></script>
-  <script src="js/tree.js?v=40"></script>
-  <script src="js/qr.js?v=19"></script>
-  <script src="js/profile.js?v=21"></script>
+  <script src="js/tree.js?v=32"></script>
+  <script src="js/qr.js?v=18"></script>
+  <script src="js/profile.js?v=18"></script>
   <script src="js/search.js?v=18"></script>
-  <script src="js/app.js?v=31"></script>
+  <script src="js/app.js?v=25"></script>
 </body>
 </html>

@@ -903,54 +903,79 @@ const Tree = (() => {
         const hasGoBelow = cluster.members.some(m => m.type === 'goBelow');
 
         if (hasGoAbove && hasGoBelow) {
-          // ─── Mixed cluster: weave between goBelow (left) and goAbove (right) ───
-          // Sort cluster members by X position
-          const sorted = [...cluster.members].sort((a, b) => a.x - b.x);
+          // ─── Mixed cluster: weave between goBelow and goAbove ───
 
-          // Find the transition point: last goBelow person before first goAbove person
-          // (or vice versa — we weave wherever the type changes)
-          const segments = []; // array of { xLeft, xRight, type, detourY }
-          let segStart = 0;
-          for (let si = 1; si <= sorted.length; si++) {
-            const prevType = sorted[si - 1].type;
-            const curType = si < sorted.length ? sorted[si].type : null;
-            if (curType !== prevType) {
-              const segMembers = sorted.slice(segStart, si);
-              const segXLeft = Math.min(...segMembers.map(m => m.x - hW));
-              const segXRight = Math.max(...segMembers.map(m => m.x + hW));
-              const lc = ceilingAtX((segXLeft + segXRight) / 2);
-              let dy;
-              if (prevType === 'goAbove') {
-                dy = Math.min(...segMembers.map(m => m.y - hH)) - TOUCH_PAD;
-                dy = Math.min(dy, lc - MIN_BAND_H);
-              } else {
-                dy = Math.max(...segMembers.map(m => m.y + hH)) + TOUCH_PAD;
-                // Don't apply ceiling constraint for goBelow: the line goes DOWN
-                // (away from the ceiling), so clamping upward would defeat the purpose.
+          // First: reclassify goBelow members that share a Y row with goAbove members.
+          // If both types sit at the same Y, the line must go above the row to clear
+          // the goAbove boxes — the goBelow people at the same Y will naturally be on
+          // the correct side. This prevents zigzag spikes at same-Y rows.
+          const goAboveRowYs = new Set(
+            cluster.members.filter(m => m.type === 'goAbove').map(m => Math.round(m.y))
+          );
+          for (const m of cluster.members) {
+            if (m.type === 'goBelow' && goAboveRowYs.has(Math.round(m.y))) {
+              m.type = 'goAbove';
+            }
+          }
+
+          // Re-check if still mixed after reclassification
+          const stillHasGoAbove = cluster.members.some(m => m.type === 'goAbove');
+          const stillHasGoBelow = cluster.members.some(m => m.type === 'goBelow');
+
+          if (stillHasGoAbove && stillHasGoBelow) {
+            // Still mixed — weave between segments at different Y rows
+            const sorted = [...cluster.members].sort((a, b) => a.x - b.x);
+            const segments = [];
+            let segStart = 0;
+            for (let si = 1; si <= sorted.length; si++) {
+              const prevType = sorted[si - 1].type;
+              const curType = si < sorted.length ? sorted[si].type : null;
+              if (curType !== prevType) {
+                const segMembers = sorted.slice(segStart, si);
+                const segXLeft = Math.min(...segMembers.map(m => m.x - hW));
+                const segXRight = Math.max(...segMembers.map(m => m.x + hW));
+                const lc = ceilingAtX((segXLeft + segXRight) / 2);
+                let dy;
+                if (prevType === 'goAbove') {
+                  dy = Math.min(...segMembers.map(m => m.y - hH)) - TOUCH_PAD;
+                  dy = Math.min(dy, lc - MIN_BAND_H);
+                } else {
+                  dy = Math.max(...segMembers.map(m => m.y + hH)) + TOUCH_PAD;
+                }
+                segments.push({ xLeft: segXLeft, xRight: segXRight, type: prevType, detourY: dy });
+                segStart = si;
               }
-              segments.push({ xLeft: segXLeft, xRight: segXRight, type: prevType, detourY: dy });
-              segStart = si;
             }
-          }
 
-          // Build waypoints for each segment with transitions between them
-          waypoints.push({ x: curX, y: myHomeY });
-          for (let si = 0; si < segments.length; si++) {
-            const seg = segments[si];
-            waypoints.push({ x: seg.xLeft - 5, y: seg.detourY });
-            waypoints.push({ x: seg.xRight + 5, y: seg.detourY });
-            // Transition to next segment or back to homeY
-            if (si < segments.length - 1) {
-              const nextSeg = segments[si + 1];
-              // Slope between segments
-              const midX = (seg.xRight + nextSeg.xLeft) / 2;
-              waypoints.push({ x: midX, y: myHomeY });
-              waypoints.push({ x: midX, y: myHomeY });
+            waypoints.push({ x: curX, y: myHomeY });
+            for (let si = 0; si < segments.length; si++) {
+              const seg = segments[si];
+              waypoints.push({ x: seg.xLeft - 5, y: seg.detourY });
+              waypoints.push({ x: seg.xRight + 5, y: seg.detourY });
+              if (si < segments.length - 1) {
+                const nextSeg = segments[si + 1];
+                const midX = (seg.xRight + nextSeg.xLeft) / 2;
+                waypoints.push({ x: midX, y: myHomeY });
+                waypoints.push({ x: midX, y: myHomeY });
+              }
             }
+            const returnX = Math.min(cluster.xRight + SLOPE_RUN, xMax);
+            waypoints.push({ x: returnX, y: myHomeY });
+            curX = returnX;
+          } else {
+            // After reclassification, cluster is now uniform goAbove
+            const minBoxTop = Math.min(...cluster.members.map(m => m.y - hH));
+            let detourY = minBoxTop - TOUCH_PAD;
+            const localCeiling = ceilingAtX((cluster.xLeft + cluster.xRight) / 2);
+            detourY = Math.min(detourY, localCeiling - MIN_BAND_H);
+
+            waypoints.push({ x: curX, y: myHomeY });
+            waypoints.push({ x: cluster.xLeft - 5, y: detourY });
+            waypoints.push({ x: cluster.xRight + 5, y: detourY });
+            const returnX = Math.min(cluster.xRight + SLOPE_RUN, xMax);
+            waypoints.push({ x: returnX, y: myHomeY });
+            curX = returnX;
           }
-          const returnX = Math.min(cluster.xRight + SLOPE_RUN, xMax);
-          waypoints.push({ x: returnX, y: myHomeY });
-          curX = returnX;
 
         } else {
           // ─── Uniform cluster: all goAbove or all goBelow ───
@@ -996,8 +1021,12 @@ const Tree = (() => {
       }
 
       // ─── Enforce minimum band thickness ───
+      // Only apply ceiling constraint to goAbove detours (y < myHomeY).
+      // GoBelow detours (y > myHomeY) intentionally go downward — clamping
+      // them upward creates spike artifacts.
       // First pass: check each waypoint
       for (const wp of waypoints) {
+        if (wp.y > myHomeY) continue; // goBelow detour, skip ceiling
         const ceil = ceilingAtX(wp.x);
         if (wp.y > ceil - MIN_BAND_H) {
           wp.y = ceil - MIN_BAND_H;
@@ -1016,12 +1045,20 @@ const Tree = (() => {
             const t = s / steps;
             const mx = a.x + t * dx;
             const my = a.y + t * (b.y - a.y);
-            const ceil = ceilingAtX(mx);
-            refined.push({ x: mx, y: Math.min(my, ceil - MIN_BAND_H) });
+            if (my > myHomeY) {
+              refined.push({ x: mx, y: my }); // goBelow, skip ceiling
+            } else {
+              const ceil = ceilingAtX(mx);
+              refined.push({ x: mx, y: Math.min(my, ceil - MIN_BAND_H) });
+            }
           }
         }
-        const ceil = ceilingAtX(b.x);
-        refined.push({ x: b.x, y: Math.min(b.y, ceil - MIN_BAND_H) });
+        if (b.y > myHomeY) {
+          refined.push({ x: b.x, y: b.y }); // goBelow, skip ceiling
+        } else {
+          const ceil = ceilingAtX(b.x);
+          refined.push({ x: b.x, y: Math.min(b.y, ceil - MIN_BAND_H) });
+        }
       }
       waypoints.length = 0;
       waypoints.push(...refined);

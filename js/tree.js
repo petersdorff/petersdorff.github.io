@@ -702,6 +702,9 @@ const Tree = (() => {
     const hH = NODE_H / 2 + PAD;
     const hW = NODE_W / 2 + PAD;
     const MIN_BAND_H = 30;
+    const MERGE_GAP = 30;         // only merge same-direction intervals within 30px
+    const SLOPE_RUN = 50;         // horizontal run for slopes into/out of detours
+    const TOUCH_PAD = 5;          // extra clearance around boxes
 
     // ─── 1. Collect people with birth years + positions ───
     const people = [];
@@ -728,7 +731,6 @@ const Tree = (() => {
     const bucketsAsc = [...bucketSet].sort((a, b) => a - b);
     if (bucketsAsc.length < 2) return [];
 
-    // Boundaries between adjacent buckets
     const boundaries = [];
     for (let i = 0; i < bucketsAsc.length - 1; i++) {
       boundaries.push(bucketsAsc[i + 1]);
@@ -741,40 +743,21 @@ const Tree = (() => {
     const xMax = Math.max(...allX) + NODE_W + 80;
 
     // ─── 4. Compute anchor Y for each boundary ───
-    //
-    // Strategy: evenly-spaced left-edge labels.
-    //
-    // 1. Find the leftmost person per generation row (minimum X).
-    //    These define the left "spine" of the tree.
-    // 2. yTop = top edge of topmost spine person
-    //    yBottom = bottom edge of bottommost spine person
-    // 3. Divide [yTop, yBottom] into numBuckets equal bands.
-    //    Each band represents one 25-year period.
-    //    The last boundary (youngest) sits at yBottom so the
-    //    deepest person's box bottom aligns with the final label.
-
-    // Find leftmost person per generation row (by Y coordinate)
-    const leftmostPerRow = new Map(); // y → person
+    // Find leftmost person per generation row — these define the vertical range
+    const leftmostPerRow = new Map();
     for (const p of people) {
-      const rowKey = Math.round(p.y); // round to avoid float issues
+      const rowKey = Math.round(p.y);
       const existing = leftmostPerRow.get(rowKey);
       if (!existing || p.x < existing.x) {
         leftmostPerRow.set(rowKey, p);
       }
     }
 
-    // The spine people define the vertical range
     const spinePeople = [...leftmostPerRow.values()];
-    spinePeople.sort((a, b) => a.y - b.y); // top to bottom
+    spinePeople.sort((a, b) => a.y - b.y);
 
-    // Vertical extent: top edge of topmost → bottom edge of bottommost
     const yTop = spinePeople[0].y - hH;
     const yBottom = spinePeople[spinePeople.length - 1].y + hH;
-
-    // Equal band height: divide vertical extent by number of boundaries.
-    // The first boundary sits at yTop + bandH, the last at yBottom.
-    // This places the youngest boundary (e.g. 2025) at the bottom edge
-    // of the lowest person, so people at the bottom row are ABOVE it.
     const bandH = (yBottom - yTop) / numBounds;
 
     const homeY = [];
@@ -820,196 +803,91 @@ const Tree = (() => {
       const abovePeople = people.filter(p => p.year < boundaryYear);
       if (belowPeople.length === 0 || abovePeople.length === 0) continue;
 
-      // ─── Find ALL boxes that conflict with homeY ───
-      // Use generous padding: treat any box within PAD of the line as conflict
-      const TOUCH_PAD = 5; // extra clearance
-      const conflicts = [];
-      const conflictIds = new Set();
-
-      // Collect the Y positions of all belowPeople that are goAbove conflicts
-      const goAboveYs = new Set();
+      // ─── Per-person constraint intervals ───
+      // Each person that conflicts with homeY generates a directional interval.
+      // Only conflicts where homeY is on the WRONG side of the box are recorded.
+      const intervals = [];
 
       for (const p of belowPeople) {
+        // Person born >= boundary → must be BELOW the line
+        // → line must be at/above P.y - hH (box top)
         const boxTop = p.y - hH;
-        // Person should be below the line → line must be above box top
-        if (boxTop < myHomeY + TOUCH_PAD) {
-          conflicts.push({ ...p, type: 'goAbove' });
-          conflictIds.add(p.id);
-          goAboveYs.add(Math.round(p.y));
+        if (myHomeY > boxTop - TOUCH_PAD) {
+          // homeY is too low (below box top) → detour UP above the box
+          intervals.push({
+            xLeft: p.x - hW,
+            xRight: p.x + hW,
+            targetY: boxTop - TOUCH_PAD,
+            direction: 'up',
+          });
         }
       }
+
       for (const p of abovePeople) {
+        // Person born < boundary → must be ABOVE the line
+        // → line must be at/below P.y + hH (box bottom)
         const boxBottom = p.y + hH;
-        // Person should be above the line → line must be below box bottom
-        if (boxBottom > myHomeY - TOUCH_PAD) {
-          conflicts.push({ ...p, type: 'goBelow' });
-          conflictIds.add(p.id);
+        if (myHomeY < boxBottom + TOUCH_PAD) {
+          // homeY is too high (above box bottom) → detour DOWN below the box
+          intervals.push({
+            xLeft: p.x - hW,
+            xRight: p.x + hW,
+            targetY: boxBottom + TOUCH_PAD,
+            direction: 'down',
+          });
         }
       }
 
-      // ─── Second pass: abovePeople sharing a generation row with goAbove people ───
-      // In generational view, people from different decades can sit at the same Y.
-      // If the line detours above goAbove people at row Y, any abovePeople at the
-      // same Y would end up on the wrong side. Add them as goBelow conflicts so
-      // the mixed-cluster logic can weave between them.
-      for (const p of abovePeople) {
-        if (conflictIds.has(p.id)) continue;
-        if (goAboveYs.has(Math.round(p.y))) {
-          conflicts.push({ ...p, type: 'goBelow' });
-          conflictIds.add(p.id);
-        }
-      }
+      // Sort intervals left→right
+      intervals.sort((a, b) => a.xLeft - b.xLeft);
 
-      // Sort conflicts left→right
-      conflicts.sort((a, b) => a.x - b.x);
-
-      // Group into clusters — use wider merge distance to prevent
-      // the line from bouncing back to homeY between people at same row
-      const MERGE_GAP = SIBLING_GAP + NODE_W; // merge if gap < sibling gap + node width
-      const clusters = [];
-      for (const c of conflicts) {
-        const boxLeft = c.x - hW;
-        const boxRight = c.x + hW;
-        if (clusters.length > 0) {
-          const last = clusters[clusters.length - 1];
-          if (boxLeft <= last.xRight + MERGE_GAP) {
-            last.xRight = Math.max(last.xRight, boxRight);
-            last.members.push(c);
+      // ─── Same-direction-only merge ───
+      // Merge intervals with the SAME direction that are within MERGE_GAP of each other.
+      // This prevents a single detour from sweeping unrelated people into the wrong band.
+      const merged = [];
+      for (const iv of intervals) {
+        if (merged.length > 0) {
+          const last = merged[merged.length - 1];
+          if (iv.direction === last.direction && iv.xLeft <= last.xRight + MERGE_GAP) {
+            // Same direction, close enough → merge
+            last.xRight = Math.max(last.xRight, iv.xRight);
+            if (iv.direction === 'up') {
+              last.targetY = Math.min(last.targetY, iv.targetY); // go higher
+            } else {
+              last.targetY = Math.max(last.targetY, iv.targetY); // go lower
+            }
             continue;
           }
         }
-        clusters.push({ xLeft: boxLeft, xRight: boxRight, members: [c] });
+        merged.push({ ...iv });
       }
 
-      // ─── Build waypoints ───
+      // ─── Build waypoints from merged intervals ───
       const waypoints = [];
       let curX = xMin;
-      const SLOPE_RUN = 50;
 
-      for (const cluster of clusters) {
-        // Horizontal at homeY up to the slope start
-        const slopeStart = cluster.xLeft - SLOPE_RUN;
+      for (const iv of merged) {
+        // Horizontal at homeY up to slope start
+        const slopeStart = iv.xLeft - SLOPE_RUN;
         if (curX < slopeStart) {
           waypoints.push({ x: curX, y: myHomeY });
           waypoints.push({ x: slopeStart, y: myHomeY });
           curX = slopeStart;
-        } else if (curX < cluster.xLeft - 5) {
+        } else if (curX < iv.xLeft - 5) {
           waypoints.push({ x: curX, y: myHomeY });
-          curX = cluster.xLeft - 5;
+          curX = iv.xLeft - 5;
         }
 
-        // Determine detour Y
-        const hasGoAbove = cluster.members.some(m => m.type === 'goAbove');
-        const hasGoBelow = cluster.members.some(m => m.type === 'goBelow');
-
-        if (hasGoAbove && hasGoBelow) {
-          // ─── Mixed cluster: weave between goBelow and goAbove ───
-
-          // First: reclassify goBelow members that share a Y row with goAbove members.
-          // If both types sit at the same Y, the line must go above the row to clear
-          // the goAbove boxes — the goBelow people at the same Y will naturally be on
-          // the correct side. This prevents zigzag spikes at same-Y rows.
-          const goAboveRowYs = new Set(
-            cluster.members.filter(m => m.type === 'goAbove').map(m => Math.round(m.y))
-          );
-          for (const m of cluster.members) {
-            if (m.type === 'goBelow' && goAboveRowYs.has(Math.round(m.y))) {
-              m.type = 'goAbove';
-            }
-          }
-
-          // Re-check if still mixed after reclassification
-          const stillHasGoAbove = cluster.members.some(m => m.type === 'goAbove');
-          const stillHasGoBelow = cluster.members.some(m => m.type === 'goBelow');
-
-          if (stillHasGoAbove && stillHasGoBelow) {
-            // Still mixed — weave between segments at different Y rows
-            const sorted = [...cluster.members].sort((a, b) => a.x - b.x);
-            const segments = [];
-            let segStart = 0;
-            for (let si = 1; si <= sorted.length; si++) {
-              const prevType = sorted[si - 1].type;
-              const curType = si < sorted.length ? sorted[si].type : null;
-              if (curType !== prevType) {
-                const segMembers = sorted.slice(segStart, si);
-                const segXLeft = Math.min(...segMembers.map(m => m.x - hW));
-                const segXRight = Math.max(...segMembers.map(m => m.x + hW));
-                const lc = ceilingAtX((segXLeft + segXRight) / 2);
-                let dy;
-                if (prevType === 'goAbove') {
-                  dy = Math.min(...segMembers.map(m => m.y - hH)) - TOUCH_PAD;
-                  dy = Math.min(dy, lc - MIN_BAND_H);
-                } else {
-                  dy = Math.max(...segMembers.map(m => m.y + hH)) + TOUCH_PAD;
-                }
-                segments.push({ xLeft: segXLeft, xRight: segXRight, type: prevType, detourY: dy });
-                segStart = si;
-              }
-            }
-
-            waypoints.push({ x: curX, y: myHomeY });
-            for (let si = 0; si < segments.length; si++) {
-              const seg = segments[si];
-              waypoints.push({ x: seg.xLeft - 5, y: seg.detourY });
-              waypoints.push({ x: seg.xRight + 5, y: seg.detourY });
-              if (si < segments.length - 1) {
-                const nextSeg = segments[si + 1];
-                const midX = (seg.xRight + nextSeg.xLeft) / 2;
-                waypoints.push({ x: midX, y: myHomeY });
-                waypoints.push({ x: midX, y: myHomeY });
-              }
-            }
-            const returnX = Math.min(cluster.xRight + SLOPE_RUN, xMax);
-            waypoints.push({ x: returnX, y: myHomeY });
-            curX = returnX;
-          } else {
-            // After reclassification, cluster is now uniform goAbove
-            const minBoxTop = Math.min(...cluster.members.map(m => m.y - hH));
-            let detourY = minBoxTop - TOUCH_PAD;
-            const localCeiling = ceilingAtX((cluster.xLeft + cluster.xRight) / 2);
-            detourY = Math.min(detourY, localCeiling - MIN_BAND_H);
-
-            waypoints.push({ x: curX, y: myHomeY });
-            waypoints.push({ x: cluster.xLeft - 5, y: detourY });
-            waypoints.push({ x: cluster.xRight + 5, y: detourY });
-            const returnX = Math.min(cluster.xRight + SLOPE_RUN, xMax);
-            waypoints.push({ x: returnX, y: myHomeY });
-            curX = returnX;
-          }
-
-        } else {
-          // ─── Uniform cluster: all goAbove or all goBelow ───
-          let detourY;
-          const localCeiling = ceilingAtX((cluster.xLeft + cluster.xRight) / 2);
-          if (hasGoAbove) {
-            const minBoxTop = Math.min(...cluster.members
-              .filter(m => m.type === 'goAbove')
-              .map(m => m.y - hH));
-            detourY = minBoxTop - TOUCH_PAD;
-            // Ensure minimum distance from previous (younger) isochrone
-            detourY = Math.min(detourY, localCeiling - MIN_BAND_H);
-          } else if (hasGoBelow) {
-            const maxBoxBottom = Math.max(...cluster.members
-              .filter(m => m.type === 'goBelow')
-              .map(m => m.y + hH));
-            detourY = maxBoxBottom + TOUCH_PAD;
-            // Don't apply ceiling constraint for goBelow: the line goes DOWN
-            // (away from the ceiling), so clamping upward would defeat the purpose.
-          } else {
-            detourY = myHomeY;
-          }
-
-          // Slope into detour → horizontal across → slope back
-          waypoints.push({ x: curX, y: myHomeY });
-          waypoints.push({ x: cluster.xLeft - 5, y: detourY });
-          waypoints.push({ x: cluster.xRight + 5, y: detourY });
-          const returnX = Math.min(cluster.xRight + SLOPE_RUN, xMax);
-          waypoints.push({ x: returnX, y: myHomeY });
-          curX = returnX;
-        }
+        // Slope into detour → flat at targetY → slope back to homeY
+        waypoints.push({ x: curX, y: myHomeY });
+        waypoints.push({ x: iv.xLeft - 5, y: iv.targetY });
+        waypoints.push({ x: iv.xRight + 5, y: iv.targetY });
+        const returnX = Math.min(iv.xRight + SLOPE_RUN, xMax);
+        waypoints.push({ x: returnX, y: myHomeY });
+        curX = returnX;
       }
 
-      // Final segment
+      // Final segment to xMax
       if (curX < xMax) {
         waypoints.push({ x: curX, y: myHomeY });
         waypoints.push({ x: xMax, y: myHomeY });
@@ -1020,76 +898,17 @@ const Tree = (() => {
         waypoints.push({ x: xMax, y: myHomeY });
       }
 
-      // ─── Merge consecutive goAbove detours ───
-      // When two clusters both detour above (y < myHomeY) and the line
-      // briefly returns to homeY between them, bridge the gap to eliminate
-      // V-shaped spikes. Scan for the pattern: detour → slope to homeY →
-      // homeY segment → slope back to detour, and replace with a bridge.
-      if (waypoints.length >= 4) {
-        const merged = [];
-        // Find "detour runs" — contiguous sequences where y < myHomeY
-        // and "homeY runs" — sequences at homeY. When a homeY run is
-        // sandwiched between two detour runs, replace with a bridge.
-        let i = 0;
-        while (i < waypoints.length) {
-          // Check if we're at a detour point followed by a return-to-home
-          // then another detour: look ahead for the pattern
-          if (waypoints[i].y < myHomeY - 1) {
-            // We're at a detour point. Add it.
-            merged.push(waypoints[i]);
-            // Look ahead: does the line return to homeY and then go back up?
-            let j = i + 1;
-            // Find where it reaches homeY
-            while (j < waypoints.length && waypoints[j].y < myHomeY - 1) {
-              merged.push(waypoints[j]);
-              j++;
-            }
-            // j is now at a slope-toward-homeY or homeY point
-            // Skip all the homeY or slope points until we find the next detour
-            let homeStart = j;
-            while (j < waypoints.length && waypoints[j].y >= myHomeY - 1) {
-              j++;
-            }
-            // j is now at the next detour point (or end of array)
-            if (j < waypoints.length && waypoints[j].y < myHomeY - 1 && homeStart < j) {
-              // Found the pattern! Bridge from last detour point to next detour point
-              const lastDetour = merged[merged.length - 1];
-              const nextDetour = waypoints[j];
-              const bridgeY = Math.min(lastDetour.y, nextDetour.y);
-              // Replace last point with bridge start, add bridge end
-              merged[merged.length - 1] = { x: lastDetour.x, y: bridgeY };
-              merged.push({ x: nextDetour.x, y: bridgeY });
-              i = j + 1; // continue after the next detour start (it's now the bridge end)
-            } else {
-              // No bridge needed, add the homeY points normally
-              for (let k = homeStart; k < j; k++) {
-                merged.push(waypoints[k]);
-              }
-              i = j;
-            }
-          } else {
-            merged.push(waypoints[i]);
-            i++;
-          }
-        }
-        waypoints.length = 0;
-        waypoints.push(...merged);
-      }
-
-      // ─── Enforce minimum band thickness ───
-      // Only apply ceiling constraint to goAbove detours (y < myHomeY).
-      // GoBelow detours (y > myHomeY) intentionally go downward — clamping
-      // them upward creates spike artifacts.
-      // First pass: check each waypoint
+      // ─── Ceiling enforcement (up detours only) ───
+      // Ensure minimum band thickness from previous (younger) isochrone.
       for (const wp of waypoints) {
-        if (wp.y > myHomeY) continue; // goBelow detour, skip ceiling
+        if (wp.y >= myHomeY) continue; // down detour or homeY, skip
         const ceil = ceilingAtX(wp.x);
         if (wp.y > ceil - MIN_BAND_H) {
           wp.y = ceil - MIN_BAND_H;
         }
       }
-      // Second pass: add intermediate points along long segments
-      // to prevent the line from dipping too close mid-segment
+
+      // Refinement pass: add intermediate points along long segments
       const refined = [waypoints[0]];
       for (let wi = 1; wi < waypoints.length; wi++) {
         const a = waypoints[wi - 1];
@@ -1101,16 +920,16 @@ const Tree = (() => {
             const t = s / steps;
             const mx = a.x + t * dx;
             const my = a.y + t * (b.y - a.y);
-            if (my > myHomeY) {
-              refined.push({ x: mx, y: my }); // goBelow, skip ceiling
+            if (my >= myHomeY) {
+              refined.push({ x: mx, y: my }); // down detour, skip ceiling
             } else {
               const ceil = ceilingAtX(mx);
               refined.push({ x: mx, y: Math.min(my, ceil - MIN_BAND_H) });
             }
           }
         }
-        if (b.y > myHomeY) {
-          refined.push({ x: b.x, y: b.y }); // goBelow, skip ceiling
+        if (b.y >= myHomeY) {
+          refined.push({ x: b.x, y: b.y });
         } else {
           const ceil = ceilingAtX(b.x);
           refined.push({ x: b.x, y: Math.min(b.y, ceil - MIN_BAND_H) });

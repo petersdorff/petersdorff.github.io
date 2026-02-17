@@ -219,21 +219,46 @@ const Tree = (() => {
       components.push(comp);
     }
 
-    // Step 3: Within each component, find topmost ancestor and BFS generations
+    // Step 3: Within each component, find the single best root and BFS generations
     for (const comp of components) {
       // Find members with no parents (roots of this component)
       const compRoots = comp.filter(id => (parentsOf.get(id) || []).length === 0);
-      // If no parentless members (cycle), pick the one with the earliest birth year
-      const startNodes = compRoots.length > 0 ? compRoots : [comp[0]];
 
-      // BFS: first propagate via parent→child only (the structural backbone)
-      const queue = [];
-      for (const rootId of startNodes) {
-        if (!generation.has(rootId)) {
-          generation.set(rootId, 0);
-          queue.push(rootId);
+      // Pick the SINGLE best root: the one with the most descendants reachable
+      // via parent→child edges. This filters out married-in spouses who are
+      // parentless but not the true ancestor. Ties broken by earliest birth year.
+      let bestRoot = comp[0];
+      if (compRoots.length > 0) {
+        let bestScore = -1;
+        for (const rootId of compRoots) {
+          // Count descendants reachable via parent→child only
+          let count = 0;
+          const dq = [rootId];
+          const dVisited = new Set([rootId]);
+          while (dq.length > 0) {
+            const pid = dq.shift();
+            for (const cid of (childrenOf.get(pid) || [])) {
+              if (!dVisited.has(cid)) {
+                dVisited.add(cid);
+                dq.push(cid);
+                count++;
+              }
+            }
+          }
+          const m = memberMap.get(rootId);
+          const year = m?.birthDate ? parseInt(m.birthDate.substring(0, 4)) : 9999;
+          // Score: descendants first (higher is better), then earlier birth year as tiebreaker
+          if (count > bestScore || (count === bestScore && year < (memberMap.get(bestRoot)?.birthDate ? parseInt(memberMap.get(bestRoot).birthDate.substring(0, 4)) : 9999))) {
+            bestScore = count;
+            bestRoot = rootId;
+          }
         }
       }
+
+      // BFS from the single best root
+      const queue = [];
+      generation.set(bestRoot, 0);
+      queue.push(bestRoot);
 
       while (queue.length > 0) {
         const personId = queue.shift();

@@ -824,13 +824,18 @@ const Tree = (() => {
       // Use generous padding: treat any box within PAD of the line as conflict
       const TOUCH_PAD = 5; // extra clearance
       const conflicts = [];
+      const conflictIds = new Set();
+
+      // Collect the Y positions of all belowPeople that are goAbove conflicts
+      const goAboveYs = new Set();
 
       for (const p of belowPeople) {
         const boxTop = p.y - hH;
-        const boxBottom = p.y + hH;
         // Person should be below the line → line must be above box top
         if (boxTop < myHomeY + TOUCH_PAD) {
           conflicts.push({ ...p, type: 'goAbove' });
+          conflictIds.add(p.id);
+          goAboveYs.add(Math.round(p.y));
         }
       }
       for (const p of abovePeople) {
@@ -838,6 +843,20 @@ const Tree = (() => {
         // Person should be above the line → line must be below box bottom
         if (boxBottom > myHomeY - TOUCH_PAD) {
           conflicts.push({ ...p, type: 'goBelow' });
+          conflictIds.add(p.id);
+        }
+      }
+
+      // ─── Second pass: abovePeople sharing a generation row with goAbove people ───
+      // In generational view, people from different decades can sit at the same Y.
+      // If the line detours above goAbove people at row Y, any abovePeople at the
+      // same Y would end up on the wrong side. Add them as goBelow conflicts so
+      // the mixed-cluster logic can weave between them.
+      for (const p of abovePeople) {
+        if (conflictIds.has(p.id)) continue;
+        if (goAboveYs.has(Math.round(p.y))) {
+          conflicts.push({ ...p, type: 'goBelow' });
+          conflictIds.add(p.id);
         }
       }
 
@@ -906,7 +925,8 @@ const Tree = (() => {
                 dy = Math.min(dy, lc - MIN_BAND_H);
               } else {
                 dy = Math.max(...segMembers.map(m => m.y + hH)) + TOUCH_PAD;
-                dy = Math.min(dy, lc - MIN_BAND_H);
+                // Don't apply ceiling constraint for goBelow: the line goes DOWN
+                // (away from the ceiling), so clamping upward would defeat the purpose.
               }
               segments.push({ xLeft: segXLeft, xRight: segXRight, type: prevType, detourY: dy });
               segStart = si;
@@ -948,7 +968,8 @@ const Tree = (() => {
               .filter(m => m.type === 'goBelow')
               .map(m => m.y + hH));
             detourY = maxBoxBottom + TOUCH_PAD;
-            detourY = Math.min(detourY, localCeiling - MIN_BAND_H);
+            // Don't apply ceiling constraint for goBelow: the line goes DOWN
+            // (away from the ceiling), so clamping upward would defeat the purpose.
           } else {
             detourY = myHomeY;
           }

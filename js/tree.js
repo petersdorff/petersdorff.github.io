@@ -1022,25 +1022,51 @@ const Tree = (() => {
 
       // ─── Merge consecutive goAbove detours ───
       // When two clusters both detour above (y < myHomeY) and the line
-      // briefly returns to homeY between them, remove the dip to eliminate
-      // V-shaped spikes in the gap. Keep the line at the detour level.
-      if (waypoints.length >= 6) {
-        const merged = [waypoints[0]];
-        let i = 1;
+      // briefly returns to homeY between them, bridge the gap to eliminate
+      // V-shaped spikes. Scan for the pattern: detour → slope to homeY →
+      // homeY segment → slope back to detour, and replace with a bridge.
+      if (waypoints.length >= 4) {
+        const merged = [];
+        // Find "detour runs" — contiguous sequences where y < myHomeY
+        // and "homeY runs" — sequences at homeY. When a homeY run is
+        // sandwiched between two detour runs, replace with a bridge.
+        let i = 0;
         while (i < waypoints.length) {
-          // Pattern: ...detourEnd(y<homeY), returnToHome, returnToHome, slopeStart, detourStart(y<homeY)...
-          // We look for: wp[i] at detourY, wp[i+1] at homeY, wp[i+2] at homeY, wp[i+3] at detourY
-          if (i + 3 < waypoints.length &&
-              waypoints[i].y < myHomeY - 1 &&
-              Math.abs(waypoints[i + 1].y - myHomeY) < 1 &&
-              Math.abs(waypoints[i + 2].y - myHomeY) < 1 &&
-              waypoints[i + 3].y < myHomeY - 1) {
-            // Connect the two detours directly: keep the detour Y levels
-            // Use the higher (more negative) of the two detour Y values
-            const bridgeY = Math.min(waypoints[i].y, waypoints[i + 3].y);
-            merged.push({ x: waypoints[i].x, y: bridgeY });
-            merged.push({ x: waypoints[i + 3].x, y: bridgeY });
-            i += 4; // skip the homeY dip and the next detour start
+          // Check if we're at a detour point followed by a return-to-home
+          // then another detour: look ahead for the pattern
+          if (waypoints[i].y < myHomeY - 1) {
+            // We're at a detour point. Add it.
+            merged.push(waypoints[i]);
+            // Look ahead: does the line return to homeY and then go back up?
+            let j = i + 1;
+            // Find where it reaches homeY
+            while (j < waypoints.length && waypoints[j].y < myHomeY - 1) {
+              merged.push(waypoints[j]);
+              j++;
+            }
+            // j is now at a slope-toward-homeY or homeY point
+            // Skip all the homeY or slope points until we find the next detour
+            let homeStart = j;
+            while (j < waypoints.length && waypoints[j].y >= myHomeY - 1) {
+              j++;
+            }
+            // j is now at the next detour point (or end of array)
+            if (j < waypoints.length && waypoints[j].y < myHomeY - 1 && homeStart < j) {
+              // Found the pattern! Bridge from last detour point to next detour point
+              const lastDetour = merged[merged.length - 1];
+              const nextDetour = waypoints[j];
+              const bridgeY = Math.min(lastDetour.y, nextDetour.y);
+              // Replace last point with bridge start, add bridge end
+              merged[merged.length - 1] = { x: lastDetour.x, y: bridgeY };
+              merged.push({ x: nextDetour.x, y: bridgeY });
+              i = j + 1; // continue after the next detour start (it's now the bridge end)
+            } else {
+              // No bridge needed, add the homeY points normally
+              for (let k = homeStart; k < j; k++) {
+                merged.push(waypoints[k]);
+              }
+              i = j;
+            }
           } else {
             merged.push(waypoints[i]);
             i++;

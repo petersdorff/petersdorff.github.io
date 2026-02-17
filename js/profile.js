@@ -156,6 +156,16 @@ const Profile = (() => {
     } else {
       btnAddRel.style.display = '';
       await Relations.renderEditRelations(memberId);
+
+      // Show hint if member has zero relationships (orphan — not visible on tree)
+      const rels = await DB.getRelationshipsForMember(memberId);
+      if (rels.length === 0) {
+        const container = document.getElementById('edit-existing-rels');
+        const hint = document.createElement('div');
+        hint.className = 'rel-empty';
+        hint.textContent = 'Füge eine Verbindung hinzu, damit du im Stammbaum erscheinst.';
+        container.prepend(hint);
+      }
     }
 
     App.showView('view-edit');

@@ -203,7 +203,10 @@ const Claim = (() => {
 
     App.toast('Willkommen im Stammbaum!', 'success');
     await App.loadTree();
-    App.showView('view-main');
+
+    // Redirect to profile edit so the user can add their first relationship.
+    // Without a relationship they won't appear on the tree (orphan filter).
+    Profile.edit(memberId);
   }
 
   return {

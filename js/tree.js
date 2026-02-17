@@ -17,6 +17,7 @@ const Tree = (() => {
   let highlightedFromId = null;
   let highlightedToId = null;
   let onNodeTapCallback = null;
+  let onBackgroundTapCallback = null;
   let currentUserId = null;
 
   // View mode state
@@ -69,10 +70,11 @@ const Tree = (() => {
       if (onNodeTapCallback) onNodeTapCallback(nodeId);
     });
 
-    // Tap on background to deselect
+    // Tap on background to deselect and close overlays
     cy.on('tap', (evt) => {
       if (evt.target === cy) {
         clearHighlight();
+        if (onBackgroundTapCallback) onBackgroundTapCallback();
       }
     });
 
@@ -98,6 +100,10 @@ const Tree = (() => {
 
   function onNodeTap(callback) {
     onNodeTapCallback = callback;
+  }
+
+  function onBackgroundTap(callback) {
+    onBackgroundTapCallback = callback;
   }
 
   function setCurrentUser(memberId) {
@@ -672,359 +678,102 @@ const Tree = (() => {
 
   // ═══════════════════════════════════════════════════════════
   //  ISOCHRONES (for generational view)
-  //
-  //  "Anchor-to-leftmost + box avoidance" algorithm:
-  //
-  //  1. For each boundary, the left-edge Y is anchored to the
-  //     actual positions of the leftmost people: placed at the
-  //     top edge of the leftmost "below" person's box (the
-  //     youngest person who should be below the line).
-  //  2. This ensures boundary labels align with people's actual
-  //     positions, not arbitrary even spacing.
-  //  3. Each line stays at its anchor Y, only detouring around
-  //     boxes that physically conflict.
-  //  4. When a gen row has many conflicting people, they merge
-  //     into one continuous detour (no bouncing back between
-  //     people at the same row).
-  //
-  //  Fully data-driven: works for any tree shape.
+  //  Simple zig-zag algorithm: for each 25-year boundary,
+  //  the line goes below people born before the boundary
+  //  and above people born after it.
   // ═══════════════════════════════════════════════════════════
 
   function computeZigZagIsochrones(members, positions, generation, memberMap) {
-    const PERIOD = 25;
-    const PAD = 12;               // padding around boxes
-    const hH = NODE_H / 2 + PAD;
-    const hW = NODE_W / 2 + PAD;
-    const MIN_BAND_H = 30;
+    const PERIOD = 25; // years per isochrone interval
 
-    // ─── 1. Collect people with birth years + positions ───
-    const people = [];
+    // Collect members with birth years + positions
+    const points = [];
     for (const m of members) {
-      if (!positions[m.id]) continue;
-      let year = null;
-      if (m.birthDate) {
-        year = parseInt(m.birthDate.substring(0, 4));
-        if (isNaN(year)) year = null;
-      }
-      if (year === null) continue;
-      people.push({
+      if (!m.birthDate || !positions[m.id]) continue;
+      const year = parseInt(m.birthDate.substring(0, 4));
+      if (isNaN(year)) continue;
+      points.push({
         id: m.id,
         x: positions[m.id].x,
         y: positions[m.id].y,
         year,
-        bucket: Math.floor(year / PERIOD) * PERIOD,
+        period: Math.floor(year / PERIOD) * PERIOD,
+        gen: generation.get(m.id) || 0,
       });
     }
-    if (people.length < 2) return [];
 
-    // ─── 2. Unique buckets sorted oldest-first ───
-    const bucketSet = new Set(people.map(p => p.bucket));
-    const bucketsAsc = [...bucketSet].sort((a, b) => a - b);
-    if (bucketsAsc.length < 2) return [];
+    if (points.length < 2) return [];
 
-    // Boundaries between adjacent buckets
-    const boundaries = [];
-    for (let i = 0; i < bucketsAsc.length - 1; i++) {
-      boundaries.push(bucketsAsc[i + 1]);
-    }
-    const numBounds = boundaries.length;
+    // Find all 25-year periods present
+    const periods = [...new Set(points.map(p => p.period))].sort((a, b) => a - b);
+    if (periods.length < 2) return [];
 
-    // ─── 3. Global layout info ───
-    const allX = Object.values(positions).map(p => p.x);
-    const xMin = Math.min(...allX) - NODE_W - 80;
-    const xMax = Math.max(...allX) + NODE_W + 80;
+    // Get X range with padding
+    const allX = points.map(p => p.x);
+    const xMin = Math.min(...allX) - NODE_W;
+    const xMax = Math.max(...allX) + NODE_W;
 
-    // ─── 4. Compute anchor Y for each boundary ───
-    //
-    // Strategy: evenly-spaced left-edge labels.
-    //
-    // 1. Find the leftmost person per generation row (minimum X).
-    //    These define the left "spine" of the tree.
-    // 2. yTop = top edge of topmost spine person
-    //    yBottom = bottom edge of bottommost spine person
-    // 3. Divide [yTop, yBottom] into numBuckets equal bands.
-    //    Each band represents one 25-year period.
-    //    The last boundary (youngest) sits at yBottom so the
-    //    deepest person's box bottom aligns with the final label.
-
-    // Find leftmost person per generation row (by Y coordinate)
-    const leftmostPerRow = new Map(); // y → person
-    for (const p of people) {
-      const rowKey = Math.round(p.y); // round to avoid float issues
-      const existing = leftmostPerRow.get(rowKey);
-      if (!existing || p.x < existing.x) {
-        leftmostPerRow.set(rowKey, p);
-      }
-    }
-
-    // The spine people define the vertical range
-    const spinePeople = [...leftmostPerRow.values()];
-    spinePeople.sort((a, b) => a.y - b.y); // top to bottom
-
-    // Vertical extent: top edge of topmost → bottom edge of bottommost
-    const yTop = spinePeople[0].y - hH;
-    const yBottom = spinePeople[spinePeople.length - 1].y + hH;
-
-    // Equal band height: divide vertical extent by number of boundaries.
-    // The first boundary sits at yTop + bandH, the last at yBottom.
-    // This places the youngest boundary (e.g. 2025) at the bottom edge
-    // of the lowest person, so people at the bottom row are ABOVE it.
-    const bandH = (yBottom - yTop) / numBounds;
-
-    const homeY = [];
-    for (let bi = 0; bi < numBounds; bi++) {
-      homeY.push(yTop + (bi + 1) * bandH);
-    }
-
-    // Enforce monotonic ordering and minimum gap
-    for (let i = 1; i < homeY.length; i++) {
-      if (homeY[i] <= homeY[i - 1] + MIN_BAND_H) {
-        homeY[i] = homeY[i - 1] + MIN_BAND_H;
-      }
-    }
-
-    // ─── 5. Build each isochrone (youngest-to-oldest) ───
-
-    let prevWaypoints = null;
-    const allYs = people.map(p => p.y);
-    const defaultCeiling = Math.max(...allYs) + hH + GEN_GAP;
-
-    function ceilingAtX(x) {
-      if (!prevWaypoints || prevWaypoints.length === 0) return defaultCeiling;
-      for (let i = 0; i < prevWaypoints.length - 1; i++) {
-        const a = prevWaypoints[i];
-        const b = prevWaypoints[i + 1];
-        if (a.x === b.x) continue;
-        if (x >= Math.min(a.x, b.x) && x <= Math.max(a.x, b.x)) {
-          const t = (x - a.x) / (b.x - a.x);
-          return a.y + t * (b.y - a.y);
-        }
-      }
-      if (x <= prevWaypoints[0].x) return prevWaypoints[0].y;
-      return prevWaypoints[prevWaypoints.length - 1].y;
-    }
-
+    // For each period boundary, build a zig-zag path
     const isochroneData = [];
 
-    for (let bi = numBounds - 1; bi >= 0; bi--) {
-      const boundaryYear = boundaries[bi];
-      const myHomeY = homeY[bi];
+    for (let i = 0; i < periods.length; i++) {
+      const boundary = periods[i] + PERIOD;
 
-      const belowPeople = people.filter(p => p.year >= boundaryYear);
-      const abovePeople = people.filter(p => p.year < boundaryYear);
-      if (belowPeople.length === 0 || abovePeople.length === 0) continue;
+      // Find members near this boundary (born in period before or after)
+      const nearbyPoints = points.filter(p =>
+        Math.abs(p.period - periods[i]) <= PERIOD
+      );
+      if (nearbyPoints.length === 0) continue;
 
-      // ─── Find ALL boxes that conflict with homeY ───
-      // Use generous padding: treat any box within PAD of the line as conflict
-      const TOUCH_PAD = 5; // extra clearance
-      const conflicts = [];
+      // Sort by X position
+      nearbyPoints.sort((a, b) => a.x - b.x);
 
-      for (const p of belowPeople) {
-        const boxTop = p.y - hH;
-        const boxBottom = p.y + hH;
-        // Person should be below the line → line must be above box top
-        if (boxTop < myHomeY + TOUCH_PAD) {
-          conflicts.push({ ...p, type: 'goAbove' });
-        }
-      }
-      for (const p of abovePeople) {
-        const boxBottom = p.y + hH;
-        // Person should be above the line → line must be below box bottom
-        if (boxBottom > myHomeY - TOUCH_PAD) {
-          conflicts.push({ ...p, type: 'goBelow' });
-        }
-      }
-
-      // Sort conflicts left→right
-      conflicts.sort((a, b) => a.x - b.x);
-
-      // Group into clusters — use wider merge distance to prevent
-      // the line from bouncing back to homeY between people at same row
-      const MERGE_GAP = SIBLING_GAP + NODE_W; // merge if gap < sibling gap + node width
-      const clusters = [];
-      for (const c of conflicts) {
-        const boxLeft = c.x - hW;
-        const boxRight = c.x + hW;
-        if (clusters.length > 0) {
-          const last = clusters[clusters.length - 1];
-          if (boxLeft <= last.xRight + MERGE_GAP) {
-            last.xRight = Math.max(last.xRight, boxRight);
-            last.members.push(c);
-            continue;
-          }
-        }
-        clusters.push({ xLeft: boxLeft, xRight: boxRight, members: [c] });
-      }
-
-      // ─── Build waypoints ───
+      // Build waypoints for the zig-zag path
       const waypoints = [];
-      let curX = xMin;
-      const SLOPE_RUN = 50;
 
-      for (const cluster of clusters) {
-        // Horizontal at homeY up to the slope start
-        const slopeStart = cluster.xLeft - SLOPE_RUN;
-        if (curX < slopeStart) {
-          waypoints.push({ x: curX, y: myHomeY });
-          waypoints.push({ x: slopeStart, y: myHomeY });
-          curX = slopeStart;
-        } else if (curX < cluster.xLeft - 5) {
-          waypoints.push({ x: curX, y: myHomeY });
-          curX = cluster.xLeft - 5;
-        }
+      // Default Y: average Y of members in the boundary periods
+      const abovePoints = nearbyPoints.filter(p => p.period <= periods[i]);
+      const belowPoints = nearbyPoints.filter(p => p.period > periods[i]);
 
-        // Determine detour Y
-        const hasGoAbove = cluster.members.some(m => m.type === 'goAbove');
-        const hasGoBelow = cluster.members.some(m => m.type === 'goBelow');
+      let defaultY;
+      if (abovePoints.length > 0 && belowPoints.length > 0) {
+        const avgAboveY = abovePoints.reduce((s, p) => s + p.y, 0) / abovePoints.length;
+        const avgBelowY = belowPoints.reduce((s, p) => s + p.y, 0) / belowPoints.length;
+        defaultY = (avgAboveY + avgBelowY) / 2;
+      } else if (abovePoints.length > 0) {
+        defaultY = abovePoints.reduce((s, p) => s + p.y, 0) / abovePoints.length + GEN_GAP / 2;
+      } else {
+        defaultY = belowPoints.reduce((s, p) => s + p.y, 0) / belowPoints.length - GEN_GAP / 2;
+      }
 
-        if (hasGoAbove && hasGoBelow) {
-          // ─── Mixed cluster: weave between goBelow (left) and goAbove (right) ───
-          // Sort cluster members by X position
-          const sorted = [...cluster.members].sort((a, b) => a.x - b.x);
+      waypoints.push({ x: xMin - 50, y: defaultY });
 
-          // Find the transition point: last goBelow person before first goAbove person
-          // (or vice versa — we weave wherever the type changes)
-          const segments = []; // array of { xLeft, xRight, type, detourY }
-          let segStart = 0;
-          for (let si = 1; si <= sorted.length; si++) {
-            const prevType = sorted[si - 1].type;
-            const curType = si < sorted.length ? sorted[si].type : null;
-            if (curType !== prevType) {
-              const segMembers = sorted.slice(segStart, si);
-              const segXLeft = Math.min(...segMembers.map(m => m.x - hW));
-              const segXRight = Math.max(...segMembers.map(m => m.x + hW));
-              const lc = ceilingAtX((segXLeft + segXRight) / 2);
-              let dy;
-              if (prevType === 'goAbove') {
-                dy = Math.min(...segMembers.map(m => m.y - hH)) - TOUCH_PAD;
-                dy = Math.min(dy, lc - MIN_BAND_H);
-              } else {
-                dy = Math.max(...segMembers.map(m => m.y + hH)) + TOUCH_PAD;
-                dy = Math.min(dy, lc - MIN_BAND_H);
-              }
-              segments.push({ xLeft: segXLeft, xRight: segXRight, type: prevType, detourY: dy });
-              segStart = si;
-            }
-          }
-
-          // Build waypoints for each segment with transitions between them
-          waypoints.push({ x: curX, y: myHomeY });
-          for (let si = 0; si < segments.length; si++) {
-            const seg = segments[si];
-            waypoints.push({ x: seg.xLeft - 5, y: seg.detourY });
-            waypoints.push({ x: seg.xRight + 5, y: seg.detourY });
-            // Transition to next segment or back to homeY
-            if (si < segments.length - 1) {
-              const nextSeg = segments[si + 1];
-              // Slope between segments
-              const midX = (seg.xRight + nextSeg.xLeft) / 2;
-              waypoints.push({ x: midX, y: myHomeY });
-              waypoints.push({ x: midX, y: myHomeY });
-            }
-          }
-          const returnX = Math.min(cluster.xRight + SLOPE_RUN, xMax);
-          waypoints.push({ x: returnX, y: myHomeY });
-          curX = returnX;
-
+      // Walk through members left to right
+      for (const p of nearbyPoints) {
+        const nodeHalfH = NODE_H / 2 + 10; // padding around node
+        if (p.year < boundary) {
+          // Member is born BEFORE the boundary → isochrone goes BELOW
+          waypoints.push({ x: p.x, y: p.y + nodeHalfH });
         } else {
-          // ─── Uniform cluster: all goAbove or all goBelow ───
-          let detourY;
-          const localCeiling = ceilingAtX((cluster.xLeft + cluster.xRight) / 2);
-          if (hasGoAbove) {
-            const minBoxTop = Math.min(...cluster.members
-              .filter(m => m.type === 'goAbove')
-              .map(m => m.y - hH));
-            detourY = minBoxTop - TOUCH_PAD;
-            // Ensure minimum distance from previous (younger) isochrone
-            detourY = Math.min(detourY, localCeiling - MIN_BAND_H);
-          } else if (hasGoBelow) {
-            const maxBoxBottom = Math.max(...cluster.members
-              .filter(m => m.type === 'goBelow')
-              .map(m => m.y + hH));
-            detourY = maxBoxBottom + TOUCH_PAD;
-            detourY = Math.min(detourY, localCeiling - MIN_BAND_H);
-          } else {
-            detourY = myHomeY;
-          }
-
-          // Slope into detour → horizontal across → slope back
-          waypoints.push({ x: curX, y: myHomeY });
-          waypoints.push({ x: cluster.xLeft - 5, y: detourY });
-          waypoints.push({ x: cluster.xRight + 5, y: detourY });
-          const returnX = Math.min(cluster.xRight + SLOPE_RUN, xMax);
-          waypoints.push({ x: returnX, y: myHomeY });
-          curX = returnX;
+          // Member is born AT or AFTER the boundary → isochrone goes ABOVE
+          waypoints.push({ x: p.x, y: p.y - nodeHalfH });
         }
       }
 
-      // Final segment
-      if (curX < xMax) {
-        waypoints.push({ x: curX, y: myHomeY });
-        waypoints.push({ x: xMax, y: myHomeY });
-      }
+      // End at right edge
+      waypoints.push({ x: xMax + 50, y: defaultY });
 
-      if (waypoints.length === 0) {
-        waypoints.push({ x: xMin, y: myHomeY });
-        waypoints.push({ x: xMax, y: myHomeY });
-      }
-
-      // ─── Enforce minimum band thickness ───
-      // First pass: check each waypoint
-      for (const wp of waypoints) {
-        const ceil = ceilingAtX(wp.x);
-        if (wp.y > ceil - MIN_BAND_H) {
-          wp.y = ceil - MIN_BAND_H;
-        }
-      }
-      // Second pass: add intermediate points along long segments
-      // to prevent the line from dipping too close mid-segment
-      const refined = [waypoints[0]];
-      for (let wi = 1; wi < waypoints.length; wi++) {
-        const a = waypoints[wi - 1];
-        const b = waypoints[wi];
-        const dx = b.x - a.x;
-        if (Math.abs(dx) > 30) {
-          const steps = Math.ceil(Math.abs(dx) / 30);
-          for (let s = 1; s < steps; s++) {
-            const t = s / steps;
-            const mx = a.x + t * dx;
-            const my = a.y + t * (b.y - a.y);
-            const ceil = ceilingAtX(mx);
-            refined.push({ x: mx, y: Math.min(my, ceil - MIN_BAND_H) });
-          }
-        }
-        const ceil = ceilingAtX(b.x);
-        refined.push({ x: b.x, y: Math.min(b.y, ceil - MIN_BAND_H) });
-      }
-      waypoints.length = 0;
-      waypoints.push(...refined);
-
-      // Clean up duplicates
-      const clean = [waypoints[0]];
-      for (let i = 1; i < waypoints.length; i++) {
-        const prev = clean[clean.length - 1];
-        if (Math.abs(waypoints[i].x - prev.x) > 0.5 || Math.abs(waypoints[i].y - prev.y) > 0.5) {
-          clean.push(waypoints[i]);
-        }
-      }
-
-      let pathData = `M ${clean[0].x} ${clean[0].y}`;
-      for (let i = 1; i < clean.length; i++) {
-        pathData += ` L ${clean[i].x} ${clean[i].y}`;
-      }
+      // Convert waypoints to smooth SVG path
+      const pathData = waypointsToSmoothPath(waypoints);
 
       isochroneData.push({
-        year: boundaryYear,
+        year: boundary,
         pathData,
-        waypoints: clean,
-        primaryY: myHomeY,
+        waypoints, // stored for zebra fill regions
         type: 'zigzag',
       });
-
-      prevWaypoints = clean;
     }
 
-    isochroneData.reverse();
     return isochroneData;
   }
 
@@ -1363,15 +1112,15 @@ const Tree = (() => {
         },
       },
       {
+        selector: 'node.placeholder',
+        style: { 'border-style': 'dotted' },
+      },
+      {
         selector: 'node.deceased',
         style: {
           'border-style': 'dashed', 'border-color': COLORS.textMuted,
           'color': COLORS.textMuted, 'background-color': COLORS.bgSecondary,
         },
-      },
-      {
-        selector: 'node.placeholder',
-        style: { 'border-style': 'dotted' },
       },
       {
         selector: 'node.current-user',
@@ -1651,6 +1400,7 @@ const Tree = (() => {
   return {
     init,
     onNodeTap,
+    onBackgroundTap,
     setCurrentUser,
     render,
     highlightConnection,

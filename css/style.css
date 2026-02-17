@@ -1379,6 +1379,35 @@ a {
   100% { stroke-opacity: 0.4; }
 }
 
+/* ═══════════════════════════════════════════════════════════
+   VIEW MODE TOGGLE BUTTON
+   ═══════════════════════════════════════════════════════════ */
+
+#btn-view-toggle {
+  position: relative;
+}
+
+#btn-view-toggle .icon-gen,
+#btn-view-toggle .icon-temp {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  transition: opacity var(--transition);
+}
+
+#btn-view-toggle .icon-temp {
+  opacity: 0;
+}
+
+#btn-view-toggle.mode-temporal .icon-gen {
+  opacity: 0;
+}
+
+#btn-view-toggle.mode-temporal .icon-temp {
+  opacity: 1;
+}
+
 /* Dark mode support (future) */
 @media (prefers-color-scheme: dark) {
   /* Could add dark mode variables here later */

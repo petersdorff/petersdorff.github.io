@@ -4,6 +4,9 @@
    descent line from the midpoint of the couple connector.
    PCB / Circuit Board aesthetic
 
+   Supports two view modes:
+   - "generational" : members at generation-based Y (all same-gen on one row)
+   - "temporal"      : members at birth-year-proportional Y (timeline)
    ═══════════════════════════════════════════════════════════ */
 
 const Tree = (() => {
@@ -16,6 +19,9 @@ const Tree = (() => {
   let onNodeTapCallback = null;
   let onBackgroundTapCallback = null;
   let currentUserId = null;
+
+  // View mode state
+  let viewMode = localStorage.getItem('stammbaum_viewMode') || 'generational';
 
   const COLORS = {
     trace: '#1a1a1a',
@@ -37,6 +43,7 @@ const Tree = (() => {
   const SIBLING_GAP = 50;    // gap between sibling nodes
   const GEN_GAP = 140;       // vertical gap between generations
   const COUPLE_NODE_SIZE = 1; // invisible midpoint node
+  const YEAR_PX = 5;          // pixels per year in temporal mode
 
   // ═══════════════════════════════════════════════════════════
   //  INIT
@@ -98,13 +105,31 @@ const Tree = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════
+  //  VIEW MODE
+  // ═══════════════════════════════════════════════════════════
+
+  function setViewMode(mode) {
+    if (mode !== 'generational' && mode !== 'temporal') return;
+    if (mode === viewMode) return;
+    viewMode = mode;
+    localStorage.setItem('stammbaum_viewMode', mode);
+    if (members.length > 0) {
+      renderWithAnimation();
+    }
+  }
+
+  function getViewMode() {
+    return viewMode;
+  }
+
+  // ═══════════════════════════════════════════════════════════
   //  SHARED LAYOUT HELPERS
   // ═══════════════════════════════════════════════════════════
 
   /**
    * Build adjacency structures, identify couples, assign generations,
    * compute family units, and calculate subtree widths.
-   * Shared layout helper used by buildGenerationalLayout.
+   * Shared between generational and temporal layouts.
    */
   function buildLayoutBase(members, relationships) {
     const memberMap = new Map(members.map(m => [m.id, m]));
@@ -483,6 +508,155 @@ const Tree = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════
+  //  TEMPORAL LAYOUT
+  // ═══════════════════════════════════════════════════════════
+
+  function buildTemporalLayout(members, relationships) {
+    const base = buildLayoutBase(members, relationships);
+    const positions = {};
+    const { coupleMap, genGroups, maxGen, generation, unitChildren, unitWidth, getUnitForPerson, inCouple, couples, unitBirthYear } = base;
+    const elements = buildElements(base);
+
+    // ─── Compute birth years ───
+    const birthYears = new Map();
+    let minYear = Infinity, maxYear = -Infinity;
+
+    for (const m of members) {
+      if (m.birthDate) {
+        const y = parseInt(m.birthDate.substring(0, 4));
+        if (!isNaN(y)) {
+          birthYears.set(m.id, y);
+          minYear = Math.min(minYear, y);
+          maxYear = Math.max(maxYear, y);
+        }
+      }
+    }
+
+    // Average birth year per generation (for fallback)
+    const genYears = new Map();
+    for (const [id, year] of birthYears) {
+      const gen = generation.get(id) || 0;
+      if (!genYears.has(gen)) genYears.set(gen, []);
+      genYears.get(gen).push(year);
+    }
+    const genAvgYear = new Map();
+    for (const [gen, years] of genYears) {
+      genAvgYear.set(gen, years.reduce((a, b) => a + b, 0) / years.length);
+    }
+
+    // Assign missing birth years from generation average
+    for (const m of members) {
+      if (!birthYears.has(m.id)) {
+        const gen = generation.get(m.id) || 0;
+        const avg = genAvgYear.get(gen);
+        birthYears.set(m.id, avg ? Math.round(avg) : (minYear !== Infinity ? minYear + gen * 25 : 1950 + gen * 25));
+      }
+    }
+
+    if (minYear === Infinity) minYear = 1920;
+    if (maxYear === -Infinity) maxYear = 2030;
+    const baseYear = Math.floor(minYear / 10) * 10;
+
+    function yearToY(year) {
+      return (year - baseYear) * YEAR_PX;
+    }
+
+    // ─── Compute Y for each member ───
+    const memberY = new Map();
+    for (const m of members) {
+      memberY.set(m.id, yearToY(birthYears.get(m.id)));
+    }
+
+    // Couples: each spouse keeps their birth-year Y, midpoint at average
+    const coupleY = new Map();
+    for (const couple of couples) {
+      const ya = memberY.get(couple.a) || 0;
+      const yb = memberY.get(couple.b) || 0;
+      const avg = (ya + yb) / 2;
+      coupleY.set(couple.id, avg);
+    }
+
+    // ─── Position units (X from width calc, Y from birth year) ───
+    const allUnitsPlaced = new Set();
+
+    function positionUnit(unit, centerX) {
+      if (allUnitsPlaced.has(unit.id)) return;
+      allUnitsPlaced.add(unit.id);
+
+      let y;
+      if (unit.type === 'couple') {
+        const couple = coupleMap.get(unit.id);
+        const ya = memberY.get(couple.a) || 0;
+        const yb = memberY.get(couple.b) || 0;
+        const midY = coupleY.get(unit.id) || 0;
+        positions[couple.a] = { x: centerX - (SPOUSE_GAP / 2) - (NODE_W / 2), y: ya };
+        positions[couple.b] = { x: centerX + (SPOUSE_GAP / 2) + (NODE_W / 2), y: yb };
+        positions[unit.id] = { x: centerX, y: midY };
+        y = midY;
+      } else {
+        y = memberY.get(unit.id) || 0;
+        positions[unit.id] = { x: centerX, y };
+      }
+
+      const children = unit.children || [];
+      if (children.length === 0) return;
+
+      const childUnitIds = [];
+      const seen = new Set();
+      for (const childId of children) {
+        const cu = getUnitForPerson(childId);
+        if (!seen.has(cu)) { seen.add(cu); childUnitIds.push(cu); }
+      }
+
+      childUnitIds.sort((a, b) => unitBirthYear(a) - unitBirthYear(b));
+
+      let totalChildWidth = 0;
+      for (const cuId of childUnitIds) totalChildWidth += (unitWidth.get(cuId) || NODE_W);
+      totalChildWidth += (childUnitIds.length - 1) * SIBLING_GAP;
+
+      let childX = centerX - totalChildWidth / 2;
+      for (const cuId of childUnitIds) {
+        const w = unitWidth.get(cuId) || NODE_W;
+        const childCenterX = childX + w / 2;
+        const coupleInfo = coupleMap.get(cuId);
+        if (coupleInfo) {
+          positionUnit({ type: 'couple', id: cuId, a: coupleInfo.a, b: coupleInfo.b, children: unitChildren.get(cuId) || [] }, childCenterX);
+        } else {
+          positionUnit({ type: 'single', id: cuId, children: unitChildren.get(cuId) || [] }, childCenterX);
+        }
+        childX += w + SIBLING_GAP;
+      }
+    }
+
+    // Position root units
+    const rootUnits = genGroups[0] || [];
+    let totalRootWidth = 0;
+    for (const ru of rootUnits) totalRootWidth += (unitWidth.get(ru.id) || NODE_W);
+    totalRootWidth += (rootUnits.length - 1) * SIBLING_GAP * 2;
+
+    let rootX = -totalRootWidth / 2;
+    for (const ru of rootUnits) {
+      const w = unitWidth.get(ru.id) || NODE_W;
+      positionUnit(ru, rootX + w / 2);
+      rootX += w + SIBLING_GAP * 2;
+    }
+
+    // Disconnected subtrees
+    for (let g = 0; g <= maxGen; g++) {
+      for (const unit of genGroups[g]) {
+        if (!allUnitsPlaced.has(unit.id)) {
+          rootX += SIBLING_GAP * 2;
+          const w = unitWidth.get(unit.id) || NODE_W;
+          positionUnit(unit, rootX + w / 2);
+          rootX += w;
+        }
+      }
+    }
+
+    return { elements, positions };
+  }
+
+  // ═══════════════════════════════════════════════════════════
   //  RENDER
   // ═══════════════════════════════════════════════════════════
 
@@ -490,7 +664,9 @@ const Tree = (() => {
     members = memberData;
     relationships = relationshipData;
 
-    const result = buildGenerationalLayout(members, relationships);
+    const result = viewMode === 'temporal'
+      ? buildTemporalLayout(members, relationships)
+      : buildGenerationalLayout(members, relationships);
     const { elements, positions } = result;
 
     cy.elements().remove();
@@ -507,8 +683,40 @@ const Tree = (() => {
     }
 
     cy.fit(undefined, 60);
-    cy.edges('.spouse-edge').style({ 'curve-style': 'straight' });
+    applySpouseEdgeStyle();
     cy.style().update();
+  }
+
+  /**
+   * Animated re-render for view mode switching.
+   */
+  function renderWithAnimation() {
+    const result = viewMode === 'temporal'
+      ? buildTemporalLayout(members, relationships)
+      : buildGenerationalLayout(members, relationships);
+    const { positions } = result;
+
+    applySpouseEdgeStyle();
+
+    const duration = 700;
+    for (const [id, pos] of Object.entries(positions)) {
+      const node = cy.getElementById(id);
+      if (node.length) {
+        node.animate({ position: pos }, { duration, easing: 'ease-in-out-cubic' });
+      }
+    }
+
+    setTimeout(() => {
+      cy.animate({ fit: { padding: 60 }, duration: 400, easing: 'ease-out' });
+    }, duration);
+  }
+
+  /**
+   * Apply view-mode-specific style to spouse edges.
+   */
+  function applySpouseEdgeStyle() {
+    if (!cy) return;
+    cy.edges('.spouse-edge').style({ 'curve-style': 'straight' });
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -877,5 +1085,7 @@ const Tree = (() => {
     fitAll,
     getNodePosition,
     getCy,
+    setViewMode,
+    getViewMode,
   };
 })();

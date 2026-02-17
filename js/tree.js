@@ -1020,6 +1020,36 @@ const Tree = (() => {
         waypoints.push({ x: xMax, y: myHomeY });
       }
 
+      // ─── Merge consecutive goAbove detours ───
+      // When two clusters both detour above (y < myHomeY) and the line
+      // briefly returns to homeY between them, remove the dip to eliminate
+      // V-shaped spikes in the gap. Keep the line at the detour level.
+      if (waypoints.length >= 6) {
+        const merged = [waypoints[0]];
+        let i = 1;
+        while (i < waypoints.length) {
+          // Pattern: ...detourEnd(y<homeY), returnToHome, returnToHome, slopeStart, detourStart(y<homeY)...
+          // We look for: wp[i] at detourY, wp[i+1] at homeY, wp[i+2] at homeY, wp[i+3] at detourY
+          if (i + 3 < waypoints.length &&
+              waypoints[i].y < myHomeY - 1 &&
+              Math.abs(waypoints[i + 1].y - myHomeY) < 1 &&
+              Math.abs(waypoints[i + 2].y - myHomeY) < 1 &&
+              waypoints[i + 3].y < myHomeY - 1) {
+            // Connect the two detours directly: keep the detour Y levels
+            // Use the higher (more negative) of the two detour Y values
+            const bridgeY = Math.min(waypoints[i].y, waypoints[i + 3].y);
+            merged.push({ x: waypoints[i].x, y: bridgeY });
+            merged.push({ x: waypoints[i + 3].x, y: bridgeY });
+            i += 4; // skip the homeY dip and the next detour start
+          } else {
+            merged.push(waypoints[i]);
+            i++;
+          }
+        }
+        waypoints.length = 0;
+        waypoints.push(...merged);
+      }
+
       // ─── Enforce minimum band thickness ───
       // Only apply ceiling constraint to goAbove detours (y < myHomeY).
       // GoBelow detours (y > myHomeY) intentionally go downward — clamping

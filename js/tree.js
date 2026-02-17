@@ -794,6 +794,7 @@ const Tree = (() => {
     }
 
     const isochroneData = [];
+    window._isoDebug = [];
 
     for (let bi = numBounds - 1; bi >= 0; bi--) {
       const boundaryYear = boundaries[bi];
@@ -840,6 +841,8 @@ const Tree = (() => {
 
       // Sort intervals left→right
       intervals.sort((a, b) => a.xLeft - b.xLeft);
+
+      window._isoDebug.push({ boundaryYear, myHomeY, intervals: intervals.map(iv => ({...iv})) });
 
       // ─── Same-direction-only merge ───
       // Merge intervals with the SAME direction that are within MERGE_GAP of each other.

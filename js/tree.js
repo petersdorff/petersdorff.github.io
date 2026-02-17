@@ -400,10 +400,11 @@ const Tree = (() => {
     for (const couple of couples) calcWidth(couple.id);
     for (const m of members) { if (!inCouple.has(m.id)) calcWidth(m.id); }
 
-    // Helper: get the birth year of the blood descendant in a unit (for sibling sorting).
+    // Helper: get a sortable birth date string for the blood descendant in a unit.
     // For couples, use only the 'a' member (blood descendant, has parents in tree),
     // NOT the married-in spouse — otherwise a younger sibling's older spouse can
     // pull the whole couple left of an older sibling.
+    // Returns full YYYY-MM-DD so same-year siblings sort correctly by month/day.
     function unitBirthYear(unitId) {
       const couple = coupleMap.get(unitId);
       let person;
@@ -413,11 +414,8 @@ const Tree = (() => {
       } else {
         person = memberMap.get(unitId);
       }
-      if (person?.birthDate) {
-        const y = parseInt(person.birthDate.substring(0, 4));
-        if (!isNaN(y)) return y;
-      }
-      return 9999;
+      if (person?.birthDate) return person.birthDate;
+      return '9999-12-31';
     }
 
     return {
@@ -543,7 +541,7 @@ const Tree = (() => {
       }
 
       // Sort siblings: oldest (smallest birth year) on left
-      childUnitIds.sort((a, b) => unitBirthYear(a) - unitBirthYear(b));
+      childUnitIds.sort((a, b) => unitBirthYear(a).localeCompare(unitBirthYear(b)));
 
       let totalChildWidth = 0;
       for (const cuId of childUnitIds) totalChildWidth += (unitWidth.get(cuId) || NODE_W);
@@ -692,7 +690,7 @@ const Tree = (() => {
         if (!seen.has(cu)) { seen.add(cu); childUnitIds.push(cu); }
       }
 
-      childUnitIds.sort((a, b) => unitBirthYear(a) - unitBirthYear(b));
+      childUnitIds.sort((a, b) => unitBirthYear(a).localeCompare(unitBirthYear(b)));
 
       let totalChildWidth = 0;
       for (const cuId of childUnitIds) totalChildWidth += (unitWidth.get(cuId) || NODE_W);

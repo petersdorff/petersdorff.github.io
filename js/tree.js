@@ -400,24 +400,24 @@ const Tree = (() => {
     for (const couple of couples) calcWidth(couple.id);
     for (const m of members) { if (!inCouple.has(m.id)) calcWidth(m.id); }
 
-    // Helper: get the earliest birth year for a unit (for sibling sorting)
+    // Helper: get the birth year of the blood descendant in a unit (for sibling sorting).
+    // For couples, use only the 'a' member (blood descendant, has parents in tree),
+    // NOT the married-in spouse — otherwise a younger sibling's older spouse can
+    // pull the whole couple left of an older sibling.
     function unitBirthYear(unitId) {
       const couple = coupleMap.get(unitId);
-      let people;
+      let person;
       if (couple) {
-        people = [memberMap.get(couple.a), memberMap.get(couple.b)].filter(Boolean);
+        // couple.a is the blood descendant (set during couple creation)
+        person = memberMap.get(couple.a);
       } else {
-        const m = memberMap.get(unitId);
-        people = m ? [m] : [];
+        person = memberMap.get(unitId);
       }
-      let earliest = Infinity;
-      for (const p of people) {
-        if (p.birthDate) {
-          const y = parseInt(p.birthDate.substring(0, 4));
-          if (!isNaN(y) && y < earliest) earliest = y;
-        }
+      if (person?.birthDate) {
+        const y = parseInt(person.birthDate.substring(0, 4));
+        if (!isNaN(y)) return y;
       }
-      return earliest === Infinity ? 9999 : earliest;
+      return 9999;
     }
 
     return {

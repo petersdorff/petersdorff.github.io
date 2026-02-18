@@ -248,6 +248,34 @@ const Relationship = (() => {
       return { term: hasSpouse ? term + ' (angeheiratet)' : term, degree: downs, path };
     }
 
+    // ─── In-law fallback: strip spouse edge at start/end ───
+    // If path starts or ends with a spouse edge, determine the blood
+    // relationship to the partner and append "(angeheiratet)"
+    if (hasSpouse && path.length >= 3) {
+      const lastEdge = edges[edges.length - 1];
+      const firstEdge = edges[0];
+
+      if (lastEdge === 'spouse') {
+        // Target is the spouse of someone we're blood-related to
+        const partnerId = path[path.length - 2].id;
+        const partnerGender = membersMap.get(partnerId)?.gender || null;
+        const bloodResult = getRelationshipTerm(fromId, partnerId, graph, membersMap);
+        if (bloodResult.term && !bloodResult.term.startsWith('Verwandt')) {
+          const targetGender = gender;
+          const base = bloodResult.term.replace(' (angeheiratet)', '');
+          return { term: base + ' (angeheiratet)', degree: bloodResult.degree, path };
+        }
+      } else if (firstEdge === 'spouse') {
+        // We start by going to our spouse, then follow blood from there
+        const spouseId = path[1].id;
+        const bloodResult = getRelationshipTerm(spouseId, toId, graph, membersMap);
+        if (bloodResult.term && !bloodResult.term.startsWith('Verwandt')) {
+          const base = bloodResult.term.replace(' (angeheiratet)', '');
+          return { term: base + ' (angeheiratet)', degree: bloodResult.degree, path };
+        }
+      }
+    }
+
     // Generic fallback
     const suffix = hasSpouse ? ' (angeheiratet)' : '';
     return { term: `Verwandt über ${edges.length} Verbindungen${suffix}`, degree: edges.length, path };

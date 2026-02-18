@@ -365,13 +365,21 @@ const Relations = (() => {
       }
 
     } else if (relType === 'spouse') {
-      // Both spouses share children
+      // Share children between spouses — but ONLY if this is the first
+      // spouse for both. If either person already has another spouse,
+      // skip auto-sharing to avoid assigning a new spouse as parent of
+      // children from a previous marriage.
       const relsA = await DB.getRelationshipsForMember(fromId);
       const relsB = await DB.getRelationshipsForMember(toId);
-      const childrenA = relsA.filter(r => r.type === PC && r.fromId === fromId).map(r => r.toId);
-      const childrenB = relsB.filter(r => r.type === PC && r.fromId === toId).map(r => r.toId);
-      for (const cid of childrenA) await DB.addRelationship(toId, cid, PC);
-      for (const cid of childrenB) await DB.addRelationship(fromId, cid, PC);
+      const otherSpousesA = relsA.filter(r => r.type === 'spouse' && r.fromId !== toId && r.toId !== toId);
+      const otherSpousesB = relsB.filter(r => r.type === 'spouse' && r.fromId !== fromId && r.toId !== fromId);
+
+      if (otherSpousesA.length === 0 && otherSpousesB.length === 0) {
+        const childrenA = relsA.filter(r => r.type === PC && r.fromId === fromId).map(r => r.toId);
+        const childrenB = relsB.filter(r => r.type === PC && r.fromId === toId).map(r => r.toId);
+        for (const cid of childrenA) await DB.addRelationship(toId, cid, PC);
+        for (const cid of childrenB) await DB.addRelationship(fromId, cid, PC);
+      }
     }
   }
 

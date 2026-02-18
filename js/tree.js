@@ -162,33 +162,70 @@ const Tree = (() => {
       }
     }
 
-    // ─── Identify couples ───
-    const inCouple = new Map();
+    // ─── Identify couples (supports multiple marriages) ───
+    const inCouple = new Map();   // personId -> coupleId[]
     const couples = [];
+    const existingPairs = new Set();
 
     for (const se of spouseEdges) {
-      if (!inCouple.has(se.from) && !inCouple.has(se.to)) {
-        // Blood descendant (has parents in tree) goes left (a),
-        // married-in spouse goes right (b).
-        const fromHasParents = (parentsOf.get(se.from) || []).length > 0;
-        const toHasParents = (parentsOf.get(se.to) || []).length > 0;
-        let left = se.from, right = se.to;
-        if (!fromHasParents && toHasParents) {
-          left = se.to;
-          right = se.from;
-        }
-        const coupleId = `couple-${left}-${right}`;
-        couples.push({ id: coupleId, a: left, b: right });
-        inCouple.set(left, coupleId);
-        inCouple.set(right, coupleId);
+      const pairKey = [se.from, se.to].sort().join('|');
+      if (existingPairs.has(pairKey)) continue;
+      existingPairs.add(pairKey);
+
+      // Blood descendant (has parents in tree) goes left (a),
+      // married-in spouse goes right (b).
+      const fromHasParents = (parentsOf.get(se.from) || []).length > 0;
+      const toHasParents = (parentsOf.get(se.to) || []).length > 0;
+      let left = se.from, right = se.to;
+      if (!fromHasParents && toHasParents) {
+        left = se.to;
+        right = se.from;
       }
+      const coupleId = `couple-${left}-${right}`;
+      couples.push({ id: coupleId, a: left, b: right });
+      if (!inCouple.has(left)) inCouple.set(left, []);
+      inCouple.get(left).push(coupleId);
+      if (!inCouple.has(right)) inCouple.set(right, []);
+      inCouple.get(right).push(coupleId);
     }
 
     const coupleMap = new Map(couples.map(c => [c.id, c]));
 
+    // ─── Multi-couple detection ───
+    // A person with 2+ spouses becomes a "multi-couple pivot".
+    // Layout: Spouse2 ─── [mid2] ─── Pivot ─── [mid1] ─── Spouse1
+    const multiCouplePersons = new Set();
+    const multiCoupleMap = new Map();     // "multi-{pivotId}" -> { pivotId, couples: [{coupleId, spouse}] }
+    const absorbedCouples = new Set();
+
+    for (const [personId, coupleIds] of inCouple) {
+      if (coupleIds.length > 1) {
+        multiCouplePersons.add(personId);
+        const multiId = `multi-${personId}`;
+        const couplesInfo = coupleIds.map(cid => {
+          const c = coupleMap.get(cid);
+          const spouse = c.a === personId ? c.b : c.a;
+          return { coupleId: cid, spouse };
+        });
+        multiCoupleMap.set(multiId, { pivotId: personId, couples: couplesInfo });
+        for (const cid of coupleIds) absorbedCouples.add(cid);
+      }
+    }
+
+    // ─── Couple children (partitioned by marriage) ───
+    // For multi-couple persons, only children shared between BOTH parents
+    // in a specific couple belong to that couple. Children with only one
+    // parent (the pivot) get a fallback assignment later.
     function getCoupleChildren(couple) {
       const childrenA = new Set(childrenOf.get(couple.a) || []);
       const childrenB = new Set(childrenOf.get(couple.b) || []);
+      const pivotId = multiCouplePersons.has(couple.a) ? couple.a
+                    : multiCouplePersons.has(couple.b) ? couple.b : null;
+      if (pivotId) {
+        // Multi-couple: only shared children (intersection)
+        return [...childrenA].filter(c => childrenB.has(c));
+      }
+      // Single couple: all children of both (union, original behavior)
       return [...new Set([...childrenA, ...childrenB])];
     }
 
@@ -337,7 +374,21 @@ const Tree = (() => {
     for (let g = 0; g <= maxGen; g++) genGroups.push([]);
     const placed = new Set();
 
+    // Multi-couple units first (so their members are marked as placed)
+    for (const [multiId, info] of multiCoupleMap) {
+      const gen = generation.get(info.pivotId) || 0;
+      genGroups[gen].push({
+        type: 'multi-couple', id: multiId, pivotId: info.pivotId,
+        couples: info.couples,
+        children: [],  // filled after unitChildren assignment
+      });
+      placed.add(info.pivotId);
+      for (const { spouse } of info.couples) placed.add(spouse);
+    }
+
+    // Regular couples (skip absorbed ones)
     for (const couple of couples) {
+      if (absorbedCouples.has(couple.id)) continue;
       const gen = generation.get(couple.a) || 0;
       genGroups[gen].push({
         type: 'couple', id: couple.id, a: couple.a, b: couple.b,
@@ -347,6 +398,7 @@ const Tree = (() => {
       placed.add(couple.b);
     }
 
+    // Singles
     for (const m of members) {
       if (!placed.has(m.id)) {
         const gen = generation.get(m.id) || 0;
@@ -359,17 +411,60 @@ const Tree = (() => {
 
     // ─── Unit children + width calculation ───
     function getUnitForPerson(personId) {
-      return inCouple.has(personId) ? inCouple.get(personId) : personId;
+      if (!inCouple.has(personId)) return personId;
+      const coupleIds = inCouple.get(personId);
+      // Multi-couple pivot?
+      if (multiCouplePersons.has(personId)) return `multi-${personId}`;
+      // Spouse of a multi-couple pivot?
+      for (const cid of coupleIds) {
+        if (absorbedCouples.has(cid)) {
+          const couple = coupleMap.get(cid);
+          const other = couple.a === personId ? couple.b : couple.a;
+          if (multiCouplePersons.has(other)) return `multi-${other}`;
+        }
+      }
+      return coupleIds[0]; // single couple
     }
 
     const unitChildren = new Map();
     const childPlaced = new Set();
 
+    // Assign children to individual couples
     for (const couple of couples) {
       const children = getCoupleChildren(couple);
       unitChildren.set(couple.id, children);
       for (const c of children) childPlaced.add(c);
     }
+    // Aggregate children for multi-couple units + pick up unplaced pivot children
+    for (const [multiId, info] of multiCoupleMap) {
+      const allChildren = [];
+      for (const { coupleId } of info.couples) {
+        allChildren.push(...(unitChildren.get(coupleId) || []));
+      }
+      // Any unplaced children of the pivot (no second parent in any couple)
+      const pivotChildren = childrenOf.get(info.pivotId) || [];
+      for (const c of pivotChildren) {
+        if (!childPlaced.has(c)) {
+          allChildren.push(c);
+          childPlaced.add(c);
+          // Also add to the first couple's children for edge routing
+          const firstCoupleId = info.couples[0].coupleId;
+          const fc = unitChildren.get(firstCoupleId) || [];
+          fc.push(c);
+          unitChildren.set(firstCoupleId, fc);
+        }
+      }
+      unitChildren.set(multiId, allChildren);
+    }
+    // Back-fill children for genGroups multi-couple entries
+    for (let g = 0; g <= maxGen; g++) {
+      for (const unit of genGroups[g]) {
+        if (unit.type === 'multi-couple') {
+          unit.children = unitChildren.get(unit.id) || [];
+        }
+      }
+    }
+    // Single persons (not in any couple)
     for (const m of members) {
       if (!inCouple.has(m.id)) {
         const children = (childrenOf.get(m.id) || []).filter(c => !childPlaced.has(c));
@@ -384,7 +479,17 @@ const Tree = (() => {
     function calcWidth(unitId) {
       if (unitWidth.has(unitId)) return unitWidth.get(unitId);
       const children = unitChildren.get(unitId) || [];
-      const selfWidth = coupleMap.has(unitId) ? NODE_W * 2 + SPOUSE_GAP : NODE_W;
+
+      let selfWidth;
+      if (multiCoupleMap.has(unitId)) {
+        const numSpouses = multiCoupleMap.get(unitId).couples.length;
+        selfWidth = NODE_W * (numSpouses + 1) + SPOUSE_GAP * numSpouses;
+      } else if (coupleMap.has(unitId)) {
+        selfWidth = NODE_W * 2 + SPOUSE_GAP;
+      } else {
+        selfWidth = NODE_W;
+      }
+
       if (children.length === 0) { unitWidth.set(unitId, selfWidth); return selfWidth; }
 
       const uniqueChildUnits = [...new Set(children.map(c => getUnitForPerson(c)))];
@@ -397,15 +502,21 @@ const Tree = (() => {
       return totalWidth;
     }
 
-    for (const couple of couples) calcWidth(couple.id);
+    // Calculate widths: multi-couple units first, then regular couples, then singles
+    for (const [multiId] of multiCoupleMap) calcWidth(multiId);
+    for (const couple of couples) {
+      if (!absorbedCouples.has(couple.id)) calcWidth(couple.id);
+    }
     for (const m of members) { if (!inCouple.has(m.id)) calcWidth(m.id); }
 
     // Helper: get a sortable birth date string for the blood descendant in a unit.
-    // For couples, use only the 'a' member (blood descendant, has parents in tree),
-    // NOT the married-in spouse — otherwise a younger sibling's older spouse can
-    // pull the whole couple left of an older sibling.
-    // Returns full YYYY-MM-DD so same-year siblings sort correctly by month/day.
     function unitBirthYear(unitId) {
+      // Multi-couple: use pivot person
+      if (multiCoupleMap.has(unitId)) {
+        const person = memberMap.get(multiCoupleMap.get(unitId).pivotId);
+        if (person?.birthDate) return person.birthDate;
+        return '9999-12-31';
+      }
       const couple = coupleMap.get(unitId);
       let person;
       if (couple) {
@@ -422,6 +533,7 @@ const Tree = (() => {
       memberMap, spouseEdges, parentChildEdges, siblingEdges,
       spouseOf, childrenOf, parentsOf,
       inCouple, couples, coupleMap,
+      multiCouplePersons, multiCoupleMap, absorbedCouples,
       generation, genGroups, maxGen,
       unitChildren, unitWidth, getUnitForPerson, calcWidth,
       unitBirthYear,
@@ -434,7 +546,7 @@ const Tree = (() => {
    */
   function buildElements(base) {
     const elements = [];
-    const { spouseEdges, parentChildEdges, siblingEdges, inCouple, couples, coupleMap, parentsOf } = base;
+    const { spouseEdges, parentChildEdges, siblingEdges, inCouple, couples, coupleMap, parentsOf, unitChildren } = base;
 
     // Person nodes
     for (const m of members) {
@@ -457,7 +569,7 @@ const Tree = (() => {
       });
     }
 
-    // Couple midpoint nodes
+    // Couple midpoint nodes (each couple gets its own, even in multi-couple)
     for (const couple of couples) {
       elements.push({
         group: 'nodes',
@@ -466,20 +578,33 @@ const Tree = (() => {
       });
     }
 
-    // Spouse edges (split halves)
+    // Spouse edges (split halves through the couple midpoint)
     for (const se of spouseEdges) {
-      const coupleId = inCouple.get(se.from);
+      // Find the specific couple containing both se.from and se.to
+      const couplesFrom = inCouple.get(se.from) || [];
+      const couplesTo = inCouple.get(se.to) || [];
+      const coupleId = couplesFrom.find(c => couplesTo.includes(c));
       if (coupleId) {
-        elements.push({ group: 'edges', data: { id: `e-spouse-${se.from}-mid`, source: se.from, target: coupleId, relType: 'spouse', spouseHalf: 'a' }, classes: 'spouse-edge' });
-        elements.push({ group: 'edges', data: { id: `e-spouse-mid-${se.to}`, source: coupleId, target: se.to, relType: 'spouse', spouseHalf: 'b' }, classes: 'spouse-edge' });
+        elements.push({ group: 'edges', data: { id: `e-spouse-${se.from}-${coupleId}`, source: se.from, target: coupleId, relType: 'spouse', spouseHalf: 'a' }, classes: 'spouse-edge' });
+        elements.push({ group: 'edges', data: { id: `e-spouse-${coupleId}-${se.to}`, source: coupleId, target: se.to, relType: 'spouse', spouseHalf: 'b' }, classes: 'spouse-edge' });
       } else {
         elements.push({ group: 'edges', data: { id: `e-${se.id}`, source: se.from, target: se.to, relType: 'spouse' }, classes: 'spouse-edge' });
       }
     }
 
-    // Parent-child edges
+    // Parent-child edges — route through the correct couple midpoint
     for (const pc of parentChildEdges) {
-      const parentCoupleId = inCouple.get(pc.parent);
+      const parentCoupleIds = inCouple.get(pc.parent) || [];
+      // Find the couple whose children include this child
+      let parentCoupleId = null;
+      for (const cid of parentCoupleIds) {
+        const cc = unitChildren.get(cid) || [];
+        if (cc.includes(pc.child)) { parentCoupleId = cid; break; }
+      }
+      // Fallback: first couple
+      if (!parentCoupleId && parentCoupleIds.length > 0) {
+        parentCoupleId = parentCoupleIds[0];
+      }
       if (parentCoupleId) {
         const edgeId = `e-family-${parentCoupleId}-${pc.child}`;
         if (!elements.find(e => e.data?.id === edgeId)) {
@@ -511,27 +636,14 @@ const Tree = (() => {
   function buildGenerationalLayout(members, relationships) {
     const base = buildLayoutBase(members, relationships);
     const positions = {};
-    const { coupleMap, genGroups, maxGen, generation, unitChildren, unitWidth, getUnitForPerson, inCouple, unitBirthYear } = base;
+    const { coupleMap, genGroups, maxGen, generation, unitChildren, unitWidth, getUnitForPerson, inCouple, unitBirthYear, multiCoupleMap, absorbedCouples } = base;
     const elements = buildElements(base);
 
     const allUnitsPlaced = new Set();
 
-    function positionUnit(unit, centerX, y) {
-      if (allUnitsPlaced.has(unit.id)) return;
-      allUnitsPlaced.add(unit.id);
-
-      if (unit.type === 'couple') {
-        const couple = coupleMap.get(unit.id);
-        positions[couple.a] = { x: centerX - (SPOUSE_GAP / 2) - (NODE_W / 2), y };
-        positions[couple.b] = { x: centerX + (SPOUSE_GAP / 2) + (NODE_W / 2), y };
-        positions[unit.id] = { x: centerX, y };
-      } else {
-        positions[unit.id] = { x: centerX, y };
-      }
-
-      const children = unit.children || [];
-      if (children.length === 0) return;
-      const childY = y + GEN_GAP;
+    // Helper: position a list of children centered at parentCenterX
+    function positionChildren(children, parentCenterX, childY) {
+      if (!children || children.length === 0) return;
 
       const childUnitIds = [];
       const seen = new Set();
@@ -540,24 +652,79 @@ const Tree = (() => {
         if (!seen.has(cu)) { seen.add(cu); childUnitIds.push(cu); }
       }
 
-      // Sort siblings: oldest (smallest birth year) on left
       childUnitIds.sort((a, b) => unitBirthYear(a).localeCompare(unitBirthYear(b)));
 
       let totalChildWidth = 0;
       for (const cuId of childUnitIds) totalChildWidth += (unitWidth.get(cuId) || NODE_W);
       totalChildWidth += (childUnitIds.length - 1) * SIBLING_GAP;
 
-      let childX = centerX - totalChildWidth / 2;
+      let childX = parentCenterX - totalChildWidth / 2;
       for (const cuId of childUnitIds) {
         const w = unitWidth.get(cuId) || NODE_W;
         const childCenterX = childX + w / 2;
-        const coupleInfo = coupleMap.get(cuId);
-        if (coupleInfo) {
-          positionUnit({ type: 'couple', id: cuId, a: coupleInfo.a, b: coupleInfo.b, children: unitChildren.get(cuId) || [] }, childCenterX, childY);
+        const multiInfo = multiCoupleMap.get(cuId);
+        if (multiInfo) {
+          positionUnit({ type: 'multi-couple', id: cuId, pivotId: multiInfo.pivotId, couples: multiInfo.couples, children: unitChildren.get(cuId) || [] }, childCenterX, childY);
         } else {
-          positionUnit({ type: 'single', id: cuId, children: unitChildren.get(cuId) || [] }, childCenterX, childY);
+          const coupleInfo = coupleMap.get(cuId);
+          if (coupleInfo) {
+            positionUnit({ type: 'couple', id: cuId, a: coupleInfo.a, b: coupleInfo.b, children: unitChildren.get(cuId) || [] }, childCenterX, childY);
+          } else {
+            positionUnit({ type: 'single', id: cuId, children: unitChildren.get(cuId) || [] }, childCenterX, childY);
+          }
         }
         childX += w + SIBLING_GAP;
+      }
+    }
+
+    function positionUnit(unit, centerX, y) {
+      if (allUnitsPlaced.has(unit.id)) return;
+      allUnitsPlaced.add(unit.id);
+
+      if (unit.type === 'multi-couple') {
+        // Layout: ...Spouse2 ─ [mid2] ─ Pivot ─ [mid1] ─ Spouse1...
+        const info = multiCoupleMap.get(unit.id);
+        const pivotId = info.pivotId;
+        positions[pivotId] = { x: centerX, y };
+
+        // Place spouses alternating right/left from pivot
+        for (let i = 0; i < info.couples.length; i++) {
+          const ci = info.couples[i];
+          const side = (i % 2 === 0) ? 1 : -1;  // first spouse right, second left
+          const offset = Math.floor(i / 2 + 1);
+          const spouseX = centerX + side * (NODE_W + SPOUSE_GAP) * offset;
+          const midX = centerX + side * ((NODE_W / 2 + SPOUSE_GAP / 2) + (NODE_W + SPOUSE_GAP) * Math.floor(i / 2));
+          if (i % 2 === 0) {
+            // Right side
+            positions[ci.spouse] = { x: centerX + NODE_W + SPOUSE_GAP, y };
+            positions[ci.coupleId] = { x: centerX + NODE_W / 2 + SPOUSE_GAP / 2, y };
+          } else {
+            // Left side
+            positions[ci.spouse] = { x: centerX - NODE_W - SPOUSE_GAP, y };
+            positions[ci.coupleId] = { x: centerX - NODE_W / 2 - SPOUSE_GAP / 2, y };
+          }
+        }
+
+        // Position children of each sub-couple beneath their midpoint
+        const childY = y + GEN_GAP;
+        for (const ci of info.couples) {
+          const coupleChildren = unitChildren.get(ci.coupleId) || [];
+          if (coupleChildren.length === 0) continue;
+          const midPos = positions[ci.coupleId];
+          if (midPos) positionChildren(coupleChildren, midPos.x, childY);
+        }
+
+      } else if (unit.type === 'couple') {
+        const couple = coupleMap.get(unit.id);
+        positions[couple.a] = { x: centerX - (SPOUSE_GAP / 2) - (NODE_W / 2), y };
+        positions[couple.b] = { x: centerX + (SPOUSE_GAP / 2) + (NODE_W / 2), y };
+        positions[unit.id] = { x: centerX, y };
+
+        positionChildren(unit.children, centerX, y + GEN_GAP);
+
+      } else {
+        positions[unit.id] = { x: centerX, y };
+        positionChildren(unit.children, centerX, y + GEN_GAP);
       }
     }
 
@@ -596,7 +763,7 @@ const Tree = (() => {
   function buildTemporalLayout(members, relationships) {
     const base = buildLayoutBase(members, relationships);
     const positions = {};
-    const { coupleMap, genGroups, maxGen, generation, unitChildren, unitWidth, getUnitForPerson, inCouple, couples, unitBirthYear } = base;
+    const { coupleMap, genGroups, maxGen, generation, unitChildren, unitWidth, getUnitForPerson, inCouple, couples, unitBirthYear, multiCoupleMap, absorbedCouples } = base;
     const elements = buildElements(base);
 
     // ─── Compute birth years ───
@@ -661,27 +828,9 @@ const Tree = (() => {
     // ─── Position units (X from width calc, Y from birth year) ───
     const allUnitsPlaced = new Set();
 
-    function positionUnit(unit, centerX) {
-      if (allUnitsPlaced.has(unit.id)) return;
-      allUnitsPlaced.add(unit.id);
-
-      let y;
-      if (unit.type === 'couple') {
-        const couple = coupleMap.get(unit.id);
-        const ya = memberY.get(couple.a) || 0;
-        const yb = memberY.get(couple.b) || 0;
-        const midY = coupleY.get(unit.id) || 0;
-        positions[couple.a] = { x: centerX - (SPOUSE_GAP / 2) - (NODE_W / 2), y: ya };
-        positions[couple.b] = { x: centerX + (SPOUSE_GAP / 2) + (NODE_W / 2), y: yb };
-        positions[unit.id] = { x: centerX, y: midY };
-        y = midY;
-      } else {
-        y = memberY.get(unit.id) || 0;
-        positions[unit.id] = { x: centerX, y };
-      }
-
-      const children = unit.children || [];
-      if (children.length === 0) return;
+    // Helper: position a list of children centered at parentCenterX
+    function positionChildren(children, parentCenterX) {
+      if (!children || children.length === 0) return;
 
       const childUnitIds = [];
       const seen = new Set();
@@ -696,17 +845,76 @@ const Tree = (() => {
       for (const cuId of childUnitIds) totalChildWidth += (unitWidth.get(cuId) || NODE_W);
       totalChildWidth += (childUnitIds.length - 1) * SIBLING_GAP;
 
-      let childX = centerX - totalChildWidth / 2;
+      let childX = parentCenterX - totalChildWidth / 2;
       for (const cuId of childUnitIds) {
         const w = unitWidth.get(cuId) || NODE_W;
         const childCenterX = childX + w / 2;
-        const coupleInfo = coupleMap.get(cuId);
-        if (coupleInfo) {
-          positionUnit({ type: 'couple', id: cuId, a: coupleInfo.a, b: coupleInfo.b, children: unitChildren.get(cuId) || [] }, childCenterX);
+        const multiInfo = multiCoupleMap.get(cuId);
+        if (multiInfo) {
+          positionUnit({ type: 'multi-couple', id: cuId, pivotId: multiInfo.pivotId, couples: multiInfo.couples, children: unitChildren.get(cuId) || [] }, childCenterX);
         } else {
-          positionUnit({ type: 'single', id: cuId, children: unitChildren.get(cuId) || [] }, childCenterX);
+          const coupleInfo = coupleMap.get(cuId);
+          if (coupleInfo) {
+            positionUnit({ type: 'couple', id: cuId, a: coupleInfo.a, b: coupleInfo.b, children: unitChildren.get(cuId) || [] }, childCenterX);
+          } else {
+            positionUnit({ type: 'single', id: cuId, children: unitChildren.get(cuId) || [] }, childCenterX);
+          }
         }
         childX += w + SIBLING_GAP;
+      }
+    }
+
+    function positionUnit(unit, centerX) {
+      if (allUnitsPlaced.has(unit.id)) return;
+      allUnitsPlaced.add(unit.id);
+
+      let y;
+      if (unit.type === 'multi-couple') {
+        const info = multiCoupleMap.get(unit.id);
+        const pivotId = info.pivotId;
+        const pivotY = memberY.get(pivotId) || 0;
+        positions[pivotId] = { x: centerX, y: pivotY };
+
+        for (let i = 0; i < info.couples.length; i++) {
+          const ci = info.couples[i];
+          const spouseY = memberY.get(ci.spouse) || 0;
+          const midY = (pivotY + spouseY) / 2;
+          if (i % 2 === 0) {
+            // Right side
+            positions[ci.spouse] = { x: centerX + NODE_W + SPOUSE_GAP, y: spouseY };
+            positions[ci.coupleId] = { x: centerX + NODE_W / 2 + SPOUSE_GAP / 2, y: midY };
+          } else {
+            // Left side
+            positions[ci.spouse] = { x: centerX - NODE_W - SPOUSE_GAP, y: spouseY };
+            positions[ci.coupleId] = { x: centerX - NODE_W / 2 - SPOUSE_GAP / 2, y: midY };
+          }
+        }
+        y = pivotY;
+
+        // Position children of each sub-couple
+        for (const ci of info.couples) {
+          const coupleChildren = unitChildren.get(ci.coupleId) || [];
+          if (coupleChildren.length === 0) continue;
+          const midPos = positions[ci.coupleId];
+          if (midPos) positionChildren(coupleChildren, midPos.x);
+        }
+
+      } else if (unit.type === 'couple') {
+        const couple = coupleMap.get(unit.id);
+        const ya = memberY.get(couple.a) || 0;
+        const yb = memberY.get(couple.b) || 0;
+        const midY = coupleY.get(unit.id) || 0;
+        positions[couple.a] = { x: centerX - (SPOUSE_GAP / 2) - (NODE_W / 2), y: ya };
+        positions[couple.b] = { x: centerX + (SPOUSE_GAP / 2) + (NODE_W / 2), y: yb };
+        positions[unit.id] = { x: centerX, y: midY };
+        y = midY;
+
+        positionChildren(unit.children, centerX);
+
+      } else {
+        y = memberY.get(unit.id) || 0;
+        positions[unit.id] = { x: centerX, y };
+        positionChildren(unit.children, centerX);
       }
     }
 
@@ -958,13 +1166,18 @@ const Tree = (() => {
    * Shared logic between highlightConnection and restoreHighlight.
    */
   function applyHighlightStyling(pathNodeIds, pathEdgePairs) {
-    const personToCouple = new Map();
+    // Build person -> [coupleId, ...] map from Cytoscape nodes (supports multi-couple)
+    const personToCouples = new Map();
     cy.nodes('.couple-midpoint').forEach(cpNode => {
       const cpId = cpNode.id();
       const inner = cpId.substring('couple-'.length);
       if (inner.length >= 73) {
-        personToCouple.set(inner.substring(0, 36), cpId);
-        personToCouple.set(inner.substring(37), cpId);
+        const p1 = inner.substring(0, 36);
+        const p2 = inner.substring(37);
+        if (!personToCouples.has(p1)) personToCouples.set(p1, []);
+        personToCouples.get(p1).push(cpId);
+        if (!personToCouples.has(p2)) personToCouples.set(p2, []);
+        personToCouples.get(p2).push(cpId);
       }
     });
 
@@ -990,32 +1203,40 @@ const Tree = (() => {
     }
 
     for (const [from, to] of pathEdgePairs) {
-      const coupleOfFrom = personToCouple.get(from);
-      const coupleOfTo = personToCouple.get(to);
+      const couplesOfFrom = personToCouples.get(from) || [];
+      const couplesOfTo = personToCouples.get(to) || [];
 
       const directEdges = findEdges(from, to);
       if (directEdges.length > 0) { directEdges.forEach(e => markEdge(e)); continue; }
 
-      if (coupleOfFrom && coupleOfFrom === coupleOfTo) {
-        findEdges(from, coupleOfFrom).forEach(e => markEdge(e));
-        findEdges(coupleOfFrom, to).forEach(e => markEdge(e));
+      // Check if both share a couple midpoint (spouses in same couple)
+      const sharedCouple = couplesOfFrom.find(c => couplesOfTo.includes(c));
+      if (sharedCouple) {
+        findEdges(from, sharedCouple).forEach(e => markEdge(e));
+        findEdges(sharedCouple, to).forEach(e => markEdge(e));
         continue;
       }
 
+      // Try routing through a couple midpoint of 'from'
       let found = false;
-      if (coupleOfFrom) {
-        const midToChild = findEdges(coupleOfFrom, to);
+      for (const cpId of couplesOfFrom) {
+        const midToChild = findEdges(cpId, to);
         if (midToChild.length > 0) {
-          findEdges(from, coupleOfFrom).forEach(e => markEdge(e));
+          findEdges(from, cpId).forEach(e => markEdge(e));
           midToChild.forEach(e => markEdge(e));
           found = true;
+          break;
         }
       }
-      if (!found && coupleOfTo) {
-        const midToParent = findEdges(coupleOfTo, from);
-        if (midToParent.length > 0) {
-          midToParent.forEach(e => markEdge(e));
-          findEdges(to, coupleOfTo).forEach(e => markEdge(e));
+      // Try routing through a couple midpoint of 'to'
+      if (!found) {
+        for (const cpId of couplesOfTo) {
+          const midToParent = findEdges(cpId, from);
+          if (midToParent.length > 0) {
+            midToParent.forEach(e => markEdge(e));
+            findEdges(to, cpId).forEach(e => markEdge(e));
+            break;
+          }
         }
       }
     }

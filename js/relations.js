@@ -180,6 +180,7 @@ const Relations = (() => {
     const lastNameInput = Utils.createEl('input', { type: 'text', id: 'new-rel-lastname', placeholder: 'Nachname' });
     lastNameInput.value = preLastName;
     const birthDateInput = Utils.createEl('input', { type: 'date', id: 'new-rel-birthdate' });
+    Utils.attachDateAutoCorrect(birthDateInput);
     const confirmBtn = Utils.createEl('button', {
       className: 'btn btn-primary btn-small',
       style: { width: '100%' },
@@ -218,6 +219,11 @@ const Relations = (() => {
       }
       if (!birthDate) {
         App.toast('Geburtsdatum ist Pflichtfeld', 'error');
+        return;
+      }
+      const dateCheck = Utils.validateDate(birthDate);
+      if (!dateCheck.valid) {
+        App.toast(`Geburtsdatum: ${dateCheck.message}`, 'error');
         return;
       }
 

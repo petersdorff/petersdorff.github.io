@@ -125,6 +125,10 @@ const Profile = (() => {
     document.getElementById('edit-notes').value = member?.notes || '';
     document.getElementById('edit-gender').value = member?.gender || '';
 
+    // Attach live date auto-correction
+    Utils.attachDateAutoCorrect(document.getElementById('edit-birthdate'));
+    Utils.attachDateAutoCorrect(document.getElementById('edit-deathdate'));
+
     // Clear relation search
     document.getElementById('edit-rel-type').value = '';
     document.getElementById('edit-rel-search').value = '';
@@ -194,6 +198,19 @@ const Profile = (() => {
       return;
     }
 
+    // Validate date fields
+    const birthCheck = Utils.validateDate(birthDate);
+    if (!birthCheck.valid) {
+      App.toast(`Geburtsdatum: ${birthCheck.message}`, 'error');
+      return;
+    }
+    const deathDate = document.getElementById('edit-deathdate').value;
+    const deathCheck = Utils.validateDate(deathDate);
+    if (!deathCheck.valid) {
+      App.toast(`Sterbedatum: ${deathCheck.message}`, 'error');
+      return;
+    }
+
     const pendingFirstRelation = Relations.getPendingFirstRelation();
     if (!editingMemberId && !pendingFirstRelation) {
       App.toast('Bitte wähle eine Verbindung zu einer bestehenden Person', 'error');
@@ -226,8 +243,8 @@ const Profile = (() => {
       lastName,
       birthName: Utils.sanitizeInput(document.getElementById('edit-birthname').value),
       birthDate,
-      deathDate: document.getElementById('edit-deathdate').value,
-      isDeceased: !!document.getElementById('edit-deathdate').value,
+      deathDate,
+      isDeceased: !!deathDate,
       location: Utils.sanitizeInput(document.getElementById('edit-location').value),
       contact: email,
       phone: Utils.sanitizePhone(document.getElementById('edit-phone').value),

@@ -107,6 +107,84 @@ const Utils = (() => {
     }
   }
 
+  // ─── Date Validation ───
+
+  /**
+   * Get the maximum valid day for a given year and month.
+   * Returns 28-31 depending on month and leap year.
+   */
+  function maxDayForMonth(year, month) {
+    // new Date(year, month, 0).getDate() returns last day of previous month,
+    // so month here is 1-based (e.g., 2 = February)
+    return new Date(year, month, 0).getDate();
+  }
+
+  /**
+   * Validate a date string (YYYY-MM-DD format).
+   * Returns { valid: true } or { valid: false, message: string }.
+   */
+  function validateDate(dateStr) {
+    if (!dateStr) return { valid: true }; // empty = optional
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return { valid: false, message: 'Datumsformat muss JJJJ-MM-TT sein' };
+
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    const day = parseInt(match[3], 10);
+
+    if (month < 1 || month > 12) return { valid: false, message: 'Ungültiger Monat' };
+    const maxDay = maxDayForMonth(year, month);
+    if (day < 1 || day > maxDay) {
+      return { valid: false, message: `Tag ${day} existiert nicht für diesen Monat (max. ${maxDay})` };
+    }
+
+    // Verify the date actually parses to what we expect (catch edge cases)
+    const d = new Date(year, month - 1, day);
+    if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) {
+      return { valid: false, message: 'Ungültiges Datum' };
+    }
+
+    return { valid: true };
+  }
+
+  /**
+   * Clamp the day of a date string to the maximum valid day for its month.
+   * Returns the corrected YYYY-MM-DD string, or the original if no correction needed.
+   */
+  function clampDateDay(dateStr) {
+    if (!dateStr) return dateStr;
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return dateStr;
+
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    const day = parseInt(match[3], 10);
+
+    if (month < 1 || month > 12) return dateStr;
+    const maxDay = maxDayForMonth(year, month);
+    if (day > maxDay) {
+      return `${match[1]}-${match[2]}-${String(maxDay).padStart(2, '0')}`;
+    }
+    return dateStr;
+  }
+
+  /**
+   * Attach live date auto-correction to a date input element.
+   * When the user changes the date, if the day overflows (e.g. Feb 31),
+   * it auto-corrects to the max valid day for that month.
+   */
+  function attachDateAutoCorrect(inputEl) {
+    if (!inputEl) return;
+    inputEl.addEventListener('change', () => {
+      const val = inputEl.value;
+      if (!val) return;
+      const corrected = clampDateDay(val);
+      if (corrected !== val) {
+        inputEl.value = corrected;
+      }
+    });
+  }
+
   // ─── Constants ───
 
   const REL_TYPES = Object.freeze({
@@ -155,6 +233,10 @@ const Utils = (() => {
     createEl,
     debounce,
     setButtonLoading,
+    validateDate,
+    clampDateDay,
+    maxDayForMonth,
+    attachDateAutoCorrect,
     REL_TYPES,
     REL_DIRECTIONS,
     REL_LABELS,

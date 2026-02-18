@@ -516,16 +516,39 @@ const Relationship = (() => {
   /**
    * Get all node IDs on the path between two people (for highlighting).
    * Builds graph once, shared with getPathEdgePairs via getPathData.
+   *
+   * Sibling edges are expanded to route through a shared parent so the
+   * tree highlight can follow the visual parent→child edges (sibling
+   * edges are not rendered when siblings share a parent in the tree).
    */
   function getPathData(fromId, toId, members, relationships) {
     const graph = buildGraph(members, relationships);
     const path = findPath(fromId, toId, graph);
     if (!path) return { nodeIds: [], edgePairs: [] };
 
-    const nodeIds = path.map(p => p.id);
+    // Expand sibling edges: replace A --sibling--> B
+    // with A --parent--> sharedParent --child--> B
+    const expanded = [path[0]];
+    for (let i = 1; i < path.length; i++) {
+      if (path[i].edgeType === 'sibling') {
+        const prevId = path[i - 1].id;
+        const curId = path[i].id;
+        const parentsA = graph.childOf.get(prevId) || [];
+        const parentsB = graph.childOf.get(curId) || [];
+        const sharedParent = parentsA.find(p => parentsB.includes(p));
+        if (sharedParent) {
+          expanded.push({ id: sharedParent, edgeType: 'parent' });
+          expanded.push({ id: curId, edgeType: 'child' });
+          continue;
+        }
+      }
+      expanded.push(path[i]);
+    }
+
+    const nodeIds = expanded.map(p => p.id);
     const edgePairs = [];
-    for (let i = 0; i < path.length - 1; i++) {
-      edgePairs.push([path[i].id, path[i + 1].id]);
+    for (let i = 0; i < expanded.length - 1; i++) {
+      edgePairs.push([expanded[i].id, expanded[i + 1].id]);
     }
     return { nodeIds, edgePairs };
   }

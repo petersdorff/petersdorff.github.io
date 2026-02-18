@@ -251,7 +251,7 @@ const Profile = (() => {
           const { targetId, relType } = pendingFirstRelation;
           await Relations.cleanConflictingRelations(newId, targetId, relType);
           await Relations.createRelationByType(newId, targetId, relType);
-          if (relType === 'sibling') await Relations.inheritParentsForSibling(targetId, newId);
+          await Relations.propagateLogicalRelations(newId, targetId, relType);
           Relations.clearPendingFirstRelation();
           App.toast('Person angelegt & verbunden', 'success');
         }

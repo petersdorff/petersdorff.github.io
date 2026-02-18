@@ -258,7 +258,7 @@ const Relations = (() => {
         if (sourceId) {
           await cleanConflictingRelations(sourceId, newId, relType);
           await createRelationByType(sourceId, newId, relType);
-          if (relType === 'sibling') await inheritParentsForSibling(sourceId, newId);
+          await propagateLogicalRelations(sourceId, newId, relType);
           App.toast(`${firstName} ${lastName} angelegt & verbunden`, 'success');
         }
 
@@ -280,21 +280,92 @@ const Relations = (() => {
 
   /**
    * When adding a sibling, copy parent relationships from the existing sibling.
+   * Kept as a convenience alias for backwards compatibility.
    */
   async function inheritParentsForSibling(existingSiblingId, newSiblingId) {
-    const rels = await DB.getRelationshipsForMember(existingSiblingId);
-    for (const r of rels) {
-      if (r.type !== 'parent_child') continue;
-      if (r.toId === existingSiblingId) {
-        const parentId = r.fromId;
-        const existingRels = await DB.getRelationshipsForMember(newSiblingId);
-        const alreadyLinked = existingRels.some(
-          er => er.type === 'parent_child' && er.fromId === parentId && er.toId === newSiblingId
-        );
-        if (!alreadyLinked) {
-          await DB.addRelationship(parentId, newSiblingId, 'parent_child');
-        }
+    await propagateLogicalRelations(existingSiblingId, newSiblingId, 'sibling');
+  }
+
+  /**
+   * Propagate logically implied relationships after adding a new relation.
+   * DB.addRelationship() already deduplicates, so we can call it freely.
+   *
+   * Rules:
+   *  sibling(A,B):   B gets A's parents, A gets B's parents
+   *  child(A→B):     A = parent, B = child.
+   *                  B gets A's other children as siblings.
+   *                  A gets B's existing siblings as own children.
+   *  parent(A→B):    A = child, B = parent (stored as B→A parent_child).
+   *                  A gets B's other children as siblings.
+   *                  B gets A's existing siblings as own children.
+   *  spouse(A,B):    B gets A's children as own children.
+   *                  A gets B's children as own children.
+   */
+  async function propagateLogicalRelations(fromId, toId, relType) {
+    const PC = 'parent_child';
+    const SIB = 'sibling';
+
+    if (relType === 'sibling') {
+      // Both siblings share parents
+      const relsA = await DB.getRelationshipsForMember(fromId);
+      const relsB = await DB.getRelationshipsForMember(toId);
+      const parentsA = relsA.filter(r => r.type === PC && r.toId === fromId).map(r => r.fromId);
+      const parentsB = relsB.filter(r => r.type === PC && r.toId === toId).map(r => r.fromId);
+      for (const pid of parentsA) await DB.addRelationship(pid, toId, PC);
+      for (const pid of parentsB) await DB.addRelationship(pid, fromId, PC);
+
+    } else if (relType === 'child') {
+      // fromId = parent, toId = child (parent_child stored as fromId→toId)
+      const parentId = fromId, childId = toId;
+      const parentRels = await DB.getRelationshipsForMember(parentId);
+
+      // Other children of this parent become siblings of the new child
+      const otherChildren = parentRels
+        .filter(r => r.type === PC && r.fromId === parentId && r.toId !== childId)
+        .map(r => r.toId);
+      for (const sibId of otherChildren) {
+        await DB.addRelationship(childId, sibId, SIB);
       }
+
+      // Existing siblings of the child become children of this parent
+      const childRels = await DB.getRelationshipsForMember(childId);
+      const childSiblings = childRels
+        .filter(r => r.type === SIB)
+        .map(r => r.fromId === childId ? r.toId : r.fromId);
+      for (const sibId of childSiblings) {
+        await DB.addRelationship(parentId, sibId, PC);
+      }
+
+    } else if (relType === 'parent') {
+      // fromId = child, toId = parent (parent_child stored as toId→fromId)
+      const parentId = toId, childId = fromId;
+      const parentRels = await DB.getRelationshipsForMember(parentId);
+
+      // Other children of this parent become siblings of the child
+      const otherChildren = parentRels
+        .filter(r => r.type === PC && r.fromId === parentId && r.toId !== childId)
+        .map(r => r.toId);
+      for (const sibId of otherChildren) {
+        await DB.addRelationship(childId, sibId, SIB);
+      }
+
+      // Existing siblings of the child become children of this parent
+      const childRels = await DB.getRelationshipsForMember(childId);
+      const childSiblings = childRels
+        .filter(r => r.type === SIB)
+        .map(r => r.fromId === childId ? r.toId : r.fromId);
+      for (const sibId of childSiblings) {
+        await DB.addRelationship(parentId, sibId, PC);
+      }
+
+    } else if (relType === 'spouse') {
+      // Both spouses share children
+      const relsA = await DB.getRelationshipsForMember(fromId);
+      const relsB = await DB.getRelationshipsForMember(toId);
+      const childrenA = relsA.filter(r => r.type === PC && r.fromId === fromId).map(r => r.toId);
+      const childrenB = relsB.filter(r => r.type === PC && r.fromId === toId).map(r => r.toId);
+      for (const cid of childrenA) await DB.addRelationship(toId, cid, PC);
+      for (const cid of childrenB) await DB.addRelationship(fromId, cid, PC);
     }
   }
 
@@ -417,10 +488,7 @@ const Relations = (() => {
       }
 
       await createRelationByType(editingMemberId, selectedRelTarget, relType);
-      if (relType === 'sibling') {
-        await inheritParentsForSibling(editingMemberId, selectedRelTarget);
-        await inheritParentsForSibling(selectedRelTarget, editingMemberId);
-      }
+      await propagateLogicalRelations(editingMemberId, selectedRelTarget, relType);
 
       App.toast('Verbindung hinzugefügt', 'success');
       document.getElementById('edit-rel-type').value = '';
@@ -460,6 +528,7 @@ const Relations = (() => {
     updatePendingRelDisplay,
     cleanConflictingRelations,
     inheritParentsForSibling,
+    propagateLogicalRelations,
     getPendingFirstRelation,
     clearPendingFirstRelation,
     resetState,

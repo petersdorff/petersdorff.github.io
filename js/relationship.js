@@ -138,9 +138,37 @@ const Relationship = (() => {
     return bestAncestor;
   }
 
+  // ═══════════════════════════════════════════════════════════
+  // German Relationship Terminology (based on Wikipedia:
+  // Verwandtschaftsbeziehung)
+  //
+  // Given a common ancestor at stepsA (from person A) and
+  // stepsB (from person B):
+  //   min = Math.min(stepsA, stepsB)
+  //   max = Math.max(stepsA, stepsB)
+  //   genDiff = max - min  (generation difference)
+  //
+  // Cases:
+  //   min=0: direct line (ancestor/descendant)
+  //   min=1, genDiff=0: siblings
+  //   min=1, genDiff≥1: Onkel/Tante or Neffe/Nichte with
+  //          Groß-/Ur- prefixes for genDiff > 1
+  //   min≥2, genDiff=0: Cousin/Cousine (min-1). Grades
+  //   min≥2, genDiff≥1: The collateral degree = min-1,
+  //          combined with Onkel/Tante or Neffe/Nichte of
+  //          that degree, with Groß-/Ur- prefixes for
+  //          generation shifts > 1
+  //
+  // Degree system for Onkel/Tante/Neffe/Nichte:
+  //   "n. Grades" where n = min - 1 (the collateral degree)
+  //   Onkel 2. Grades = Cousin of a parent
+  //   Großonkel 2. Grades = Cousin of a grandparent
+  // ═══════════════════════════════════════════════════════════
+
   /**
    * Determine the German relationship term between two people.
-   * Uses the path and common ancestor analysis.
+   * Uses the path and common ancestor analysis following proper
+   * German genealogical terminology.
    */
   function getRelationshipTerm(fromId, toId, graph, membersMap) {
     if (fromId === toId) return { term: 'Ich selbst', degree: 0 };
@@ -155,155 +183,233 @@ const Relationship = (() => {
     const targetPerson = membersMap.get(toId);
     const gender = targetPerson?.gender || null;
 
-    // Direct spouse
+    // Detect if path goes through a spouse edge (in-law / angeheiratet)
+    const hasSpouse = edges.includes('spouse');
+
+    // ─── Special case: direct spouse ───
     if (edges.length === 1 && edges[0] === 'spouse') {
-      const term = gender === 'm' ? 'Ehemann' : gender === 'f' ? 'Ehefrau' : 'Ehepartner';
-      return { term, degree: 0, path };
+      return { term: genderTerm(gender, 'Ehemann', 'Ehefrau', 'Ehepartner'), degree: 0, path };
     }
 
-    // Direct sibling edge
+    // ─── Special case: Schwager/Schwägerin ───
+    // spouse→sibling or sibling→spouse (2-step path)
+    if (edges.length === 2) {
+      if ((edges[0] === 'spouse' && edges[1] === 'sibling') ||
+          (edges[0] === 'sibling' && edges[1] === 'spouse')) {
+        return { term: genderTerm(gender, 'Schwager', 'Schwägerin', 'Schwager/Schwägerin'), degree: 0, path };
+      }
+    }
+    // spouse→parent (Schwiegervater/-mutter) or parent→spouse
+    if (edges.length === 2 && edges[0] === 'spouse' && edges[1] === 'parent') {
+      return { term: genderTerm(gender, 'Schwiegervater', 'Schwiegermutter', 'Schwiegerelternteil'), degree: 0, path };
+    }
+    if (edges.length === 2 && edges[0] === 'parent' && edges[1] === 'spouse') {
+      // My parent's spouse (if not my parent) = Stiefelternteil
+      return { term: genderTerm(gender, 'Stiefvater', 'Stiefmutter', 'Stiefelternteil'), degree: 0, path };
+    }
+    // spouse→child (Schwiegersohn/-tochter) or child→spouse
+    if (edges.length === 2 && edges[0] === 'child' && edges[1] === 'spouse') {
+      return { term: genderTerm(gender, 'Schwiegersohn', 'Schwiegertochter', 'Schwiegerkind'), degree: 0, path };
+    }
+    if (edges.length === 2 && edges[0] === 'spouse' && edges[1] === 'child') {
+      // My spouse's child = Stiefkind
+      return { term: genderTerm(gender, 'Stiefsohn', 'Stieftochter', 'Stiefkind'), degree: 0, path };
+    }
+
+    // ─── Direct sibling edge ───
     if (edges.length === 1 && edges[0] === 'sibling') {
-      const term = gender === 'm' ? 'Bruder' : gender === 'f' ? 'Schwester' : 'Geschwister';
-      return { term, degree: 1, path };
+      return { term: genderTerm(gender, 'Bruder', 'Schwester', 'Geschwister'), degree: 1, path };
     }
 
-    // Count generations up and down (ignoring spouse and sibling edges)
+    // ─── Blood relationship via common ancestor ───
+    const common = findCommonAncestor(fromId, toId, graph);
+    if (common) {
+      const stepsA = common.stepsA;  // steps from person A to common ancestor
+      const stepsB = common.stepsB;  // steps from person B to common ancestor
+
+      const result = getTermFromAncestorSteps(stepsA, stepsB, gender);
+      const suffix = hasSpouse ? ' (angeheiratet)' : '';
+      return { term: result.term + suffix, degree: result.degree, path };
+    }
+
+    // ─── Path-based fallback (no common ancestor found) ───
     const bloodEdges = edges.filter(e => e !== 'spouse' && e !== 'sibling');
     const ups = bloodEdges.filter(e => e === 'parent').length;
     const downs = bloodEdges.filter(e => e === 'child').length;
-    const hasSpouse = edges.includes('spouse');
-    const hasSibling = edges.includes('sibling');
 
-    // Direct line (no spouse in path or spouse at end/start)
+    // Direct line up
     if (downs === 0 && ups > 0) {
-      // Going up: parent, grandparent, etc.
       const term = getAncestorTerm(ups, gender);
-      if (hasSpouse) {
-        return { term: term + ' (angeheiratet)', degree: ups, path };
-      }
-      return { term, degree: ups, path };
+      return { term: hasSpouse ? term + ' (angeheiratet)' : term, degree: ups, path };
     }
-
+    // Direct line down
     if (ups === 0 && downs > 0) {
-      // Going down: child, grandchild, etc.
       const term = getDescendantTerm(downs, gender);
-      if (hasSpouse) {
-        return { term: term + ' (angeheiratet)', degree: downs, path };
-      }
-      return { term, degree: downs, path };
+      return { term: hasSpouse ? term + ' (angeheiratet)' : term, degree: downs, path };
     }
 
-    // Sibling
-    if (ups === 1 && downs === 1 && !hasSpouse) {
-      const term = gender === 'm' ? 'Bruder' : gender === 'f' ? 'Schwester' : 'Geschwister';
-      return { term, degree: 1, path };
-    }
-
-    // Use common ancestor approach for cousins, etc.
-    const common = findCommonAncestor(fromId, toId, graph);
-    if (common) {
-      const stepsA = common.stepsA;
-      const stepsB = common.stepsB;
-
-      if (stepsA === stepsB) {
-        // Same generation
-        if (stepsA === 1) {
-          const term = gender === 'm' ? 'Bruder' : gender === 'f' ? 'Schwester' : 'Geschwister';
-          return { term, degree: 1, path };
-        }
-        const cousinDegree = stepsA - 1;
-        return {
-          term: getCousinTerm(cousinDegree, gender),
-          degree: cousinDegree,
-          path
-        };
-      } else {
-        // Different generations: "removed" cousins
-        const minSteps = Math.min(stepsA, stepsB);
-        const maxSteps = Math.max(stepsA, stepsB);
-        const removed = maxSteps - minSteps;
-
-        if (minSteps === 1) {
-          // Aunt/Uncle or Niece/Nephew territory
-          if (stepsA < stepsB) {
-            // We're going up less, so target is a descendant direction
-            return { term: getAuntUncleTerm(removed, gender), degree: removed, path };
-          } else {
-            return { term: getNieceNephewTerm(removed, gender), degree: removed, path };
-          }
-        }
-
-        const cousinDegree = minSteps - 1;
-        return {
-          term: `${getCousinTerm(cousinDegree, gender)} ${removed}x entfernt`,
-          degree: cousinDegree,
-          path
-        };
-      }
-    }
-
-    // Fallback: describe via path length
-    if (hasSpouse) {
-      return { term: `Verwandt über ${edges.length} Verbindungen (angeheiratet)`, degree: edges.length, path };
-    }
-    return { term: `Verwandt über ${edges.length} Verbindungen`, degree: edges.length, path };
+    // Generic fallback
+    const suffix = hasSpouse ? ' (angeheiratet)' : '';
+    return { term: `Verwandt über ${edges.length} Verbindungen${suffix}`, degree: edges.length, path };
   }
 
+  /**
+   * Given the steps from person A and B to their common ancestor,
+   * return the proper German relationship term.
+   *
+   * Based on: https://de.wikipedia.org/wiki/Verwandtschaftsbeziehung
+   */
+  function getTermFromAncestorSteps(stepsA, stepsB, gender) {
+    // Direct ancestor (A is descendant, ancestor is at stepsA=0 or stepsB=0)
+    if (stepsA === 0) {
+      return { term: getDescendantTerm(stepsB, gender), degree: stepsB };
+    }
+    if (stepsB === 0) {
+      return { term: getAncestorTerm(stepsA, gender), degree: stepsA };
+    }
+
+    const min = Math.min(stepsA, stepsB);
+    const max = Math.max(stepsA, stepsB);
+    const genDiff = max - min;
+
+    // ─── Same generation (stepsA === stepsB) ───
+    if (genDiff === 0) {
+      if (min === 1) {
+        // Siblings
+        return { term: genderTerm(gender, 'Bruder', 'Schwester', 'Geschwister'), degree: 1 };
+      }
+      // Cousin/Cousine n. Grades
+      // Degree = min - 1 (Cousin 1. Grades = just "Cousin", 2. Grades, etc.)
+      const cousinDegree = min - 1;
+      return { term: getCousinTerm(cousinDegree, gender), degree: cousinDegree };
+    }
+
+    // ─── Different generations ───
+    // Person A is "closer" to ancestor if stepsA < stepsB → target is below (Neffe direction)
+    // Person A is "farther" from ancestor if stepsA > stepsB → target is above (Onkel direction)
+    const targetIsBelow = stepsA < stepsB;  // target (B) is in a lower generation
+
+    if (min === 1) {
+      // ─── Onkel/Tante or Neffe/Nichte with Groß-/Ur- prefixes ───
+      // genDiff=1: Onkel/Neffe, genDiff=2: Großonkel/Großneffe, etc.
+      if (targetIsBelow) {
+        // Target is below us → Neffe/Nichte territory
+        return { term: getNieceNephewTerm(genDiff, 0, gender), degree: genDiff };
+      } else {
+        // Target is above us → Onkel/Tante territory
+        return { term: getAuntUncleTerm(genDiff, 0, gender), degree: genDiff };
+      }
+    }
+
+    // ─── min ≥ 2: collateral relatives with degree ───
+    // The collateral degree = min - 1
+    // genDiff gives the generation offset, expressed via Groß-/Ur-
+    //
+    // Examples (from Wikipedia):
+    //   stepsA=2, stepsB=3 → Onkel/Tante (genDiff=1) but with degree 1
+    //     = Neffe/Nichte des Cousins = actually this is the child of a cousin
+    //     Wikipedia: "Onkel/Tante 2. Grades" = Cousin/Cousine eines Elternteils
+    //     Let's be precise:
+    //
+    // For min≥2 with genDiff:
+    //   The relationship is like Onkel/Neffe but in a collateral line.
+    //   collateralDegree = min - 1
+    //   genDiff determines Groß-/Ur- prefix level
+    //
+    //   If targetIsBelow:
+    //     genDiff=1: Neffe/Nichte (min-1). Grades
+    //     genDiff=2: Großneffe/Großnichte (min-1). Grades
+    //     genDiff=3: Urgroßneffe/Urgroßnichte (min-1). Grades
+    //   If targetIsAbove:
+    //     genDiff=1: Onkel/Tante (min-1). Grades
+    //     genDiff=2: Großonkel/Großtante (min-1). Grades
+    //     genDiff=3: Urgroßonkel/Urgroßtante (min-1). Grades
+    const collateralDegree = min - 1;
+
+    if (targetIsBelow) {
+      return { term: getNieceNephewTerm(genDiff, collateralDegree, gender), degree: collateralDegree };
+    } else {
+      return { term: getAuntUncleTerm(genDiff, collateralDegree, gender), degree: collateralDegree };
+    }
+  }
+
+  // ─── Helper: gender-dependent term selection ───
+  function genderTerm(gender, m, f, neutral) {
+    return gender === 'm' ? m : gender === 'f' ? f : neutral;
+  }
+
+  // ─── Direct line: Ancestors ───
   function getAncestorTerm(generations, gender) {
     switch (generations) {
-      case 1: return gender === 'm' ? 'Vater' : gender === 'f' ? 'Mutter' : 'Elternteil';
-      case 2: return gender === 'm' ? 'Großvater' : gender === 'f' ? 'Großmutter' : 'Großelternteil';
-      case 3: return gender === 'm' ? 'Urgroßvater' : gender === 'f' ? 'Urgroßmutter' : 'Urgroßelternteil';
+      case 1: return genderTerm(gender, 'Vater', 'Mutter', 'Elternteil');
+      case 2: return genderTerm(gender, 'Großvater', 'Großmutter', 'Großelternteil');
+      case 3: return genderTerm(gender, 'Urgroßvater', 'Urgroßmutter', 'Urgroßelternteil');
       default: {
-        const prefix = `Ur${'ur'.repeat(generations - 3)}groß`;
-        return gender === 'm' ? `${prefix}vater` : gender === 'f' ? `${prefix}mutter` : `${prefix}elternteil`;
+        const prefix = 'Ur' + 'ur'.repeat(generations - 3) + 'groß';
+        return genderTerm(gender, prefix + 'vater', prefix + 'mutter', prefix + 'elternteil');
       }
     }
   }
 
+  // ─── Direct line: Descendants ───
   function getDescendantTerm(generations, gender) {
     switch (generations) {
-      case 1: return gender === 'm' ? 'Sohn' : gender === 'f' ? 'Tochter' : 'Kind';
-      case 2: return gender === 'm' ? 'Enkelsohn' : gender === 'f' ? 'Enkeltochter' : 'Enkelkind';
-      case 3: return gender === 'm' ? 'Urenkelsohn' : gender === 'f' ? 'Urenkeltochter' : 'Urenkelkind';
+      case 1: return genderTerm(gender, 'Sohn', 'Tochter', 'Kind');
+      case 2: return genderTerm(gender, 'Enkelsohn', 'Enkeltochter', 'Enkelkind');
+      case 3: return genderTerm(gender, 'Urenkelsohn', 'Urenkeltochter', 'Urenkelkind');
       default: {
-        const prefix = `Ur${'ur'.repeat(generations - 3)}enkel`;
-        return gender === 'm' ? `${prefix}sohn` : gender === 'f' ? `${prefix}tochter` : `${prefix}kind`;
+        const prefix = 'Ur' + 'ur'.repeat(generations - 3) + 'enkel';
+        return genderTerm(gender, prefix + 'sohn', prefix + 'tochter', prefix + 'kind');
       }
     }
   }
 
+  // ─── Cousin/Cousine with degree ───
   function getCousinTerm(degree, gender) {
-    const term = gender === 'm' ? 'Cousin' : gender === 'f' ? 'Cousine' : 'Cousin/Cousine';
-    switch (degree) {
-      case 1: return term;
-      case 2: return `${term} 2. Grades`;
-      default: return `${term} ${degree}. Grades`;
-    }
+    const base = genderTerm(gender, 'Cousin', 'Cousine', 'Cousin/Cousine');
+    if (degree <= 1) return base;
+    return base + ' ' + degree + '. Grades';
   }
 
-  function getAuntUncleTerm(generationsRemoved, gender) {
-    switch (generationsRemoved) {
-      case 1: return gender === 'm' ? 'Onkel' : gender === 'f' ? 'Tante' : 'Onkel/Tante';
-      case 2: return gender === 'm' ? 'Großonkel' : gender === 'f' ? 'Großtante' : 'Großonkel/Großtante';
-      case 3: return gender === 'm' ? 'Urgroßonkel' : gender === 'f' ? 'Urgroßtante' : 'Urgroßonkel/Urgroßtante';
+  // ─── Onkel/Tante with Groß-/Ur- prefix and optional degree ───
+  // genLevel: 1=Onkel, 2=Großonkel, 3=Urgroßonkel, 4=Ururgroßonkel...
+  // collateralDegree: 0=no suffix, 1=no suffix (1st degree is default),
+  //                   2+=". Grades" suffix
+  function getAuntUncleTerm(genLevel, collateralDegree, gender) {
+    let base;
+    switch (genLevel) {
+      case 1: base = genderTerm(gender, 'Onkel', 'Tante', 'Onkel/Tante'); break;
+      case 2: base = genderTerm(gender, 'Großonkel', 'Großtante', 'Großonkel/Großtante'); break;
+      case 3: base = genderTerm(gender, 'Urgroßonkel', 'Urgroßtante', 'Urgroßonkel/Urgroßtante'); break;
       default: {
-        const prefix = `Ur${'ur'.repeat(generationsRemoved - 3)}groß`;
-        return gender === 'm' ? `${prefix}onkel` : gender === 'f' ? `${prefix}tante` : `${prefix}onkel/-tante`;
+        const prefix = 'Ur' + 'ur'.repeat(genLevel - 3) + 'groß';
+        base = genderTerm(gender, prefix + 'onkel', prefix + 'tante', prefix + 'onkel/' + prefix + 'tante');
       }
     }
+    if (collateralDegree >= 2) {
+      base += ' ' + collateralDegree + '. Grades';
+    }
+    return base;
   }
 
-  function getNieceNephewTerm(generationsRemoved, gender) {
-    switch (generationsRemoved) {
-      case 1: return gender === 'm' ? 'Neffe' : gender === 'f' ? 'Nichte' : 'Neffe/Nichte';
-      case 2: return gender === 'm' ? 'Großneffe' : gender === 'f' ? 'Großnichte' : 'Großneffe/Großnichte';
-      case 3: return gender === 'm' ? 'Urgroßneffe' : gender === 'f' ? 'Urgroßnichte' : 'Urgroßneffe/Urgroßnichte';
+  // ─── Neffe/Nichte with Groß-/Ur- prefix and optional degree ───
+  // genLevel: 1=Neffe, 2=Großneffe, 3=Urgroßneffe, 4=Ururgroßneffe...
+  // collateralDegree: 0=no suffix, 1=no suffix, 2+=". Grades" suffix
+  function getNieceNephewTerm(genLevel, collateralDegree, gender) {
+    let base;
+    switch (genLevel) {
+      case 1: base = genderTerm(gender, 'Neffe', 'Nichte', 'Neffe/Nichte'); break;
+      case 2: base = genderTerm(gender, 'Großneffe', 'Großnichte', 'Großneffe/Großnichte'); break;
+      case 3: base = genderTerm(gender, 'Urgroßneffe', 'Urgroßnichte', 'Urgroßneffe/Urgroßnichte'); break;
       default: {
-        const prefix = `Ur${'ur'.repeat(generationsRemoved - 3)}groß`;
-        return gender === 'm' ? `${prefix}neffe` : gender === 'f' ? `${prefix}nichte` : `${prefix}neffe/-nichte`;
+        const prefix = 'Ur' + 'ur'.repeat(genLevel - 3) + 'groß';
+        base = genderTerm(gender, prefix + 'neffe', prefix + 'nichte', prefix + 'neffe/' + prefix + 'nichte');
       }
     }
+    if (collateralDegree >= 2) {
+      base += ' ' + collateralDegree + '. Grades';
+    }
+    return base;
   }
 
   /**

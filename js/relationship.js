@@ -302,34 +302,23 @@ const Relationship = (() => {
     }
 
     // ─── min ≥ 2: collateral relatives with degree ───
-    // The collateral degree = min - 1
-    // genDiff gives the generation offset, expressed via Groß-/Ur-
+    // The "Grad" (degree) for Onkel/Tante/Neffe/Nichte = min
+    // (distinct from cousin degree which = min - 1)
+    // genDiff determines the Groß-/Ur- prefix level
     //
-    // Examples (from Wikipedia):
-    //   stepsA=2, stepsB=3 → Onkel/Tante (genDiff=1) but with degree 1
-    //     = Neffe/Nichte des Cousins = actually this is the child of a cousin
-    //     Wikipedia: "Onkel/Tante 2. Grades" = Cousin/Cousine eines Elternteils
-    //     Let's be precise:
-    //
-    // For min≥2 with genDiff:
-    //   The relationship is like Onkel/Neffe but in a collateral line.
-    //   collateralDegree = min - 1
-    //   genDiff determines Groß-/Ur- prefix level
-    //
-    //   If targetIsBelow:
-    //     genDiff=1: Neffe/Nichte (min-1). Grades
-    //     genDiff=2: Großneffe/Großnichte (min-1). Grades
-    //     genDiff=3: Urgroßneffe/Urgroßnichte (min-1). Grades
-    //   If targetIsAbove:
-    //     genDiff=1: Onkel/Tante (min-1). Grades
-    //     genDiff=2: Großonkel/Großtante (min-1). Grades
-    //     genDiff=3: Urgroßonkel/Urgroßtante (min-1). Grades
-    const collateralDegree = min - 1;
+    // Wikipedia examples:
+    //   min=2, genDiff=1: Onkel/Neffe 2. Grades
+    //     (Onkel 2. Grades = Cousin eines Elternteils)
+    //   min=2, genDiff=2: Großonkel/Großneffe 2. Grades
+    //     (Großonkel 2. Grades = Cousin eines Großelternteils)
+    //   min=3, genDiff=1: Onkel/Neffe 3. Grades
+    //     (Onkel 3. Grades = Cousin 2. Grades eines Elternteils)
+    const uncleNephewDegree = min;
 
     if (targetIsBelow) {
-      return { term: getNieceNephewTerm(genDiff, collateralDegree, gender), degree: collateralDegree };
+      return { term: getNieceNephewTerm(genDiff, uncleNephewDegree, gender), degree: uncleNephewDegree };
     } else {
-      return { term: getAuntUncleTerm(genDiff, collateralDegree, gender), degree: collateralDegree };
+      return { term: getAuntUncleTerm(genDiff, uncleNephewDegree, gender), degree: uncleNephewDegree };
     }
   }
 

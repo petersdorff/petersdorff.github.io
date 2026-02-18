@@ -304,6 +304,9 @@ const App = (() => {
   // ─── View Management ───
 
   function showView(viewId) {
+    // Always close the connection overlay when switching views
+    Connection.closeOverlay();
+
     const isDesktop = window.innerWidth >= 600;
     const profileView = document.getElementById('view-profile');
 

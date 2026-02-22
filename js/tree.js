@@ -207,6 +207,12 @@ const Tree = (() => {
           const spouse = c.a === personId ? c.b : c.a;
           return { coupleId: cid, spouse };
         });
+        // Sort: oldest spouse first (index 0 = right side in layout)
+        couplesInfo.sort((a, b) => {
+          const ya = memberMap.get(a.spouse)?.birthDate || '9999';
+          const yb = memberMap.get(b.spouse)?.birthDate || '9999';
+          return ya.localeCompare(yb);
+        });
         multiCoupleMap.set(multiId, { pivotId: personId, couples: couplesInfo });
         for (const cid of coupleIds) absorbedCouples.add(cid);
       }
@@ -476,28 +482,48 @@ const Tree = (() => {
     }
 
     const unitWidth = new Map();
+
+    // Helper: total width of a list of children laid out in a row
+    function childrenRowWidth(childIds) {
+      if (!childIds || childIds.length === 0) return 0;
+      const unique = [...new Set(childIds.map(c => getUnitForPerson(c)))];
+      let w = 0;
+      for (const cu of unique) w += calcWidth(cu);
+      w += (unique.length - 1) * SIBLING_GAP;
+      return w;
+    }
+
     function calcWidth(unitId) {
       if (unitWidth.has(unitId)) return unitWidth.get(unitId);
-      const children = unitChildren.get(unitId) || [];
 
-      let selfWidth;
       if (multiCoupleMap.has(unitId)) {
-        const numSpouses = multiCoupleMap.get(unitId).couples.length;
-        selfWidth = NODE_W * (numSpouses + 1) + SPOUSE_GAP * numSpouses;
-      } else if (coupleMap.has(unitId)) {
-        selfWidth = NODE_W * 2 + SPOUSE_GAP;
-      } else {
-        selfWidth = NODE_W;
+        // Multi-couple: each sub-couple occupies a "half" with its own children.
+        // Layout: ...Spouse2 ─ [mid2] ─ Pivot ─ [mid1] ─ Spouse1
+        // The total width is the sum of each half's max(couple-portion, children-width),
+        // ensuring children beneath each midpoint don't overlap with the other half.
+        const info = multiCoupleMap.get(unitId);
+        const coupleSlotWidth = NODE_W + SPOUSE_GAP; // one spouse + gap to pivot
+        let totalWidth = NODE_W; // pivot node in the center
+
+        for (const ci of info.couples) {
+          const subChildren = unitChildren.get(ci.coupleId) || [];
+          const subChildWidth = childrenRowWidth(subChildren);
+          // Each half: at minimum the couple slot, but wider if children need more
+          const halfWidth = Math.max(coupleSlotWidth, subChildWidth / 2 + SPOUSE_GAP / 2);
+          totalWidth += halfWidth;
+        }
+
+        unitWidth.set(unitId, totalWidth);
+        return totalWidth;
       }
+
+      const children = unitChildren.get(unitId) || [];
+      const selfWidth = coupleMap.has(unitId) ? NODE_W * 2 + SPOUSE_GAP : NODE_W;
 
       if (children.length === 0) { unitWidth.set(unitId, selfWidth); return selfWidth; }
 
-      const uniqueChildUnits = [...new Set(children.map(c => getUnitForPerson(c)))];
-      let childrenTotalWidth = 0;
-      for (const cu of uniqueChildUnits) childrenTotalWidth += calcWidth(cu);
-      childrenTotalWidth += (uniqueChildUnits.length - 1) * SIBLING_GAP;
-
-      const totalWidth = Math.max(selfWidth, childrenTotalWidth);
+      const childWidth = childrenRowWidth(children);
+      const totalWidth = Math.max(selfWidth, childWidth);
       unitWidth.set(unitId, totalWidth);
       return totalWidth;
     }

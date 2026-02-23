@@ -497,26 +497,27 @@ const Tree = (() => {
       if (unitWidth.has(unitId)) return unitWidth.get(unitId);
 
       if (multiCoupleMap.has(unitId)) {
-        // Multi-couple: each sub-couple occupies a "half" with its own children.
-        // Layout: ...Spouse2 ─ [mid2] ─ Pivot ─ [mid1] ─ Spouse1
-        // The total width is the sum of each half's max(couple-portion, children-width),
-        // ensuring children beneath each midpoint don't overlap with the other half.
+        // Multi-couple: pivot has multiple spouses. ALL children from all
+        // sub-couples are treated as one combined row (like a regular couple).
+        // The self-width is the full span of the parent row (pivot + all spouses).
+        // The total width = max(self-width, combined children row width).
         const info = multiCoupleMap.get(unitId);
-        const coupleSlotWidth = NODE_W + SPOUSE_GAP; // one spouse + gap to pivot
-        let totalWidth = NODE_W; // pivot node in the center
 
-        for (const ci of info.couples) {
-          const subChildren = unitChildren.get(ci.coupleId) || [];
-          const subChildWidth = childrenRowWidth(subChildren);
-          // Children are centered under the sub-couple midpoint. The midpoint
-          // is at offset NODE_W/2 + SPOUSE_GAP/2 from the pivot center.
-          // Children extend subChildWidth/2 each way from the midpoint.
-          // So the half-width from pivot center = NODE_W/2 + SPOUSE_GAP/2 + subChildWidth/2.
-          // But also at minimum the couple slot (spouse + gap) must fit.
-          const childHalf = subChildWidth / 2 + SPOUSE_GAP / 2 + NODE_W / 2;
-          const halfWidth = Math.max(coupleSlotWidth, childHalf);
-          totalWidth += halfWidth;
+        // Self-width: pivot + each sub-couple adds one spouse + gap
+        let selfWidth = NODE_W; // pivot
+        for (let i = 0; i < info.couples.length; i++) {
+          selfWidth += NODE_W + SPOUSE_GAP; // each spouse + gap
         }
+
+        // Combined children from all sub-couples
+        const allChildren = [];
+        for (const ci of info.couples) {
+          for (const cid of (unitChildren.get(ci.coupleId) || [])) {
+            allChildren.push(cid);
+          }
+        }
+        const childWidth = childrenRowWidth(allChildren);
+        const totalWidth = Math.max(selfWidth, childWidth);
 
         unitWidth.set(unitId, totalWidth);
         return totalWidth;
@@ -801,158 +802,6 @@ const Tree = (() => {
   }
 
   /**
-   * After overlap resolution, parents may no longer be centered above their
-   * children. This pass re-centers each couple (midpoint + spouses) over
-   * the center of its children, working bottom-up so that each parent
-   * adjusts to already-finalized children positions.
-   *
-   * After re-centering, we re-run overlap resolution on the affected rows
-   * to ensure no new overlaps were introduced.
-   */
-  function recenterParents(positions, elements, opts = {}) {
-    const MIN_GAP = 20;
-
-    // Build couple → [child person IDs] from parent-child edges
-    const coupleChildIds = new Map();
-    for (const el of elements) {
-      if (el.group === 'edges' && el.classes === 'parent-child-edge') {
-        const src = el.data.source;
-        const tgt = el.data.target;
-        if (src.startsWith('couple-')) {
-          if (!coupleChildIds.has(src)) coupleChildIds.set(src, []);
-          coupleChildIds.get(src).push(tgt);
-        }
-      }
-    }
-
-    // Build couple → { personA, personB } map from couple IDs
-    const couplePersons = new Map();
-    for (const [id, pos] of Object.entries(positions)) {
-      if (!id.startsWith('couple-')) continue;
-      const inner = id.substring('couple-'.length);
-      if (inner.length >= 73) {
-        couplePersons.set(id, {
-          a: inner.substring(0, 36),
-          b: inner.substring(37)
-        });
-      }
-    }
-
-    // Build person → coupleIds (which couples is this person part of, as spouse)
-    const personInCouples = new Map();
-    for (const [coupleId, persons] of couplePersons) {
-      for (const pid of [persons.a, persons.b]) {
-        if (!personInCouples.has(pid)) personInCouples.set(pid, []);
-        personInCouples.get(pid).push(coupleId);
-      }
-    }
-
-    // Detect multi-couple pivots: persons who appear in >1 couple
-    const multiCouplePivots = new Set();
-    for (const [pid, cids] of personInCouples) {
-      if (cids.length > 1) multiCouplePivots.add(pid);
-    }
-
-    // Group nodes by Y to determine generation order
-    const rowForNode = new Map();
-    for (const [id, pos] of Object.entries(positions)) {
-      if (!id.startsWith('couple-')) {
-        rowForNode.set(id, Math.round(pos.y));
-      }
-    }
-
-    // Sort couples by Y position (bottom-up for processing)
-    const couplesWithY = [];
-    for (const [coupleId] of coupleChildIds) {
-      if (positions[coupleId]) {
-        couplesWithY.push({ coupleId, y: positions[coupleId].y });
-      }
-    }
-    couplesWithY.sort((a, b) => b.y - a.y); // bottom-up
-
-    // Multiple passes to allow cascading re-centering
-    for (let pass = 0; pass < 3; pass++) {
-      let anyMoved = false;
-
-      for (const { coupleId } of couplesWithY) {
-        const childIds = coupleChildIds.get(coupleId);
-        if (!childIds || childIds.length === 0) continue;
-
-        // Compute children center
-        let minChildX = Infinity, maxChildX = -Infinity;
-        for (const cid of childIds) {
-          if (positions[cid]) {
-            minChildX = Math.min(minChildX, positions[cid].x);
-            maxChildX = Math.max(maxChildX, positions[cid].x);
-          }
-        }
-        if (minChildX === Infinity) continue;
-        const childCenterX = (minChildX + maxChildX) / 2;
-
-        // Current couple midpoint position
-        const midPos = positions[coupleId];
-        if (!midPos) continue;
-        const dx = childCenterX - midPos.x;
-
-        // Skip if already close enough
-        if (Math.abs(dx) < 5) continue;
-
-        const persons = couplePersons.get(coupleId);
-        if (!persons) continue;
-
-        // For multi-couple pivots: shift the entire multi-couple unit
-        // (pivot + all sub-couple midpoints + all spouses)
-        const pivotId = multiCouplePivots.has(persons.a) ? persons.a :
-                        multiCouplePivots.has(persons.b) ? persons.b : null;
-
-        if (pivotId) {
-          // This couple is part of a multi-couple unit.
-          // Re-center the pivot based on ALL its sub-couple children combined.
-          const pivotCoupleIds = personInCouples.get(pivotId) || [];
-          let allChildMinX = Infinity, allChildMaxX = -Infinity;
-          for (const pcId of pivotCoupleIds) {
-            for (const cid of (coupleChildIds.get(pcId) || [])) {
-              if (positions[cid]) {
-                allChildMinX = Math.min(allChildMinX, positions[cid].x);
-                allChildMaxX = Math.max(allChildMaxX, positions[cid].x);
-              }
-            }
-          }
-          if (allChildMinX === Infinity) continue;
-          const allChildCenter = (allChildMinX + allChildMaxX) / 2;
-          const pivotPos = positions[pivotId];
-          if (!pivotPos) continue;
-          const pivotDx = allChildCenter - pivotPos.x;
-          if (Math.abs(pivotDx) < 5) continue;
-
-          // Shift pivot
-          pivotPos.x += pivotDx;
-          // Shift all sub-couple midpoints and their spouses
-          for (const pcId of pivotCoupleIds) {
-            if (positions[pcId]) positions[pcId].x += pivotDx;
-            const pc = couplePersons.get(pcId);
-            if (pc) {
-              const spouseId = pc.a === pivotId ? pc.b : pc.a;
-              if (positions[spouseId]) positions[spouseId].x += pivotDx;
-            }
-          }
-          anyMoved = true;
-        } else {
-          // Regular couple: shift midpoint + both persons
-          midPos.x += dx;
-          if (positions[persons.a]) positions[persons.a].x += dx;
-          if (positions[persons.b]) positions[persons.b].x += dx;
-          anyMoved = true;
-        }
-      }
-
-      if (!anyMoved) break;
-
-      // After re-centering, re-resolve overlaps on parent rows
-      resolveOverlaps(positions, elements, opts);
-    }
-  }
-
   // ═══════════════════════════════════════════════════════════
   //  GENERATIONAL LAYOUT
   // ═══════════════════════════════════════════════════════════
@@ -1006,47 +855,71 @@ const Tree = (() => {
       allUnitsPlaced.add(unit.id);
 
       if (unit.type === 'multi-couple') {
-        // Layout: ...Spouse2 ─ [mid2] ─ Pivot ─ [mid1] ─ Spouse1...
-        // Each sub-couple's midpoint is positioned based on actual child widths
+        // Multi-couple layout:
+        // 1. ALL children from all sub-couples go into one combined row,
+        //    centered under the pivot (just like a regular couple's children).
+        // 2. Each sub-couple midpoint + spouse is positioned above their
+        //    specific children, centered over those children's extent.
+        // 3. The pivot is placed at centerX.
         const info = multiCoupleMap.get(unit.id);
         const pivotId = info.pivotId;
-        positions[pivotId] = { x: centerX, y };
 
-        const coupleSlotWidth = NODE_W + SPOUSE_GAP;
-        let rightOffset = NODE_W / 2;  // start from edge of pivot node
-        let leftOffset = NODE_W / 2;
-
-        for (let i = 0; i < info.couples.length; i++) {
-          const ci = info.couples[i];
-          const subChildren = unitChildren.get(ci.coupleId) || [];
-          const subChildWidth = childrenRowWidth(subChildren);
-          const childHalf = subChildWidth / 2 + SPOUSE_GAP / 2 + NODE_W / 2;
-          const halfWidth = Math.max(coupleSlotWidth, childHalf);
-
-          if (i % 2 === 0) {
-            // Right side
-            const midX = centerX + rightOffset + SPOUSE_GAP / 2;
-            const spouseX = centerX + rightOffset + SPOUSE_GAP + NODE_W / 2;
-            positions[ci.coupleId] = { x: midX, y };
-            positions[ci.spouse] = { x: spouseX, y };
-            rightOffset += halfWidth;
-          } else {
-            // Left side
-            const midX = centerX - leftOffset - SPOUSE_GAP / 2;
-            const spouseX = centerX - leftOffset - SPOUSE_GAP - NODE_W / 2;
-            positions[ci.coupleId] = { x: midX, y };
-            positions[ci.spouse] = { x: spouseX, y };
-            leftOffset += halfWidth;
+        // Collect ALL children from all sub-couples into one combined list
+        const allChildren = [];
+        const childToCoupleIdx = new Map(); // childId → couple index
+        for (let ci = 0; ci < info.couples.length; ci++) {
+          const coupleChildren = unitChildren.get(info.couples[ci].coupleId) || [];
+          for (const cid of coupleChildren) {
+            allChildren.push(cid);
+            childToCoupleIdx.set(cid, ci);
           }
         }
 
-        // Position children of each sub-couple beneath their midpoint
+        // Position all children as one combined row, centered under pivot
         const childY = y + GEN_GAP;
-        for (const ci of info.couples) {
-          const coupleChildren = unitChildren.get(ci.coupleId) || [];
-          if (coupleChildren.length === 0) continue;
-          const midPos = positions[ci.coupleId];
-          if (midPos) positionChildren(coupleChildren, midPos.x, childY);
+        positionChildren(allChildren, centerX, childY);
+
+        // Now place the pivot at centerX
+        positions[pivotId] = { x: centerX, y };
+
+        // For each sub-couple, find the extent of its children and center
+        // the midpoint + spouse above them
+        for (let ci = 0; ci < info.couples.length; ci++) {
+          const coupleInfo = info.couples[ci];
+          const coupleChildren = unitChildren.get(coupleInfo.coupleId) || [];
+
+          if (coupleChildren.length > 0) {
+            // Find the center X of this sub-couple's children
+            let minCX = Infinity, maxCX = -Infinity;
+            for (const cid of coupleChildren) {
+              const cu = getUnitForPerson(cid);
+              // A child unit could be a couple — find its center
+              if (positions[cid]) {
+                minCX = Math.min(minCX, positions[cid].x);
+                maxCX = Math.max(maxCX, positions[cid].x);
+              }
+            }
+            const subCenter = (minCX + maxCX) / 2;
+
+            // Place midpoint at children center, spouse next to it
+            // (on the side away from pivot to avoid crossing)
+            const midX = subCenter;
+            const awayFromPivot = subCenter >= centerX ? 1 : -1;
+            const spouseX = midX + awayFromPivot * (SPOUSE_GAP / 2 + NODE_W / 2);
+            // Adjust midpoint between pivot and spouse
+            const adjustedMidX = (centerX + spouseX) / 2;
+
+            // Actually, just place spouse on far side from pivot
+            positions[coupleInfo.coupleId] = { x: midX, y };
+            positions[coupleInfo.spouse] = { x: spouseX, y };
+          } else {
+            // No children: place spouse next to pivot
+            const side = ci % 2 === 0 ? 1 : -1;
+            const midX = centerX + side * (NODE_W / 2 + SPOUSE_GAP / 2);
+            const spouseX = centerX + side * (NODE_W / 2 + SPOUSE_GAP + NODE_W / 2);
+            positions[coupleInfo.coupleId] = { x: midX, y };
+            positions[coupleInfo.spouse] = { x: spouseX, y };
+          }
         }
 
       } else if (unit.type === 'couple') {
@@ -1088,11 +961,8 @@ const Tree = (() => {
       }
     }
 
-    // Post-layout collision resolution (generational: exact row matching)
-    // resolveOverlaps(positions, elements);
-
-    // Re-center parents above their children (bottom-up)
-    // recenterParents(positions, elements);
+    // Post-layout safety net — should find no overlaps if widths are correct
+    resolveOverlaps(positions, elements);
 
     return { elements, positions };
   }
@@ -1211,49 +1081,56 @@ const Tree = (() => {
 
       let y;
       if (unit.type === 'multi-couple') {
+        // Same strategy as generational: all children in one combined row,
+        // sub-couple midpoints + spouses centered above their children.
         const info = multiCoupleMap.get(unit.id);
         const pivotId = info.pivotId;
         const pivotY = memberY.get(pivotId) || 0;
+
+        // Collect ALL children from all sub-couples
+        const allChildren = [];
+        for (const ci of info.couples) {
+          for (const cid of (unitChildren.get(ci.coupleId) || [])) {
+            allChildren.push(cid);
+          }
+        }
+
+        // Position all children as one combined row
+        positionChildren(allChildren, centerX);
+
+        // Place pivot at centerX
         positions[pivotId] = { x: centerX, y: pivotY };
 
-        const coupleSlotWidth = NODE_W + SPOUSE_GAP;
-        let rightOffset = NODE_W / 2;
-        let leftOffset = NODE_W / 2;
-
-        for (let i = 0; i < info.couples.length; i++) {
-          const ci = info.couples[i];
-          const spouseY = memberY.get(ci.spouse) || 0;
+        // Position each sub-couple's midpoint + spouse above their children
+        for (let ci = 0; ci < info.couples.length; ci++) {
+          const coupleInfo = info.couples[ci];
+          const spouseY = memberY.get(coupleInfo.spouse) || 0;
           const midY = (pivotY + spouseY) / 2;
-          const subChildren = unitChildren.get(ci.coupleId) || [];
-          const subChildWidth = childrenRowWidth(subChildren);
-          const childHalf = subChildWidth / 2 + SPOUSE_GAP / 2 + NODE_W / 2;
-          const halfWidth = Math.max(coupleSlotWidth, childHalf);
+          const coupleChildren = unitChildren.get(coupleInfo.coupleId) || [];
 
-          if (i % 2 === 0) {
-            // Right side
-            const midX = centerX + rightOffset + SPOUSE_GAP / 2;
-            const spouseX = centerX + rightOffset + SPOUSE_GAP + NODE_W / 2;
-            positions[ci.coupleId] = { x: midX, y: midY };
-            positions[ci.spouse] = { x: spouseX, y: spouseY };
-            rightOffset += halfWidth;
+          if (coupleChildren.length > 0) {
+            let minCX = Infinity, maxCX = -Infinity;
+            for (const cid of coupleChildren) {
+              if (positions[cid]) {
+                minCX = Math.min(minCX, positions[cid].x);
+                maxCX = Math.max(maxCX, positions[cid].x);
+              }
+            }
+            const subCenter = (minCX + maxCX) / 2;
+            const midX = subCenter;
+            const awayFromPivot = subCenter >= centerX ? 1 : -1;
+            const spouseX = midX + awayFromPivot * (SPOUSE_GAP / 2 + NODE_W / 2);
+            positions[coupleInfo.coupleId] = { x: midX, y: midY };
+            positions[coupleInfo.spouse] = { x: spouseX, y: spouseY };
           } else {
-            // Left side
-            const midX = centerX - leftOffset - SPOUSE_GAP / 2;
-            const spouseX = centerX - leftOffset - SPOUSE_GAP - NODE_W / 2;
-            positions[ci.coupleId] = { x: midX, y: midY };
-            positions[ci.spouse] = { x: spouseX, y: spouseY };
-            leftOffset += halfWidth;
+            const side = ci % 2 === 0 ? 1 : -1;
+            const midX = centerX + side * (NODE_W / 2 + SPOUSE_GAP / 2);
+            const spouseX = centerX + side * (NODE_W / 2 + SPOUSE_GAP + NODE_W / 2);
+            positions[coupleInfo.coupleId] = { x: midX, y: midY };
+            positions[coupleInfo.spouse] = { x: spouseX, y: spouseY };
           }
         }
         y = pivotY;
-
-        // Position children of each sub-couple
-        for (const ci of info.couples) {
-          const coupleChildren = unitChildren.get(ci.coupleId) || [];
-          if (coupleChildren.length === 0) continue;
-          const midPos = positions[ci.coupleId];
-          if (midPos) positionChildren(coupleChildren, midPos.x);
-        }
 
       } else if (unit.type === 'couple') {
         const couple = coupleMap.get(unit.id);
@@ -1299,11 +1176,8 @@ const Tree = (() => {
       }
     }
 
-    // Post-layout collision resolution (temporal: Y tolerance for varying birth years)
+    // Post-layout safety net
     resolveOverlaps(positions, elements, { yTolerance: NODE_H });
-
-    // Re-center parents above their children (bottom-up)
-    recenterParents(positions, elements, { yTolerance: NODE_H });
 
     return { elements, positions };
   }

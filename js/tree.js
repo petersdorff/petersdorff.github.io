@@ -661,95 +661,41 @@ const Tree = (() => {
   // ═══════════════════════════════════════════════════════════
 
   /**
-   * Shift a node and all its descendants + associated couple midpoints/spouses
-   * by dx pixels on the X axis.
-   */
-  function shiftSubtree(nodeId, dx, positions, pcChildren, visited) {
-    if (!visited) visited = new Set();
-    if (visited.has(nodeId)) return;
-    visited.add(nodeId);
-
-    if (positions[nodeId]) positions[nodeId].x += dx;
-
-    // Shift associated couple midpoints and spouses
-    for (const id of Object.keys(positions)) {
-      if (id.startsWith('couple-') && id.includes(nodeId) && !visited.has(id)) {
-        visited.add(id);
-        positions[id].x += dx;
-
-        // Find and shift the spouse (the other UUID in the couple ID)
-        const inner = id.substring('couple-'.length);
-        if (inner.length >= 73) {
-          const uuid1 = inner.substring(0, 36);
-          const uuid2 = inner.substring(37);
-          const spouseId = uuid1 === nodeId ? uuid2 : uuid1;
-          if (spouseId && positions[spouseId] && !visited.has(spouseId)) {
-            visited.add(spouseId);
-            positions[spouseId].x += dx;
-            // Cascade to spouse's children too
-            for (const childId of (pcChildren.get(spouseId) || [])) {
-              shiftSubtree(childId, dx, positions, pcChildren, visited);
-            }
-          }
-        }
-      }
-    }
-
-    // Cascade to children via parent-child edges
-    for (const childId of (pcChildren.get(nodeId) || [])) {
-      shiftSubtree(childId, dx, positions, pcChildren, visited);
-    }
-  }
-
-  /**
    * Post-layout pass: detect and resolve overlapping nodes on each generation row.
-   * Nodes are pushed apart just enough to eliminate overlap, keeping the tree compact.
-   * Shifts cascade to descendants so subtrees stay connected.
+   *
+   * Strategy: process each row independently. When two person nodes overlap on
+   * the same row, push ALL nodes from the overlapping one rightward (same row only).
+   * Also shift any couple-midpoints that sit between persons on that row.
+   *
+   * This avoids the exponential cascade problem of shifting entire subtrees:
+   * children are handled when their own row is processed.
    */
   function resolveOverlaps(positions, elements) {
     const MIN_GAP = 20; // minimum gap between node edges
 
-    // Build parent→children map from edge elements (through couple midpoints)
-    const pcChildren = new Map();
-    for (const el of elements) {
-      if (el.group === 'edges' && el.classes === 'parent-child-edge') {
-        const src = el.data.source;
-        const tgt = el.data.target;
-        if (!pcChildren.has(src)) pcChildren.set(src, []);
-        pcChildren.get(src).push(tgt);
-      }
-    }
-    // Also map couple-midpoint children to the persons in that couple
-    for (const [coupleId, children] of pcChildren) {
-      if (coupleId.startsWith('couple-')) {
-        const inner = coupleId.substring('couple-'.length);
-        if (inner.length >= 73) {
-          const p1 = inner.substring(0, 36);
-          const p2 = inner.substring(37);
-          for (const pid of [p1, p2]) {
-            if (!pcChildren.has(pid)) pcChildren.set(pid, []);
-            for (const c of children) {
-              if (!pcChildren.get(pid).includes(c)) pcChildren.get(pid).push(c);
-            }
-          }
-        }
-      }
-    }
-
-    // Group person nodes by Y coordinate (generation row)
-    const rows = new Map();
+    // Group ALL positioned nodes by Y coordinate
+    const personRows = new Map();  // y → [{id, x}] for person nodes only
     for (const [id, pos] of Object.entries(positions)) {
       if (id.startsWith('couple-')) continue;
       const rowKey = Math.round(pos.y);
-      if (!rows.has(rowKey)) rows.set(rowKey, []);
-      rows.get(rowKey).push({ id, x: pos.x });
+      if (!personRows.has(rowKey)) personRows.set(rowKey, []);
+      personRows.get(rowKey).push({ id, x: pos.x });
     }
 
-    // Sort rows by Y (process top-down so parent shifts cascade properly)
-    const sortedRowKeys = [...rows.keys()].sort((a, b) => a - b);
+    // Build a map of couple-midpoints per row for shifting them too
+    const coupleRows = new Map();  // y → [{id, x}]
+    for (const [id, pos] of Object.entries(positions)) {
+      if (!id.startsWith('couple-')) continue;
+      const rowKey = Math.round(pos.y);
+      if (!coupleRows.has(rowKey)) coupleRows.set(rowKey, []);
+      coupleRows.get(rowKey).push({ id, x: pos.x });
+    }
+
+    // Sort rows by Y (process top-down)
+    const sortedRowKeys = [...personRows.keys()].sort((a, b) => a - b);
 
     for (const rowKey of sortedRowKeys) {
-      const nodes = rows.get(rowKey);
+      const nodes = personRows.get(rowKey);
       nodes.sort((a, b) => a.x - b.x);
 
       for (let i = 1; i < nodes.length; i++) {
@@ -760,10 +706,21 @@ const Tree = (() => {
 
         if (actualDist < minDist) {
           const shift = minDist - actualDist;
-          // Shift current node and all nodes to its right on this row
+
+          // Shift this node and all nodes to its right on this row
           for (let j = i; j < nodes.length; j++) {
-            shiftSubtree(nodes[j].id, shift, positions, pcChildren);
-            nodes[j].x = positions[nodes[j].id].x; // update local tracking
+            positions[nodes[j].id].x += shift;
+            nodes[j].x += shift;
+          }
+
+          // Also shift any couple-midpoints on this row that are >= curr's original x
+          const couples = coupleRows.get(rowKey) || [];
+          const thresholdX = curr.x - shift; // original x before the shift
+          for (const cp of couples) {
+            if (cp.x >= thresholdX - 1) { // -1 for floating point
+              positions[cp.id].x += shift;
+              cp.x += shift;
+            }
           }
         }
       }

@@ -508,8 +508,9 @@ const Tree = (() => {
         for (const ci of info.couples) {
           const subChildren = unitChildren.get(ci.coupleId) || [];
           const subChildWidth = childrenRowWidth(subChildren);
-          // Each half: at minimum the couple slot, but wider if children need more
-          const halfWidth = Math.max(coupleSlotWidth, subChildWidth / 2 + SPOUSE_GAP / 2);
+          // Each half needs to reserve the full child width (children are centered
+          // under the sub-couple midpoint, not under the pivot)
+          const halfWidth = Math.max(coupleSlotWidth, subChildWidth);
           totalWidth += halfWidth;
         }
 
@@ -656,6 +657,120 @@ const Tree = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════
+  //  COLLISION AVOIDANCE — Post-layout overlap resolution
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Shift a node and all its descendants + associated couple midpoints/spouses
+   * by dx pixels on the X axis.
+   */
+  function shiftSubtree(nodeId, dx, positions, pcChildren, visited) {
+    if (!visited) visited = new Set();
+    if (visited.has(nodeId)) return;
+    visited.add(nodeId);
+
+    if (positions[nodeId]) positions[nodeId].x += dx;
+
+    // Shift associated couple midpoints and spouses
+    for (const id of Object.keys(positions)) {
+      if (id.startsWith('couple-') && id.includes(nodeId) && !visited.has(id)) {
+        visited.add(id);
+        positions[id].x += dx;
+
+        // Find and shift the spouse (the other UUID in the couple ID)
+        const inner = id.substring('couple-'.length);
+        if (inner.length >= 73) {
+          const uuid1 = inner.substring(0, 36);
+          const uuid2 = inner.substring(37);
+          const spouseId = uuid1 === nodeId ? uuid2 : uuid1;
+          if (spouseId && positions[spouseId] && !visited.has(spouseId)) {
+            visited.add(spouseId);
+            positions[spouseId].x += dx;
+            // Cascade to spouse's children too
+            for (const childId of (pcChildren.get(spouseId) || [])) {
+              shiftSubtree(childId, dx, positions, pcChildren, visited);
+            }
+          }
+        }
+      }
+    }
+
+    // Cascade to children via parent-child edges
+    for (const childId of (pcChildren.get(nodeId) || [])) {
+      shiftSubtree(childId, dx, positions, pcChildren, visited);
+    }
+  }
+
+  /**
+   * Post-layout pass: detect and resolve overlapping nodes on each generation row.
+   * Nodes are pushed apart just enough to eliminate overlap, keeping the tree compact.
+   * Shifts cascade to descendants so subtrees stay connected.
+   */
+  function resolveOverlaps(positions, elements) {
+    const MIN_GAP = 20; // minimum gap between node edges
+
+    // Build parent→children map from edge elements (through couple midpoints)
+    const pcChildren = new Map();
+    for (const el of elements) {
+      if (el.group === 'edges' && el.classes === 'parent-child-edge') {
+        const src = el.data.source;
+        const tgt = el.data.target;
+        if (!pcChildren.has(src)) pcChildren.set(src, []);
+        pcChildren.get(src).push(tgt);
+      }
+    }
+    // Also map couple-midpoint children to the persons in that couple
+    for (const [coupleId, children] of pcChildren) {
+      if (coupleId.startsWith('couple-')) {
+        const inner = coupleId.substring('couple-'.length);
+        if (inner.length >= 73) {
+          const p1 = inner.substring(0, 36);
+          const p2 = inner.substring(37);
+          for (const pid of [p1, p2]) {
+            if (!pcChildren.has(pid)) pcChildren.set(pid, []);
+            for (const c of children) {
+              if (!pcChildren.get(pid).includes(c)) pcChildren.get(pid).push(c);
+            }
+          }
+        }
+      }
+    }
+
+    // Group person nodes by Y coordinate (generation row)
+    const rows = new Map();
+    for (const [id, pos] of Object.entries(positions)) {
+      if (id.startsWith('couple-')) continue;
+      const rowKey = Math.round(pos.y);
+      if (!rows.has(rowKey)) rows.set(rowKey, []);
+      rows.get(rowKey).push({ id, x: pos.x });
+    }
+
+    // Sort rows by Y (process top-down so parent shifts cascade properly)
+    const sortedRowKeys = [...rows.keys()].sort((a, b) => a - b);
+
+    for (const rowKey of sortedRowKeys) {
+      const nodes = rows.get(rowKey);
+      nodes.sort((a, b) => a.x - b.x);
+
+      for (let i = 1; i < nodes.length; i++) {
+        const prev = nodes[i - 1];
+        const curr = nodes[i];
+        const minDist = NODE_W + MIN_GAP;
+        const actualDist = curr.x - prev.x;
+
+        if (actualDist < minDist) {
+          const shift = minDist - actualDist;
+          // Shift current node and all nodes to its right on this row
+          for (let j = i; j < nodes.length; j++) {
+            shiftSubtree(nodes[j].id, shift, positions, pcChildren);
+            nodes[j].x = positions[nodes[j].id].x; // update local tracking
+          }
+        }
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
   //  GENERATIONAL LAYOUT
   // ═══════════════════════════════════════════════════════════
 
@@ -709,25 +824,35 @@ const Tree = (() => {
 
       if (unit.type === 'multi-couple') {
         // Layout: ...Spouse2 ─ [mid2] ─ Pivot ─ [mid1] ─ Spouse1...
+        // Each sub-couple's midpoint is positioned based on actual child widths
         const info = multiCoupleMap.get(unit.id);
         const pivotId = info.pivotId;
         positions[pivotId] = { x: centerX, y };
 
-        // Place spouses alternating right/left from pivot
+        const coupleSlotWidth = NODE_W + SPOUSE_GAP;
+        let rightOffset = NODE_W / 2;  // start from edge of pivot node
+        let leftOffset = NODE_W / 2;
+
         for (let i = 0; i < info.couples.length; i++) {
           const ci = info.couples[i];
-          const side = (i % 2 === 0) ? 1 : -1;  // first spouse right, second left
-          const offset = Math.floor(i / 2 + 1);
-          const spouseX = centerX + side * (NODE_W + SPOUSE_GAP) * offset;
-          const midX = centerX + side * ((NODE_W / 2 + SPOUSE_GAP / 2) + (NODE_W + SPOUSE_GAP) * Math.floor(i / 2));
+          const subChildren = unitChildren.get(ci.coupleId) || [];
+          const subChildWidth = childrenRowWidth(subChildren);
+          const halfWidth = Math.max(coupleSlotWidth, subChildWidth);
+
           if (i % 2 === 0) {
             // Right side
-            positions[ci.spouse] = { x: centerX + NODE_W + SPOUSE_GAP, y };
-            positions[ci.coupleId] = { x: centerX + NODE_W / 2 + SPOUSE_GAP / 2, y };
+            const midX = centerX + rightOffset + SPOUSE_GAP / 2;
+            const spouseX = centerX + rightOffset + SPOUSE_GAP + NODE_W / 2;
+            positions[ci.coupleId] = { x: midX, y };
+            positions[ci.spouse] = { x: spouseX, y };
+            rightOffset += halfWidth;
           } else {
             // Left side
-            positions[ci.spouse] = { x: centerX - NODE_W - SPOUSE_GAP, y };
-            positions[ci.coupleId] = { x: centerX - NODE_W / 2 - SPOUSE_GAP / 2, y };
+            const midX = centerX - leftOffset - SPOUSE_GAP / 2;
+            const spouseX = centerX - leftOffset - SPOUSE_GAP - NODE_W / 2;
+            positions[ci.coupleId] = { x: midX, y };
+            positions[ci.spouse] = { x: spouseX, y };
+            leftOffset += halfWidth;
           }
         }
 
@@ -778,6 +903,9 @@ const Tree = (() => {
         }
       }
     }
+
+    // Post-layout collision resolution
+    resolveOverlaps(positions, elements);
 
     return { elements, positions };
   }
@@ -901,18 +1029,32 @@ const Tree = (() => {
         const pivotY = memberY.get(pivotId) || 0;
         positions[pivotId] = { x: centerX, y: pivotY };
 
+        const coupleSlotWidth = NODE_W + SPOUSE_GAP;
+        let rightOffset = NODE_W / 2;
+        let leftOffset = NODE_W / 2;
+
         for (let i = 0; i < info.couples.length; i++) {
           const ci = info.couples[i];
           const spouseY = memberY.get(ci.spouse) || 0;
           const midY = (pivotY + spouseY) / 2;
+          const subChildren = unitChildren.get(ci.coupleId) || [];
+          const subChildWidth = childrenRowWidth(subChildren);
+          const halfWidth = Math.max(coupleSlotWidth, subChildWidth);
+
           if (i % 2 === 0) {
             // Right side
-            positions[ci.spouse] = { x: centerX + NODE_W + SPOUSE_GAP, y: spouseY };
-            positions[ci.coupleId] = { x: centerX + NODE_W / 2 + SPOUSE_GAP / 2, y: midY };
+            const midX = centerX + rightOffset + SPOUSE_GAP / 2;
+            const spouseX = centerX + rightOffset + SPOUSE_GAP + NODE_W / 2;
+            positions[ci.coupleId] = { x: midX, y: midY };
+            positions[ci.spouse] = { x: spouseX, y: spouseY };
+            rightOffset += halfWidth;
           } else {
             // Left side
-            positions[ci.spouse] = { x: centerX - NODE_W - SPOUSE_GAP, y: spouseY };
-            positions[ci.coupleId] = { x: centerX - NODE_W / 2 - SPOUSE_GAP / 2, y: midY };
+            const midX = centerX - leftOffset - SPOUSE_GAP / 2;
+            const spouseX = centerX - leftOffset - SPOUSE_GAP - NODE_W / 2;
+            positions[ci.coupleId] = { x: midX, y: midY };
+            positions[ci.spouse] = { x: spouseX, y: spouseY };
+            leftOffset += halfWidth;
           }
         }
         y = pivotY;
@@ -968,6 +1110,9 @@ const Tree = (() => {
         }
       }
     }
+
+    // Post-layout collision resolution
+    resolveOverlaps(positions, elements);
 
     return { elements, positions };
   }

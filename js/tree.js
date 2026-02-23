@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   STAMMBAUM – Tree Visualization (Cytoscape.js)
+   STAMMBAUM – Tree Visualization (Cytoscape.js)  v61
    Couple-centered layout: spouses side-by-side with shared
    descent line from the midpoint of the couple connector.
    PCB / Circuit Board aesthetic

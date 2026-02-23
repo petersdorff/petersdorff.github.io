@@ -508,9 +508,13 @@ const Tree = (() => {
         for (const ci of info.couples) {
           const subChildren = unitChildren.get(ci.coupleId) || [];
           const subChildWidth = childrenRowWidth(subChildren);
-          // Each half needs to reserve the full child width (children are centered
-          // under the sub-couple midpoint, not under the pivot)
-          const halfWidth = Math.max(coupleSlotWidth, subChildWidth);
+          // Children are centered under the sub-couple midpoint. The midpoint
+          // is at offset NODE_W/2 + SPOUSE_GAP/2 from the pivot center.
+          // Children extend subChildWidth/2 each way from the midpoint.
+          // So the half-width from pivot center = NODE_W/2 + SPOUSE_GAP/2 + subChildWidth/2.
+          // But also at minimum the couple slot (spouse + gap) must fit.
+          const childHalf = subChildWidth / 2 + SPOUSE_GAP / 2 + NODE_W / 2;
+          const halfWidth = Math.max(coupleSlotWidth, childHalf);
           totalWidth += halfWidth;
         }
 
@@ -794,7 +798,8 @@ const Tree = (() => {
           const ci = info.couples[i];
           const subChildren = unitChildren.get(ci.coupleId) || [];
           const subChildWidth = childrenRowWidth(subChildren);
-          const halfWidth = Math.max(coupleSlotWidth, subChildWidth);
+          const childHalf = subChildWidth / 2 + SPOUSE_GAP / 2 + NODE_W / 2;
+          const halfWidth = Math.max(coupleSlotWidth, childHalf);
 
           if (i % 2 === 0) {
             // Right side
@@ -996,7 +1001,8 @@ const Tree = (() => {
           const midY = (pivotY + spouseY) / 2;
           const subChildren = unitChildren.get(ci.coupleId) || [];
           const subChildWidth = childrenRowWidth(subChildren);
-          const halfWidth = Math.max(coupleSlotWidth, subChildWidth);
+          const childHalf = subChildWidth / 2 + SPOUSE_GAP / 2 + NODE_W / 2;
+          const halfWidth = Math.max(coupleSlotWidth, childHalf);
 
           if (i % 2 === 0) {
             // Right side

@@ -665,68 +665,123 @@ const Tree = (() => {
   // ═══════════════════════════════════════════════════════════
 
   /**
-   * Post-layout pass: detect and resolve overlapping nodes on each generation row.
+   * Post-layout pass: detect and resolve overlapping nodes.
    *
-   * Strategy: process each row independently. When two person nodes overlap on
-   * the same row, push ALL nodes from the overlapping one rightward (same row only).
-   * Also shift any couple-midpoints that sit between persons on that row.
+   * @param {Object} positions - node ID → {x, y}
+   * @param {Array} elements - layout elements
+   * @param {Object} opts - options
+   * @param {number} opts.yTolerance - Y distance within which nodes can overlap
+   *   (default 0 = same-row only, used for generational layout;
+   *    set to NODE_H for temporal layout where Y varies by birth year)
    *
-   * This avoids the exponential cascade problem of shifting entire subtrees:
-   * children are handled when their own row is processed.
+   * Strategy for generational (yTolerance=0): group by exact Y row, push apart
+   * on each row independently.
+   *
+   * Strategy for temporal (yTolerance>0): scan all person nodes sorted by X,
+   * for each pair within Y tolerance, push apart if X-overlapping.
    */
-  function resolveOverlaps(positions, elements) {
+  function resolveOverlaps(positions, elements, opts = {}) {
     const MIN_GAP = 20; // minimum gap between node edges
+    const yTol = opts.yTolerance || 0;
 
-    // Group ALL positioned nodes by Y coordinate
-    const personRows = new Map();  // y → [{id, x}] for person nodes only
+    // Collect person nodes
+    const persons = [];
     for (const [id, pos] of Object.entries(positions)) {
       if (id.startsWith('couple-')) continue;
-      const rowKey = Math.round(pos.y);
-      if (!personRows.has(rowKey)) personRows.set(rowKey, []);
-      personRows.get(rowKey).push({ id, x: pos.x });
+      persons.push({ id, x: pos.x, y: pos.y });
     }
 
-    // Build a map of couple-midpoints per row for shifting them too
-    const coupleRows = new Map();  // y → [{id, x}]
+    // Collect couple midpoints for co-shifting
+    const allCouples = [];
     for (const [id, pos] of Object.entries(positions)) {
       if (!id.startsWith('couple-')) continue;
-      const rowKey = Math.round(pos.y);
-      if (!coupleRows.has(rowKey)) coupleRows.set(rowKey, []);
-      coupleRows.get(rowKey).push({ id, x: pos.x });
+      allCouples.push({ id, x: pos.x, y: pos.y });
     }
 
-    // Sort rows by Y (process top-down)
-    const sortedRowKeys = [...personRows.keys()].sort((a, b) => a - b);
+    if (yTol === 0) {
+      // === GENERATIONAL MODE: group by exact Y row ===
+      const personRows = new Map();
+      for (const p of persons) {
+        const rowKey = Math.round(p.y);
+        if (!personRows.has(rowKey)) personRows.set(rowKey, []);
+        personRows.get(rowKey).push(p);
+      }
+      const coupleRows = new Map();
+      for (const c of allCouples) {
+        const rowKey = Math.round(c.y);
+        if (!coupleRows.has(rowKey)) coupleRows.set(rowKey, []);
+        coupleRows.get(rowKey).push(c);
+      }
 
-    for (const rowKey of sortedRowKeys) {
-      const nodes = personRows.get(rowKey);
-      nodes.sort((a, b) => a.x - b.x);
+      const sortedRowKeys = [...personRows.keys()].sort((a, b) => a - b);
+      for (const rowKey of sortedRowKeys) {
+        const nodes = personRows.get(rowKey);
+        nodes.sort((a, b) => a.x - b.x);
 
-      for (let i = 1; i < nodes.length; i++) {
-        const prev = nodes[i - 1];
-        const curr = nodes[i];
-        const minDist = NODE_W + MIN_GAP;
-        const actualDist = curr.x - prev.x;
+        for (let i = 1; i < nodes.length; i++) {
+          const prev = nodes[i - 1];
+          const curr = nodes[i];
+          const minDist = NODE_W + MIN_GAP;
+          const actualDist = curr.x - prev.x;
 
-        if (actualDist < minDist) {
-          const shift = minDist - actualDist;
-
-          // Shift this node and all nodes to its right on this row
-          for (let j = i; j < nodes.length; j++) {
-            positions[nodes[j].id].x += shift;
-            nodes[j].x += shift;
-          }
-
-          // Also shift any couple-midpoints on this row that are >= curr's original x
-          const couples = coupleRows.get(rowKey) || [];
-          const thresholdX = curr.x - shift; // original x before the shift
-          for (const cp of couples) {
-            if (cp.x >= thresholdX - 1) { // -1 for floating point
-              positions[cp.id].x += shift;
-              cp.x += shift;
+          if (actualDist < minDist) {
+            const shift = minDist - actualDist;
+            for (let j = i; j < nodes.length; j++) {
+              positions[nodes[j].id].x += shift;
+              nodes[j].x += shift;
+            }
+            const couples = coupleRows.get(rowKey) || [];
+            const thresholdX = curr.x - shift;
+            for (const cp of couples) {
+              if (cp.x >= thresholdX - 1) {
+                positions[cp.id].x += shift;
+                cp.x += shift;
+              }
             }
           }
         }
+      }
+    } else {
+      // === TEMPORAL MODE: 2D overlap check with Y tolerance ===
+      // Sort all person nodes by X
+      persons.sort((a, b) => a.x - b.x);
+
+      // Multiple passes until stable (max 5)
+      for (let pass = 0; pass < 5; pass++) {
+        let shifted = false;
+        for (let i = 1; i < persons.length; i++) {
+          const curr = persons[i];
+          // Check against all previous nodes that could overlap
+          for (let j = i - 1; j >= 0; j--) {
+            const prev = persons[j];
+            // Stop scanning left if X gap is already large enough
+            if (curr.x - prev.x >= NODE_W + MIN_GAP) break;
+            // Check if Y-close enough to overlap
+            if (Math.abs(curr.y - prev.y) < NODE_H + MIN_GAP) {
+              const minDist = NODE_W + MIN_GAP;
+              const actualDist = curr.x - prev.x;
+              if (actualDist < minDist) {
+                const shift = minDist - actualDist;
+                // Shift curr and everything to its right
+                for (let k = i; k < persons.length; k++) {
+                  positions[persons[k].id].x += shift;
+                  persons[k].x += shift;
+                }
+                // Also shift couple midpoints to the right of curr
+                const thresholdX = curr.x - shift;
+                for (const cp of allCouples) {
+                  if (cp.x >= thresholdX - 1) {
+                    positions[cp.id].x += shift;
+                    cp.x += shift;
+                  }
+                }
+                shifted = true;
+                break; // re-check from this position
+              }
+            }
+          }
+        }
+        if (!shifted) break;
       }
     }
   }
@@ -866,7 +921,7 @@ const Tree = (() => {
       }
     }
 
-    // Post-layout collision resolution
+    // Post-layout collision resolution (generational: exact row matching)
     resolveOverlaps(positions, elements);
 
     return { elements, positions };
@@ -1074,8 +1129,8 @@ const Tree = (() => {
       }
     }
 
-    // Post-layout collision resolution
-    resolveOverlaps(positions, elements);
+    // Post-layout collision resolution (temporal: Y tolerance for varying birth years)
+    resolveOverlaps(positions, elements, { yTolerance: NODE_H });
 
     return { elements, positions };
   }

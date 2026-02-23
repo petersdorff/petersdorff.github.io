@@ -563,7 +563,7 @@ const Tree = (() => {
       multiCouplePersons, multiCoupleMap, absorbedCouples,
       generation, genGroups, maxGen,
       unitChildren, unitWidth, getUnitForPerson, calcWidth,
-      unitBirthYear,
+      childrenRowWidth, unitBirthYear,
     };
   }
 
@@ -777,7 +777,7 @@ const Tree = (() => {
   function buildGenerationalLayout(members, relationships) {
     const base = buildLayoutBase(members, relationships);
     const positions = {};
-    const { coupleMap, genGroups, maxGen, generation, unitChildren, unitWidth, getUnitForPerson, inCouple, unitBirthYear, multiCoupleMap, absorbedCouples } = base;
+    const { coupleMap, genGroups, maxGen, generation, unitChildren, unitWidth, getUnitForPerson, inCouple, childrenRowWidth, unitBirthYear, multiCoupleMap, absorbedCouples } = base;
     const elements = buildElements(base);
 
     const allUnitsPlaced = new Set();
@@ -917,7 +917,7 @@ const Tree = (() => {
   function buildTemporalLayout(members, relationships) {
     const base = buildLayoutBase(members, relationships);
     const positions = {};
-    const { coupleMap, genGroups, maxGen, generation, unitChildren, unitWidth, getUnitForPerson, inCouple, couples, unitBirthYear, multiCoupleMap, absorbedCouples } = base;
+    const { coupleMap, genGroups, maxGen, generation, unitChildren, unitWidth, getUnitForPerson, inCouple, couples, childrenRowWidth, unitBirthYear, multiCoupleMap, absorbedCouples } = base;
     const elements = buildElements(base);
 
     // ─── Compute birth years ───

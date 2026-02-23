@@ -1089,10 +1089,10 @@ const Tree = (() => {
     }
 
     // Post-layout collision resolution (generational: exact row matching)
-    resolveOverlaps(positions, elements);
+    // resolveOverlaps(positions, elements);
 
     // Re-center parents above their children (bottom-up)
-    recenterParents(positions, elements);
+    // recenterParents(positions, elements);
 
     return { elements, positions };
   }

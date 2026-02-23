@@ -667,122 +667,289 @@ const Tree = (() => {
   /**
    * Post-layout pass: detect and resolve overlapping nodes.
    *
+   * Works with "slots" — a slot is either a coupled pair (treated as one wide
+   * block: personA + midpoint + personB) or a single uncoupled person.
+   * Spouses are NEVER separated; the whole slot shifts as a unit.
+   *
    * @param {Object} positions - node ID → {x, y}
    * @param {Array} elements - layout elements
-   * @param {Object} opts - options
-   * @param {number} opts.yTolerance - Y distance within which nodes can overlap
-   *   (default 0 = same-row only, used for generational layout;
-   *    set to NODE_H for temporal layout where Y varies by birth year)
-   *
-   * Strategy for generational (yTolerance=0): group by exact Y row, push apart
-   * on each row independently.
-   *
-   * Strategy for temporal (yTolerance>0): scan all person nodes sorted by X,
-   * for each pair within Y tolerance, push apart if X-overlapping.
+   * @param {Object} opts - { yTolerance: number } (0 for generational, NODE_H for temporal)
    */
   function resolveOverlaps(positions, elements, opts = {}) {
-    const MIN_GAP = 20; // minimum gap between node edges
+    const MIN_GAP = 20;
     const yTol = opts.yTolerance || 0;
 
-    // Collect person nodes
-    const persons = [];
-    for (const [id, pos] of Object.entries(positions)) {
-      if (id.startsWith('couple-')) continue;
-      persons.push({ id, x: pos.x, y: pos.y });
+    // Build couple membership: person → coupleId
+    const personToCouple = new Map();
+    const couplePersons = new Map(); // coupleId → {a, b}
+    for (const [id] of Object.entries(positions)) {
+      if (!id.startsWith('couple-')) continue;
+      const inner = id.substring('couple-'.length);
+      if (inner.length < 73) continue;
+      const a = inner.substring(0, 36);
+      const b = inner.substring(37);
+      couplePersons.set(id, { a, b });
+      // Map each person to their couple (use first couple found if multi-couple)
+      if (!personToCouple.has(a)) personToCouple.set(a, id);
+      if (!personToCouple.has(b)) personToCouple.set(b, id);
     }
 
-    // Collect couple midpoints for co-shifting
-    const allCouples = [];
+    // Build slots: each slot is { ids: [nodeIds to shift together], leftX, rightX, centerY }
+    const processedPersons = new Set();
+    const slots = [];
+
     for (const [id, pos] of Object.entries(positions)) {
-      if (!id.startsWith('couple-')) continue;
-      allCouples.push({ id, x: pos.x, y: pos.y });
+      if (id.startsWith('couple-')) continue;
+      if (processedPersons.has(id)) continue;
+
+      const coupleId = personToCouple.get(id);
+      if (coupleId && couplePersons.has(coupleId)) {
+        const cp = couplePersons.get(coupleId);
+        const posA = positions[cp.a];
+        const posB = positions[cp.b];
+        const posMid = positions[coupleId];
+        if (posA && posB && posMid) {
+          const leftX = Math.min(posA.x, posB.x) - NODE_W / 2;
+          const rightX = Math.max(posA.x, posB.x) + NODE_W / 2;
+          const centerY = (posA.y + posB.y) / 2;
+          slots.push({
+            ids: [cp.a, cp.b, coupleId],
+            leftX, rightX, centerY,
+            sortX: (posA.x + posB.x) / 2
+          });
+          processedPersons.add(cp.a);
+          processedPersons.add(cp.b);
+          continue;
+        }
+      }
+
+      // Single person (no couple or couple not in positions)
+      slots.push({
+        ids: [id],
+        leftX: pos.x - NODE_W / 2,
+        rightX: pos.x + NODE_W / 2,
+        centerY: pos.y,
+        sortX: pos.x
+      });
+      processedPersons.add(id);
+    }
+
+    // Helper: shift a slot by dx
+    function shiftSlot(slot, dx) {
+      for (const nid of slot.ids) {
+        if (positions[nid]) positions[nid].x += dx;
+      }
+      slot.leftX += dx;
+      slot.rightX += dx;
+      slot.sortX += dx;
     }
 
     if (yTol === 0) {
       // === GENERATIONAL MODE: group by exact Y row ===
-      const personRows = new Map();
-      for (const p of persons) {
-        const rowKey = Math.round(p.y);
-        if (!personRows.has(rowKey)) personRows.set(rowKey, []);
-        personRows.get(rowKey).push(p);
-      }
-      const coupleRows = new Map();
-      for (const c of allCouples) {
-        const rowKey = Math.round(c.y);
-        if (!coupleRows.has(rowKey)) coupleRows.set(rowKey, []);
-        coupleRows.get(rowKey).push(c);
+      const rowMap = new Map();
+      for (const s of slots) {
+        const rowKey = Math.round(s.centerY);
+        if (!rowMap.has(rowKey)) rowMap.set(rowKey, []);
+        rowMap.get(rowKey).push(s);
       }
 
-      const sortedRowKeys = [...personRows.keys()].sort((a, b) => a - b);
+      const sortedRowKeys = [...rowMap.keys()].sort((a, b) => a - b);
       for (const rowKey of sortedRowKeys) {
-        const nodes = personRows.get(rowKey);
-        nodes.sort((a, b) => a.x - b.x);
+        const rowSlots = rowMap.get(rowKey);
+        rowSlots.sort((a, b) => a.leftX - b.leftX);
 
-        for (let i = 1; i < nodes.length; i++) {
-          const prev = nodes[i - 1];
-          const curr = nodes[i];
-          const minDist = NODE_W + MIN_GAP;
-          const actualDist = curr.x - prev.x;
+        for (let i = 1; i < rowSlots.length; i++) {
+          const prev = rowSlots[i - 1];
+          const curr = rowSlots[i];
+          const gap = curr.leftX - prev.rightX;
 
-          if (actualDist < minDist) {
-            const shift = minDist - actualDist;
-            for (let j = i; j < nodes.length; j++) {
-              positions[nodes[j].id].x += shift;
-              nodes[j].x += shift;
-            }
-            const couples = coupleRows.get(rowKey) || [];
-            const thresholdX = curr.x - shift;
-            for (const cp of couples) {
-              if (cp.x >= thresholdX - 1) {
-                positions[cp.id].x += shift;
-                cp.x += shift;
-              }
+          if (gap < MIN_GAP) {
+            const shift = MIN_GAP - gap;
+            for (let j = i; j < rowSlots.length; j++) {
+              shiftSlot(rowSlots[j], shift);
             }
           }
         }
       }
     } else {
       // === TEMPORAL MODE: 2D overlap check with Y tolerance ===
-      // Sort all person nodes by X
-      persons.sort((a, b) => a.x - b.x);
+      slots.sort((a, b) => a.leftX - b.leftX);
 
-      // Multiple passes until stable (max 5)
       for (let pass = 0; pass < 5; pass++) {
         let shifted = false;
-        for (let i = 1; i < persons.length; i++) {
-          const curr = persons[i];
-          // Check against all previous nodes that could overlap
+        for (let i = 1; i < slots.length; i++) {
+          const curr = slots[i];
           for (let j = i - 1; j >= 0; j--) {
-            const prev = persons[j];
-            // Stop scanning left if X gap is already large enough
-            if (curr.x - prev.x >= NODE_W + MIN_GAP) break;
-            // Check if Y-close enough to overlap
-            if (Math.abs(curr.y - prev.y) < NODE_H + MIN_GAP) {
-              const minDist = NODE_W + MIN_GAP;
-              const actualDist = curr.x - prev.x;
-              if (actualDist < minDist) {
-                const shift = minDist - actualDist;
-                // Shift curr and everything to its right
-                for (let k = i; k < persons.length; k++) {
-                  positions[persons[k].id].x += shift;
-                  persons[k].x += shift;
-                }
-                // Also shift couple midpoints to the right of curr
-                const thresholdX = curr.x - shift;
-                for (const cp of allCouples) {
-                  if (cp.x >= thresholdX - 1) {
-                    positions[cp.id].x += shift;
-                    cp.x += shift;
-                  }
+            const prev = slots[j];
+            if (curr.leftX - prev.rightX >= MIN_GAP) break;
+            if (Math.abs(curr.centerY - prev.centerY) < NODE_H + MIN_GAP) {
+              const gap = curr.leftX - prev.rightX;
+              if (gap < MIN_GAP) {
+                const shift = MIN_GAP - gap;
+                for (let k = i; k < slots.length; k++) {
+                  shiftSlot(slots[k], shift);
                 }
                 shifted = true;
-                break; // re-check from this position
+                break;
               }
             }
           }
         }
         if (!shifted) break;
       }
+    }
+  }
+
+  /**
+   * After overlap resolution, parents may no longer be centered above their
+   * children. This pass re-centers each couple (midpoint + spouses) over
+   * the center of its children, working bottom-up so that each parent
+   * adjusts to already-finalized children positions.
+   *
+   * After re-centering, we re-run overlap resolution on the affected rows
+   * to ensure no new overlaps were introduced.
+   */
+  function recenterParents(positions, elements, opts = {}) {
+    const MIN_GAP = 20;
+
+    // Build couple → [child person IDs] from parent-child edges
+    const coupleChildIds = new Map();
+    for (const el of elements) {
+      if (el.group === 'edges' && el.classes === 'parent-child-edge') {
+        const src = el.data.source;
+        const tgt = el.data.target;
+        if (src.startsWith('couple-')) {
+          if (!coupleChildIds.has(src)) coupleChildIds.set(src, []);
+          coupleChildIds.get(src).push(tgt);
+        }
+      }
+    }
+
+    // Build couple → { personA, personB } map from couple IDs
+    const couplePersons = new Map();
+    for (const [id, pos] of Object.entries(positions)) {
+      if (!id.startsWith('couple-')) continue;
+      const inner = id.substring('couple-'.length);
+      if (inner.length >= 73) {
+        couplePersons.set(id, {
+          a: inner.substring(0, 36),
+          b: inner.substring(37)
+        });
+      }
+    }
+
+    // Build person → coupleIds (which couples is this person part of, as spouse)
+    const personInCouples = new Map();
+    for (const [coupleId, persons] of couplePersons) {
+      for (const pid of [persons.a, persons.b]) {
+        if (!personInCouples.has(pid)) personInCouples.set(pid, []);
+        personInCouples.get(pid).push(coupleId);
+      }
+    }
+
+    // Detect multi-couple pivots: persons who appear in >1 couple
+    const multiCouplePivots = new Set();
+    for (const [pid, cids] of personInCouples) {
+      if (cids.length > 1) multiCouplePivots.add(pid);
+    }
+
+    // Group nodes by Y to determine generation order
+    const rowForNode = new Map();
+    for (const [id, pos] of Object.entries(positions)) {
+      if (!id.startsWith('couple-')) {
+        rowForNode.set(id, Math.round(pos.y));
+      }
+    }
+
+    // Sort couples by Y position (bottom-up for processing)
+    const couplesWithY = [];
+    for (const [coupleId] of coupleChildIds) {
+      if (positions[coupleId]) {
+        couplesWithY.push({ coupleId, y: positions[coupleId].y });
+      }
+    }
+    couplesWithY.sort((a, b) => b.y - a.y); // bottom-up
+
+    // Multiple passes to allow cascading re-centering
+    for (let pass = 0; pass < 3; pass++) {
+      let anyMoved = false;
+
+      for (const { coupleId } of couplesWithY) {
+        const childIds = coupleChildIds.get(coupleId);
+        if (!childIds || childIds.length === 0) continue;
+
+        // Compute children center
+        let minChildX = Infinity, maxChildX = -Infinity;
+        for (const cid of childIds) {
+          if (positions[cid]) {
+            minChildX = Math.min(minChildX, positions[cid].x);
+            maxChildX = Math.max(maxChildX, positions[cid].x);
+          }
+        }
+        if (minChildX === Infinity) continue;
+        const childCenterX = (minChildX + maxChildX) / 2;
+
+        // Current couple midpoint position
+        const midPos = positions[coupleId];
+        if (!midPos) continue;
+        const dx = childCenterX - midPos.x;
+
+        // Skip if already close enough
+        if (Math.abs(dx) < 5) continue;
+
+        const persons = couplePersons.get(coupleId);
+        if (!persons) continue;
+
+        // For multi-couple pivots: shift the entire multi-couple unit
+        // (pivot + all sub-couple midpoints + all spouses)
+        const pivotId = multiCouplePivots.has(persons.a) ? persons.a :
+                        multiCouplePivots.has(persons.b) ? persons.b : null;
+
+        if (pivotId) {
+          // This couple is part of a multi-couple unit.
+          // Re-center the pivot based on ALL its sub-couple children combined.
+          const pivotCoupleIds = personInCouples.get(pivotId) || [];
+          let allChildMinX = Infinity, allChildMaxX = -Infinity;
+          for (const pcId of pivotCoupleIds) {
+            for (const cid of (coupleChildIds.get(pcId) || [])) {
+              if (positions[cid]) {
+                allChildMinX = Math.min(allChildMinX, positions[cid].x);
+                allChildMaxX = Math.max(allChildMaxX, positions[cid].x);
+              }
+            }
+          }
+          if (allChildMinX === Infinity) continue;
+          const allChildCenter = (allChildMinX + allChildMaxX) / 2;
+          const pivotPos = positions[pivotId];
+          if (!pivotPos) continue;
+          const pivotDx = allChildCenter - pivotPos.x;
+          if (Math.abs(pivotDx) < 5) continue;
+
+          // Shift pivot
+          pivotPos.x += pivotDx;
+          // Shift all sub-couple midpoints and their spouses
+          for (const pcId of pivotCoupleIds) {
+            if (positions[pcId]) positions[pcId].x += pivotDx;
+            const pc = couplePersons.get(pcId);
+            if (pc) {
+              const spouseId = pc.a === pivotId ? pc.b : pc.a;
+              if (positions[spouseId]) positions[spouseId].x += pivotDx;
+            }
+          }
+          anyMoved = true;
+        } else {
+          // Regular couple: shift midpoint + both persons
+          midPos.x += dx;
+          if (positions[persons.a]) positions[persons.a].x += dx;
+          if (positions[persons.b]) positions[persons.b].x += dx;
+          anyMoved = true;
+        }
+      }
+
+      if (!anyMoved) break;
+
+      // After re-centering, re-resolve overlaps on parent rows
+      resolveOverlaps(positions, elements, opts);
     }
   }
 
@@ -923,6 +1090,9 @@ const Tree = (() => {
 
     // Post-layout collision resolution (generational: exact row matching)
     resolveOverlaps(positions, elements);
+
+    // Re-center parents above their children (bottom-up)
+    recenterParents(positions, elements);
 
     return { elements, positions };
   }
@@ -1131,6 +1301,9 @@ const Tree = (() => {
 
     // Post-layout collision resolution (temporal: Y tolerance for varying birth years)
     resolveOverlaps(positions, elements, { yTolerance: NODE_H });
+
+    // Re-center parents above their children (bottom-up)
+    recenterParents(positions, elements, { yTolerance: NODE_H });
 
     return { elements, positions };
   }

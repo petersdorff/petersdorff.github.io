@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   STAMMBAUM – Tree Visualization (Cytoscape.js)  v67
+   STAMMBAUM – Tree Visualization (Cytoscape.js)  v68
    Bottom-up layout: children first, parents centered above.
    PCB / Circuit Board aesthetic
 
@@ -865,6 +865,7 @@ const Tree = (() => {
     // This guarantees siblings are always contiguous and parents centered.
 
     const unitPositioned = new Set();
+    const subtreeExtentCache = new Map(); // unitId → { leftX, rightX }
 
     /**
      * Recursively lay out a unit and all its descendants.
@@ -877,8 +878,8 @@ const Tree = (() => {
      */
     function layoutSubtree(unitId, x, gen) {
       if (unitPositioned.has(unitId)) {
-        // Already placed — return its extent
-        return getUnitExtent(unitId);
+        // Already placed — return cached subtree extent
+        return subtreeExtentCache.get(unitId) || getUnitExtent(unitId);
       }
 
       const y = gen * GEN_GAP;
@@ -898,7 +899,9 @@ const Tree = (() => {
         const sw = unitSelfWidth(unitId);
         const centerX = x + sw / 2;
         placeUnit(unitId, centerX, y);
-        return { leftX: x, rightX: x + sw };
+        const result = { leftX: x, rightX: x + sw };
+        subtreeExtentCache.set(unitId, result);
+        return result;
       }
 
       // HAS CHILDREN: recurse into each child first, placing them left-to-right
@@ -933,13 +936,14 @@ const Tree = (() => {
       placeUnit(unitId, childrenCenterX, y);
 
       // Subtree extent includes children's subtrees AND this unit itself
-      const selfLeftX = childrenCenterX - sw / 2;
-      const selfRightX = childrenCenterX + sw / 2;
-
-      return {
-        leftX: Math.min(subtreeLeftX, selfLeftX),
-        rightX: Math.max(subtreeRightX, selfRightX)
+      // (including multi-couple spouses that may extend beyond children)
+      const unitExt = getUnitExtent(unitId);
+      const result = {
+        leftX: Math.min(subtreeLeftX, unitExt.leftX),
+        rightX: Math.max(subtreeRightX, unitExt.rightX)
       };
+      subtreeExtentCache.set(unitId, result);
+      return result;
     }
 
     /**
@@ -994,39 +998,71 @@ const Tree = (() => {
 
       const multi = multiCoupleMap.get(unitId);
       if (multi) {
-        // Multi-couple: pivot at center, spouses stacked outward
+        // Multi-couple: pivot at center of ALL children.
+        // Each spouse positioned so the sub-couple midpoint is centered
+        // above that sub-couple's specific children.
         positions[multi.pivotId] = { x: centerX, y };
-        let rightX = centerX, leftX = centerX;
+
+        // Track outermost occupied X to prevent spouse overlap
+        let rightmostX = centerX + NODE_W / 2;
+        let leftmostX = centerX - NODE_W / 2;
 
         for (let ci = 0; ci < multi.couples.length; ci++) {
           const coupleInfo = multi.couples[ci];
           const coupleChildren = unitChildren.get(coupleInfo.coupleId) || [];
 
-          // Determine side: if this sub-couple has positioned children,
-          // place spouse on the side of those children
-          let side;
           if (coupleChildren.length > 0) {
-            let sumCX = 0, countCX = 0;
+            // Find center of this sub-couple's children
+            let cMinX = Infinity, cMaxX = -Infinity;
             for (const cid of coupleChildren) {
               const cUnit = getUnitForPerson(cid);
               for (const pid of getUnitPersonIds(cUnit)) {
-                if (positions[pid]) { sumCX += positions[pid].x; countCX++; break; }
+                if (positions[pid]) {
+                  cMinX = Math.min(cMinX, positions[pid].x);
+                  cMaxX = Math.max(cMaxX, positions[pid].x);
+                }
               }
             }
-            side = (countCX > 0 && sumCX / countCX >= centerX) ? 1 : -1;
-          } else {
-            side = ci % 2 === 0 ? 1 : -1;
+
+            if (cMinX !== Infinity) {
+              const subChildCenter = (cMinX + cMaxX) / 2;
+              // The midpoint should be at subChildCenter.
+              // midX = (pivotX + spouseX) / 2  =>  spouseX = 2*midX - pivotX
+              let spouseX = 2 * subChildCenter - centerX;
+
+              // Ensure minimum distance between spouse and pivot
+              const minDist = NODE_W + SPOUSE_GAP;
+              if (Math.abs(spouseX - centerX) < minDist) {
+                const side = spouseX >= centerX ? 1 : -1;
+                spouseX = centerX + side * minDist;
+              }
+
+              // Ensure no overlap with already placed spouses
+              if (spouseX > centerX) {
+                spouseX = Math.max(spouseX, rightmostX + SPOUSE_GAP + NODE_W / 2);
+                rightmostX = spouseX + NODE_W / 2;
+              } else {
+                spouseX = Math.min(spouseX, leftmostX - SPOUSE_GAP - NODE_W / 2);
+                leftmostX = spouseX - NODE_W / 2;
+              }
+
+              const midX = (centerX + spouseX) / 2;
+              positions[coupleInfo.coupleId] = { x: midX, y };
+              positions[coupleInfo.spouse] = { x: spouseX, y };
+              continue;
+            }
           }
 
+          // No children or children not yet positioned: alternate sides
+          const side = ci % 2 === 0 ? 1 : -1;
           let spouseX;
           if (side > 0) {
-            spouseX = rightX + NODE_W + SPOUSE_GAP;
-            rightX = spouseX;
+            spouseX = rightmostX + SPOUSE_GAP + NODE_W / 2;
+            rightmostX = spouseX + NODE_W / 2;
           } else {
-            spouseX = leftX - NODE_W - SPOUSE_GAP;
-            leftX = spouseX;
+            spouseX = leftmostX - SPOUSE_GAP - NODE_W / 2;
+            leftmostX = spouseX - NODE_W / 2;
           }
-
           positions[coupleInfo.coupleId] = { x: (centerX + spouseX) / 2, y };
           positions[coupleInfo.spouse] = { x: spouseX, y };
         }

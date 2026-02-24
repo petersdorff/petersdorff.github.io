@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   STAMMBAUM – Tree Visualization (Cytoscape.js)  v61
+   STAMMBAUM – Tree Visualization (Cytoscape.js)  v62
    Couple-centered layout: spouses side-by-side with shared
    descent line from the midpoint of the couple connector.
    PCB / Circuit Board aesthetic
@@ -801,7 +801,6 @@ const Tree = (() => {
     }
   }
 
-  /**
   // ═══════════════════════════════════════════════════════════
   //  GENERATIONAL LAYOUT
   // ═══════════════════════════════════════════════════════════

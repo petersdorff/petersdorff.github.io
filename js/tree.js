@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   STAMMBAUM – Tree Visualization (Cytoscape.js)  v62
+   STAMMBAUM – Tree Visualization (Cytoscape.js)  v63
    Couple-centered layout: spouses side-by-side with shared
    descent line from the midpoint of the couple connector.
    PCB / Circuit Board aesthetic
@@ -680,9 +680,9 @@ const Tree = (() => {
     const MIN_GAP = 20;
     const yTol = opts.yTolerance || 0;
 
-    // Build couple membership: person → coupleId
-    const personToCouple = new Map();
-    const couplePersons = new Map(); // coupleId → {a, b}
+    // Build couple membership: person → [coupleIds]
+    const personToCouples = new Map(); // person → [coupleId, ...]
+    const couplePersons = new Map();   // coupleId → {a, b}
     for (const [id] of Object.entries(positions)) {
       if (!id.startsWith('couple-')) continue;
       const inner = id.substring('couple-'.length);
@@ -690,9 +690,16 @@ const Tree = (() => {
       const a = inner.substring(0, 36);
       const b = inner.substring(37);
       couplePersons.set(id, { a, b });
-      // Map each person to their couple (use first couple found if multi-couple)
-      if (!personToCouple.has(a)) personToCouple.set(a, id);
-      if (!personToCouple.has(b)) personToCouple.set(b, id);
+      if (!personToCouples.has(a)) personToCouples.set(a, []);
+      personToCouples.get(a).push(id);
+      if (!personToCouples.has(b)) personToCouples.set(b, []);
+      personToCouples.get(b).push(id);
+    }
+
+    // Detect multi-couple pivots (person in 2+ couples)
+    const multiCouplePivots = new Set();
+    for (const [person, couples] of personToCouples) {
+      if (couples.length >= 2) multiCouplePivots.add(person);
     }
 
     // Build slots: each slot is { ids: [nodeIds to shift together], leftX, rightX, centerY }
@@ -703,24 +710,65 @@ const Tree = (() => {
       if (id.startsWith('couple-')) continue;
       if (processedPersons.has(id)) continue;
 
-      const coupleId = personToCouple.get(id);
-      if (coupleId && couplePersons.has(coupleId)) {
+      // Check if this person is a multi-couple pivot
+      if (multiCouplePivots.has(id)) {
+        // Group pivot + ALL spouses + ALL couple midpoints into one slot
+        const allIds = [id];
+        let minPosX = pos.x, maxPosX = pos.x;
+        let sumY = pos.y, countY = 1;
+
+        for (const cid of personToCouples.get(id)) {
+          const cp = couplePersons.get(cid);
+          if (!cp) continue;
+          const spouseId = cp.a === id ? cp.b : cp.a;
+          const spousePos = positions[spouseId];
+          const midPos = positions[cid];
+          if (spousePos) {
+            allIds.push(spouseId);
+            minPosX = Math.min(minPosX, spousePos.x);
+            maxPosX = Math.max(maxPosX, spousePos.x);
+            sumY += spousePos.y;
+            countY++;
+            processedPersons.add(spouseId);
+          }
+          if (midPos) {
+            allIds.push(cid);
+          }
+        }
+
+        slots.push({
+          ids: allIds,
+          leftX: minPosX - NODE_W / 2,
+          rightX: maxPosX + NODE_W / 2,
+          centerY: sumY / countY,
+          sortX: (minPosX + maxPosX) / 2
+        });
+        processedPersons.add(id);
+        continue;
+      }
+
+      // Check if this person is in a regular couple
+      const coupleIds = personToCouples.get(id);
+      if (coupleIds && coupleIds.length > 0) {
+        const coupleId = coupleIds[0];
         const cp = couplePersons.get(coupleId);
-        const posA = positions[cp.a];
-        const posB = positions[cp.b];
-        const posMid = positions[coupleId];
-        if (posA && posB && posMid) {
-          const leftX = Math.min(posA.x, posB.x) - NODE_W / 2;
-          const rightX = Math.max(posA.x, posB.x) + NODE_W / 2;
-          const centerY = (posA.y + posB.y) / 2;
-          slots.push({
-            ids: [cp.a, cp.b, coupleId],
-            leftX, rightX, centerY,
-            sortX: (posA.x + posB.x) / 2
-          });
-          processedPersons.add(cp.a);
-          processedPersons.add(cp.b);
-          continue;
+        if (cp) {
+          const posA = positions[cp.a];
+          const posB = positions[cp.b];
+          const posMid = positions[coupleId];
+          if (posA && posB && posMid) {
+            const leftX = Math.min(posA.x, posB.x) - NODE_W / 2;
+            const rightX = Math.max(posA.x, posB.x) + NODE_W / 2;
+            const centerY = (posA.y + posB.y) / 2;
+            slots.push({
+              ids: [cp.a, cp.b, coupleId],
+              leftX, rightX, centerY,
+              sortX: (posA.x + posB.x) / 2
+            });
+            processedPersons.add(cp.a);
+            processedPersons.add(cp.b);
+            continue;
+          }
         }
       }
 

@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   STAMMBAUM – Tree Visualization (Cytoscape.js)  v66
+   STAMMBAUM – Tree Visualization (Cytoscape.js)  v67
    Bottom-up layout: children first, parents centered above.
    PCB / Circuit Board aesthetic
 
@@ -904,29 +904,41 @@ const Tree = (() => {
       // HAS CHILDREN: recurse into each child first, placing them left-to-right
       const childGen = gen + 1;
       let childX = x;
-      let childrenLeftX = Infinity, childrenRightX = -Infinity;
+      let subtreeLeftX = Infinity, subtreeRightX = -Infinity;
+
+      // Track each child's subtree result so we can find the child unit's
+      // own position (center) for centering the parent.
+      const childResults = [];
 
       for (let i = 0; i < childUnitIds.length; i++) {
         const childResult = layoutSubtree(childUnitIds[i], childX, childGen);
-        childrenLeftX = Math.min(childrenLeftX, childResult.leftX);
-        childrenRightX = Math.max(childrenRightX, childResult.rightX);
+        childResults.push({ unitId: childUnitIds[i], result: childResult });
+        subtreeLeftX = Math.min(subtreeLeftX, childResult.leftX);
+        subtreeRightX = Math.max(subtreeRightX, childResult.rightX);
         childX = childResult.rightX + SIBLING_GAP;
       }
 
-      // Center this unit above its children
-      const childrenCenterX = (childrenLeftX + childrenRightX) / 2;
+      // Center this unit above its DIRECT CHILDREN's positions,
+      // not the full subtree extents. This keeps parents visually
+      // centered above their children, not pulled toward large subtrees.
+      let directChildMinX = Infinity, directChildMaxX = -Infinity;
+      for (const cr of childResults) {
+        const ext = getUnitExtent(cr.unitId);
+        directChildMinX = Math.min(directChildMinX, ext.leftX);
+        directChildMaxX = Math.max(directChildMaxX, ext.rightX);
+      }
+      const childrenCenterX = (directChildMinX + directChildMaxX) / 2;
       const sw = unitSelfWidth(unitId);
-
-      // The unit's center should be at children's center,
-      // but the subtree extent is max(children extent, self extent)
-      const selfLeftX = childrenCenterX - sw / 2;
-      const selfRightX = childrenCenterX + sw / 2;
 
       placeUnit(unitId, childrenCenterX, y);
 
+      // Subtree extent includes children's subtrees AND this unit itself
+      const selfLeftX = childrenCenterX - sw / 2;
+      const selfRightX = childrenCenterX + sw / 2;
+
       return {
-        leftX: Math.min(childrenLeftX, selfLeftX),
-        rightX: Math.max(childrenRightX, selfRightX)
+        leftX: Math.min(subtreeLeftX, selfLeftX),
+        rightX: Math.max(subtreeRightX, selfRightX)
       };
     }
 

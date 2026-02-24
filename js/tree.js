@@ -1,7 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
-   STAMMBAUM – Tree Visualization (Cytoscape.js)  v64
-   Couple-centered layout: spouses side-by-side with shared
-   descent line from the midpoint of the couple connector.
+   STAMMBAUM – Tree Visualization (Cytoscape.js)  v65
+   Bottom-up layout: children first, parents centered above.
    PCB / Circuit Board aesthetic
 
    Supports two view modes:
@@ -856,163 +855,386 @@ const Tree = (() => {
   function buildGenerationalLayout(members, relationships) {
     const base = buildLayoutBase(members, relationships);
     const positions = {};
-    const { coupleMap, genGroups, maxGen, generation, unitChildren, unitWidth, getUnitForPerson, inCouple, childrenRowWidth, unitBirthYear, multiCoupleMap, absorbedCouples } = base;
+    const { memberMap, coupleMap, genGroups, maxGen, generation, unitChildren,
+            unitWidth, getUnitForPerson, inCouple, childrenRowWidth,
+            unitBirthYear, multiCoupleMap, absorbedCouples, childrenOf,
+            parentsOf } = base;
     const elements = buildElements(base);
 
-    const allUnitsPlaced = new Set();
+    // ─── BOTTOM-UP LAYOUT ───
+    // Process from deepest generation upward to gen 0.
+    // Children are positioned first; parents are centered above them.
 
-    // Helper: position a list of children centered at parentCenterX
-    function positionChildren(children, parentCenterX, childY) {
-      if (!children || children.length === 0) return;
+    const unitPositioned = new Set();  // track which unit IDs are placed
 
-      const childUnitIds = [];
-      const seen = new Set();
+    // Build a reverse map: child unit → parent unit
+    // so we can group siblings together at the leaf level.
+    const childUnitToParentUnit = new Map();
+    for (const [parentUnitId, children] of unitChildren) {
       for (const childId of children) {
-        const cu = getUnitForPerson(childId);
-        if (!seen.has(cu)) { seen.add(cu); childUnitIds.push(cu); }
-      }
-
-      childUnitIds.sort((a, b) => unitBirthYear(a).localeCompare(unitBirthYear(b)));
-
-      let totalChildWidth = 0;
-      for (const cuId of childUnitIds) totalChildWidth += (unitWidth.get(cuId) || NODE_W);
-      totalChildWidth += (childUnitIds.length - 1) * SIBLING_GAP;
-
-      let childX = parentCenterX - totalChildWidth / 2;
-      for (const cuId of childUnitIds) {
-        const w = unitWidth.get(cuId) || NODE_W;
-        const childCenterX = childX + w / 2;
-        const multiInfo = multiCoupleMap.get(cuId);
-        if (multiInfo) {
-          positionUnit({ type: 'multi-couple', id: cuId, pivotId: multiInfo.pivotId, couples: multiInfo.couples, children: unitChildren.get(cuId) || [] }, childCenterX, childY);
-        } else {
-          const coupleInfo = coupleMap.get(cuId);
-          if (coupleInfo) {
-            positionUnit({ type: 'couple', id: cuId, a: coupleInfo.a, b: coupleInfo.b, children: unitChildren.get(cuId) || [] }, childCenterX, childY);
-          } else {
-            positionUnit({ type: 'single', id: cuId, children: unitChildren.get(cuId) || [] }, childCenterX, childY);
-          }
+        const childUnit = getUnitForPerson(childId);
+        if (!childUnitToParentUnit.has(childUnit)) {
+          childUnitToParentUnit.set(childUnit, parentUnitId);
         }
-        childX += w + SIBLING_GAP;
       }
     }
 
-    function positionUnit(unit, centerX, y) {
-      if (allUnitsPlaced.has(unit.id)) return;
-      allUnitsPlaced.add(unit.id);
+    // Helper: get all person IDs in a unit
+    function getUnitPersonIds(unitId) {
+      const multi = multiCoupleMap.get(unitId);
+      if (multi) {
+        const ids = [multi.pivotId];
+        for (const ci of multi.couples) ids.push(ci.spouse);
+        return ids;
+      }
+      const couple = coupleMap.get(unitId);
+      if (couple) return [couple.a, couple.b];
+      return [unitId];
+    }
+
+    // Helper: get all couple midpoint IDs in a unit
+    function getUnitMidpointIds(unitId) {
+      const multi = multiCoupleMap.get(unitId);
+      if (multi) return multi.couples.map(ci => ci.coupleId);
+      if (coupleMap.has(unitId)) return [unitId];
+      return [];
+    }
+
+    // Helper: position a single unit at a given centerX, y
+    // Only places this unit's own nodes (persons + midpoints), NOT children.
+    function placeUnitAt(unit, centerX, y) {
+      if (unitPositioned.has(unit.id)) return;
+      unitPositioned.add(unit.id);
 
       if (unit.type === 'multi-couple') {
-        // Multi-couple layout:
-        // 1. ALL children from all sub-couples go into one combined row,
-        //    centered under the pivot (just like a regular couple's children).
-        // 2. Each sub-couple midpoint + spouse is positioned above their
-        //    specific children, centered over those children's extent.
-        // 3. The pivot is placed at centerX.
         const info = multiCoupleMap.get(unit.id);
         const pivotId = info.pivotId;
 
-        // Collect ALL children from all sub-couples into one combined list
-        const allChildren = [];
-        const childToCoupleIdx = new Map(); // childId → couple index
-        for (let ci = 0; ci < info.couples.length; ci++) {
-          const coupleChildren = unitChildren.get(info.couples[ci].coupleId) || [];
-          for (const cid of coupleChildren) {
-            allChildren.push(cid);
-            childToCoupleIdx.set(cid, ci);
-          }
-        }
-
-        // Position all children as one combined row, centered under pivot
-        const childY = y + GEN_GAP;
-        positionChildren(allChildren, centerX, childY);
-
-        // Now place the pivot at centerX
+        // For multi-couple, we need to center the pivot, then place spouses
+        // on alternating sides, stacking outward.
         positions[pivotId] = { x: centerX, y };
 
-        // For each sub-couple, find the extent of its children and center
-        // the midpoint + spouse above them
+        let rightX = centerX;  // rightmost occupied center
+        let leftX = centerX;   // leftmost occupied center
+
         for (let ci = 0; ci < info.couples.length; ci++) {
           const coupleInfo = info.couples[ci];
           const coupleChildren = unitChildren.get(coupleInfo.coupleId) || [];
 
+          // Determine which side to place this spouse on.
+          // If this sub-couple has positioned children, place spouse
+          // on the side of those children. Otherwise alternate sides.
+          let side;
           if (coupleChildren.length > 0) {
-            // Find the center X of this sub-couple's children
-            let minCX = Infinity, maxCX = -Infinity;
+            // Find children's center X (they're already positioned)
+            let sumCX = 0, countCX = 0;
             for (const cid of coupleChildren) {
-              if (positions[cid]) {
-                minCX = Math.min(minCX, positions[cid].x);
-                maxCX = Math.max(maxCX, positions[cid].x);
+              const cUnit = getUnitForPerson(cid);
+              // Get any positioned person in child unit
+              for (const pid of getUnitPersonIds(cUnit)) {
+                if (positions[pid]) { sumCX += positions[pid].x; countCX++; break; }
               }
             }
-            const subCenter = (minCX + maxCX) / 2;
-
-            // Determine side: children are to the left or right of pivot
-            const side = subCenter >= centerX ? 1 : -1;
-
-            // Place spouse on the far side from pivot, at standard distance
-            // Spouse must be at least NODE_W + SPOUSE_GAP from pivot center
-            const minSpouseX = centerX + side * (NODE_W + SPOUSE_GAP);
-            // Also ensure spouse is at or beyond children center
-            const spouseX = side > 0
-              ? Math.max(minSpouseX, subCenter + SPOUSE_GAP / 2 + NODE_W / 2)
-              : Math.min(minSpouseX, subCenter - SPOUSE_GAP / 2 - NODE_W / 2);
-            // Midpoint between pivot and spouse
-            const midX = (centerX + spouseX) / 2;
-            positions[coupleInfo.coupleId] = { x: midX, y };
-            positions[coupleInfo.spouse] = { x: spouseX, y };
+            if (countCX > 0) {
+              side = (sumCX / countCX) >= centerX ? 1 : -1;
+            } else {
+              side = ci % 2 === 0 ? 1 : -1;
+            }
           } else {
-            // No children: place spouse next to pivot at standard distance
-            const side = ci % 2 === 0 ? 1 : -1;
-            const spouseX = centerX + side * (NODE_W + SPOUSE_GAP);
-            const midX = (centerX + spouseX) / 2;
-            positions[coupleInfo.coupleId] = { x: midX, y };
-            positions[coupleInfo.spouse] = { x: spouseX, y };
+            side = ci % 2 === 0 ? 1 : -1;
           }
+
+          // Place spouse stacking outward from the outermost occupied position
+          let spouseX;
+          if (side > 0) {
+            spouseX = rightX + NODE_W + SPOUSE_GAP;
+            rightX = spouseX;
+          } else {
+            spouseX = leftX - NODE_W - SPOUSE_GAP;
+            leftX = spouseX;
+          }
+
+          const midX = (centerX + spouseX) / 2;
+          positions[coupleInfo.coupleId] = { x: midX, y };
+          positions[coupleInfo.spouse] = { x: spouseX, y };
         }
 
       } else if (unit.type === 'couple') {
         const couple = coupleMap.get(unit.id);
-        positions[couple.a] = { x: centerX - (SPOUSE_GAP / 2) - (NODE_W / 2), y };
-        positions[couple.b] = { x: centerX + (SPOUSE_GAP / 2) + (NODE_W / 2), y };
+        positions[couple.a] = { x: centerX - SPOUSE_GAP / 2 - NODE_W / 2, y };
+        positions[couple.b] = { x: centerX + SPOUSE_GAP / 2 + NODE_W / 2, y };
         positions[unit.id] = { x: centerX, y };
-
-        positionChildren(unit.children, centerX, y + GEN_GAP);
 
       } else {
+        // Single person
         positions[unit.id] = { x: centerX, y };
-        positionChildren(unit.children, centerX, y + GEN_GAP);
       }
     }
 
-    // Position root units
-    const rootUnits = genGroups[0] || [];
-    let totalRootWidth = 0;
-    for (const ru of rootUnits) totalRootWidth += (unitWidth.get(ru.id) || NODE_W);
-    totalRootWidth += (rootUnits.length - 1) * SIBLING_GAP * 2;
-
-    let rootX = -totalRootWidth / 2;
-    for (const ru of rootUnits) {
-      const w = unitWidth.get(ru.id) || NODE_W;
-      positionUnit(ru, rootX + w / 2, 0);
-      rootX += w + SIBLING_GAP * 2;
+    // Helper: get the self-width of a unit (just the parent row, not children)
+    function unitSelfWidth(unitId) {
+      const multi = multiCoupleMap.get(unitId);
+      if (multi) {
+        let w = NODE_W; // pivot
+        for (let i = 0; i < multi.couples.length; i++) w += NODE_W + SPOUSE_GAP;
+        return w;
+      }
+      if (coupleMap.has(unitId)) return NODE_W * 2 + SPOUSE_GAP;
+      return NODE_W;
     }
 
-    // Disconnected subtrees
+    // Helper: compute the X extent of a unit's children (already positioned)
+    function childrenExtent(unitId) {
+      const children = unitChildren.get(unitId) || [];
+      if (children.length === 0) return null;
+
+      const seen = new Set();
+      let minX = Infinity, maxX = -Infinity;
+
+      for (const childId of children) {
+        const cu = getUnitForPerson(childId);
+        if (seen.has(cu)) continue;
+        seen.add(cu);
+
+        // Get extent of all persons in this child unit
+        for (const pid of getUnitPersonIds(cu)) {
+          if (positions[pid]) {
+            minX = Math.min(minX, positions[pid].x - NODE_W / 2);
+            maxX = Math.max(maxX, positions[pid].x + NODE_W / 2);
+          }
+        }
+      }
+
+      if (minX === Infinity) return null;
+      return { minX, maxX, centerX: (minX + maxX) / 2 };
+    }
+
+    // Helper: build a unit descriptor from genGroups or unit ID
+    function makeUnit(unitId) {
+      const multi = multiCoupleMap.get(unitId);
+      if (multi) {
+        return { type: 'multi-couple', id: unitId, pivotId: multi.pivotId,
+                 couples: multi.couples, children: unitChildren.get(unitId) || [] };
+      }
+      const couple = coupleMap.get(unitId);
+      if (couple) {
+        return { type: 'couple', id: unitId, a: couple.a, b: couple.b,
+                 children: unitChildren.get(unitId) || [] };
+      }
+      return { type: 'single', id: unitId, children: unitChildren.get(unitId) || [] };
+    }
+
+    // ─── STEP 1: Collect all units per generation ───
+    // genUnits[g] = array of unit IDs at generation g
+    const genUnits = [];
     for (let g = 0; g <= maxGen; g++) {
+      const unitIds = [];
+      const seen = new Set();
       for (const unit of genGroups[g]) {
-        if (!allUnitsPlaced.has(unit.id)) {
-          rootX += SIBLING_GAP * 2;
-          const w = unitWidth.get(unit.id) || NODE_W;
-          positionUnit(unit, rootX + w / 2, g * GEN_GAP);
-          rootX += w;
+        if (!seen.has(unit.id)) { seen.add(unit.id); unitIds.push(unit.id); }
+      }
+      genUnits.push(unitIds);
+    }
+
+    // ─── STEP 2: Process generations bottom-up ───
+    for (let g = maxGen; g >= 0; g--) {
+      const y = g * GEN_GAP;
+      const unitsAtGen = genUnits[g];
+
+      // Separate units into: those with positioned children (Case A)
+      // and those without (Case B - leaf units or childless units)
+      const unitsWithChildren = [];
+      const unitsWithoutChildren = [];
+
+      for (const uid of unitsAtGen) {
+        if (unitPositioned.has(uid)) continue; // already placed (e.g. by parent logic)
+
+        const ext = childrenExtent(uid);
+        if (ext) {
+          unitsWithChildren.push({ id: uid, childExt: ext });
+        } else {
+          unitsWithoutChildren.push(uid);
+        }
+      }
+
+      // ── Case A: units with children → center above their children ──
+      for (const { id: uid, childExt } of unitsWithChildren) {
+        placeUnitAt(makeUnit(uid), childExt.centerX, y);
+      }
+
+      // ── Case B: units without children (leaf / childless) ──
+      // Group by parent unit so siblings stay together.
+      // Then place groups left-to-right.
+      if (unitsWithoutChildren.length > 0) {
+        // Group by parent unit
+        const parentGroups = new Map(); // parentUnitId → [childUnitId, ...]
+        const orphans = []; // units with no parent
+        for (const uid of unitsWithoutChildren) {
+          const parentUnit = childUnitToParentUnit.get(uid);
+          if (parentUnit) {
+            if (!parentGroups.has(parentUnit)) parentGroups.set(parentUnit, []);
+            parentGroups.get(parentUnit).push(uid);
+          } else {
+            orphans.push(uid);
+          }
+        }
+
+        // Sort units within each group by birth year
+        for (const [, group] of parentGroups) {
+          group.sort((a, b) => unitBirthYear(a).localeCompare(unitBirthYear(b)));
+        }
+        orphans.sort((a, b) => unitBirthYear(a).localeCompare(unitBirthYear(b)));
+
+        // Determine placement X: find the rightmost edge of already-placed
+        // units in this row, then continue from there. Also check if any
+        // sibling of these units is already positioned (Case A siblings).
+        let placementX;
+
+        // Find where siblings with children were placed, to put childless
+        // siblings adjacent to them.
+        const siblingAnchors = new Map(); // parentUnit → { rightEdge, leftEdge }
+        for (const { id: uid } of unitsWithChildren) {
+          const parentUnit = childUnitToParentUnit.get(uid);
+          if (parentUnit && parentGroups.has(parentUnit)) {
+            // This unit (already positioned) shares a parent with some childless units.
+            // Find its extent.
+            let unitMinX = Infinity, unitMaxX = -Infinity;
+            for (const pid of getUnitPersonIds(uid)) {
+              if (positions[pid]) {
+                unitMinX = Math.min(unitMinX, positions[pid].x - NODE_W / 2);
+                unitMaxX = Math.max(unitMaxX, positions[pid].x + NODE_W / 2);
+              }
+            }
+            if (unitMinX !== Infinity) {
+              if (!siblingAnchors.has(parentUnit)) {
+                siblingAnchors.set(parentUnit, { minX: unitMinX, maxX: unitMaxX });
+              } else {
+                const a = siblingAnchors.get(parentUnit);
+                a.minX = Math.min(a.minX, unitMinX);
+                a.maxX = Math.max(a.maxX, unitMaxX);
+              }
+            }
+          }
+        }
+
+        // Find the overall rightmost X of all positioned units at this gen
+        let rowRightEdge = -Infinity;
+        for (const uid of unitsAtGen) {
+          if (unitPositioned.has(uid)) {
+            for (const pid of getUnitPersonIds(uid)) {
+              if (positions[pid]) {
+                rowRightEdge = Math.max(rowRightEdge, positions[pid].x + NODE_W / 2);
+              }
+            }
+          }
+        }
+        // Also check ALL positioned units at this Y (from other gens that happen to overlap)
+        if (rowRightEdge === -Infinity) rowRightEdge = 0;
+
+        // Place childless groups: prefer anchoring next to siblings
+        for (const [parentUnit, group] of parentGroups) {
+          const anchor = siblingAnchors.get(parentUnit);
+          if (anchor) {
+            // Place to the right of the rightmost sibling
+            placementX = anchor.maxX + SIBLING_GAP + unitSelfWidth(group[0]) / 2;
+          } else {
+            // No sibling anchor; place after everything in the row
+            placementX = rowRightEdge + SIBLING_GAP + unitSelfWidth(group[0]) / 2;
+          }
+
+          for (const uid of group) {
+            const sw = unitSelfWidth(uid);
+            placeUnitAt(makeUnit(uid), placementX, y);
+            placementX += sw + SIBLING_GAP;
+            // Update row right edge
+            for (const pid of getUnitPersonIds(uid)) {
+              if (positions[pid]) {
+                rowRightEdge = Math.max(rowRightEdge, positions[pid].x + NODE_W / 2);
+              }
+            }
+          }
+        }
+
+        // Orphans (no parent in tree): place at end
+        if (orphans.length > 0) {
+          placementX = rowRightEdge + SIBLING_GAP * 2 + unitSelfWidth(orphans[0]) / 2;
+          for (const uid of orphans) {
+            const sw = unitSelfWidth(uid);
+            placeUnitAt(makeUnit(uid), placementX, y);
+            placementX += sw + SIBLING_GAP;
+            for (const pid of getUnitPersonIds(uid)) {
+              if (positions[pid]) {
+                rowRightEdge = Math.max(rowRightEdge, positions[pid].x + NODE_W / 2);
+              }
+            }
+          }
+        }
+      }
+
+      // ── Per-row overlap resolution (safety net) ──
+      // After all units at this gen are placed, scan for overlaps
+      // and push apart any that still collide.
+      resolveRowOverlaps(positions, unitsAtGen, getUnitPersonIds, getUnitMidpointIds);
+    }
+
+    // ─── STEP 3: Center the entire tree around X=0 ───
+    let globalMinX = Infinity, globalMaxX = -Infinity;
+    for (const pos of Object.values(positions)) {
+      globalMinX = Math.min(globalMinX, pos.x);
+      globalMaxX = Math.max(globalMaxX, pos.x);
+    }
+    const offsetX = -(globalMinX + globalMaxX) / 2;
+    if (isFinite(offsetX) && offsetX !== 0) {
+      for (const pos of Object.values(positions)) pos.x += offsetX;
+    }
+
+    return { elements, positions };
+  }
+
+  /**
+   * Per-row overlap resolution: scan units left-to-right at a single generation
+   * row, push apart any that overlap.
+   */
+  function resolveRowOverlaps(positions, unitIds, getUnitPersonIds, getUnitMidpointIds) {
+    const MIN_GAP = 20;
+
+    // Build slot for each unit: { ids, leftX, rightX }
+    const slots = [];
+    for (const uid of unitIds) {
+      const personIds = getUnitPersonIds(uid);
+      const midIds = getUnitMidpointIds(uid);
+      const allIds = [...personIds, ...midIds];
+
+      let minX = Infinity, maxX = -Infinity;
+      for (const pid of personIds) {
+        if (positions[pid]) {
+          minX = Math.min(minX, positions[pid].x - NODE_W / 2);
+          maxX = Math.max(maxX, positions[pid].x + NODE_W / 2);
+        }
+      }
+      if (minX === Infinity) continue;
+
+      slots.push({ ids: allIds, leftX: minX, rightX: maxX, uid });
+    }
+
+    slots.sort((a, b) => a.leftX - b.leftX);
+
+    for (let i = 1; i < slots.length; i++) {
+      const prev = slots[i - 1];
+      const curr = slots[i];
+      const gap = curr.leftX - prev.rightX;
+      if (gap < MIN_GAP) {
+        const shift = MIN_GAP - gap;
+        // Shift this slot and all subsequent slots to the right
+        for (let j = i; j < slots.length; j++) {
+          for (const nid of slots[j].ids) {
+            if (positions[nid]) positions[nid].x += shift;
+          }
+          slots[j].leftX += shift;
+          slots[j].rightX += shift;
         }
       }
     }
-
-    // Post-layout safety net — should find no overlaps if widths are correct
-    resolveOverlaps(positions, elements);
-
-    return { elements, positions };
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1020,14 +1242,19 @@ const Tree = (() => {
   // ═══════════════════════════════════════════════════════════
 
   function buildTemporalLayout(members, relationships) {
+    // Derive temporal layout from generational layout:
+    // Keep the same X positions, replace Y with birth-year-based Y.
+    const genResult = buildGenerationalLayout(members, relationships);
+    const positions = genResult.positions;
+    const elements = genResult.elements;
+
+    // Rebuild base just for generation + couple info (lightweight)
     const base = buildLayoutBase(members, relationships);
-    const positions = {};
-    const { coupleMap, genGroups, maxGen, generation, unitChildren, unitWidth, getUnitForPerson, inCouple, couples, childrenRowWidth, unitBirthYear, multiCoupleMap, absorbedCouples } = base;
-    const elements = buildElements(base);
+    const { generation, couples, memberMap } = base;
 
     // ─── Compute birth years ───
     const birthYears = new Map();
-    let minYear = Infinity, maxYear = -Infinity;
+    let minYear = Infinity;
 
     for (const m of members) {
       if (m.birthDate) {
@@ -1035,7 +1262,6 @@ const Tree = (() => {
         if (!isNaN(y)) {
           birthYears.set(m.id, y);
           minYear = Math.min(minYear, y);
-          maxYear = Math.max(maxYear, y);
         }
       }
     }
@@ -1052,182 +1278,36 @@ const Tree = (() => {
       genAvgYear.set(gen, years.reduce((a, b) => a + b, 0) / years.length);
     }
 
-    // Assign missing birth years from generation average
+    // Assign missing birth years
     for (const m of members) {
       if (!birthYears.has(m.id)) {
         const gen = generation.get(m.id) || 0;
         const avg = genAvgYear.get(gen);
-        birthYears.set(m.id, avg ? Math.round(avg) : (minYear !== Infinity ? minYear + gen * 25 : 1950 + gen * 25));
+        birthYears.set(m.id, avg ? Math.round(avg)
+          : (minYear !== Infinity ? minYear + gen * 25 : 1950 + gen * 25));
       }
     }
 
     if (minYear === Infinity) minYear = 1920;
-    if (maxYear === -Infinity) maxYear = 2030;
     const baseYear = Math.floor(minYear / 10) * 10;
 
-    function yearToY(year) {
-      return (year - baseYear) * YEAR_PX;
-    }
-
-    // ─── Compute Y for each member ───
-    const memberY = new Map();
+    // ─── Replace Y coordinates with birth-year Y ───
     for (const m of members) {
-      memberY.set(m.id, yearToY(birthYears.get(m.id)));
+      if (positions[m.id]) {
+        positions[m.id].y = (birthYears.get(m.id) - baseYear) * YEAR_PX;
+      }
     }
 
-    // Couples: each spouse keeps their birth-year Y, midpoint at average
-    const coupleY = new Map();
+    // Couple midpoints: average of spouse Ys
     for (const couple of couples) {
-      const ya = memberY.get(couple.a) || 0;
-      const yb = memberY.get(couple.b) || 0;
-      const avg = (ya + yb) / 2;
-      coupleY.set(couple.id, avg);
-    }
-
-    // ─── Position units (X from width calc, Y from birth year) ───
-    const allUnitsPlaced = new Set();
-
-    // Helper: position a list of children centered at parentCenterX
-    function positionChildren(children, parentCenterX) {
-      if (!children || children.length === 0) return;
-
-      const childUnitIds = [];
-      const seen = new Set();
-      for (const childId of children) {
-        const cu = getUnitForPerson(childId);
-        if (!seen.has(cu)) { seen.add(cu); childUnitIds.push(cu); }
-      }
-
-      childUnitIds.sort((a, b) => unitBirthYear(a).localeCompare(unitBirthYear(b)));
-
-      let totalChildWidth = 0;
-      for (const cuId of childUnitIds) totalChildWidth += (unitWidth.get(cuId) || NODE_W);
-      totalChildWidth += (childUnitIds.length - 1) * SIBLING_GAP;
-
-      let childX = parentCenterX - totalChildWidth / 2;
-      for (const cuId of childUnitIds) {
-        const w = unitWidth.get(cuId) || NODE_W;
-        const childCenterX = childX + w / 2;
-        const multiInfo = multiCoupleMap.get(cuId);
-        if (multiInfo) {
-          positionUnit({ type: 'multi-couple', id: cuId, pivotId: multiInfo.pivotId, couples: multiInfo.couples, children: unitChildren.get(cuId) || [] }, childCenterX);
-        } else {
-          const coupleInfo = coupleMap.get(cuId);
-          if (coupleInfo) {
-            positionUnit({ type: 'couple', id: cuId, a: coupleInfo.a, b: coupleInfo.b, children: unitChildren.get(cuId) || [] }, childCenterX);
-          } else {
-            positionUnit({ type: 'single', id: cuId, children: unitChildren.get(cuId) || [] }, childCenterX);
-          }
-        }
-        childX += w + SIBLING_GAP;
+      if (positions[couple.id]) {
+        const ya = positions[couple.a]?.y || 0;
+        const yb = positions[couple.b]?.y || 0;
+        positions[couple.id].y = (ya + yb) / 2;
       }
     }
 
-    function positionUnit(unit, centerX) {
-      if (allUnitsPlaced.has(unit.id)) return;
-      allUnitsPlaced.add(unit.id);
-
-      let y;
-      if (unit.type === 'multi-couple') {
-        // Same strategy as generational: all children in one combined row,
-        // sub-couple midpoints + spouses centered above their children.
-        const info = multiCoupleMap.get(unit.id);
-        const pivotId = info.pivotId;
-        const pivotY = memberY.get(pivotId) || 0;
-
-        // Collect ALL children from all sub-couples
-        const allChildren = [];
-        for (const ci of info.couples) {
-          for (const cid of (unitChildren.get(ci.coupleId) || [])) {
-            allChildren.push(cid);
-          }
-        }
-
-        // Position all children as one combined row
-        positionChildren(allChildren, centerX);
-
-        // Place pivot at centerX
-        positions[pivotId] = { x: centerX, y: pivotY };
-
-        // Position each sub-couple's midpoint + spouse above their children
-        for (let ci = 0; ci < info.couples.length; ci++) {
-          const coupleInfo = info.couples[ci];
-          const spouseY = memberY.get(coupleInfo.spouse) || 0;
-          const midY = (pivotY + spouseY) / 2;
-          const coupleChildren = unitChildren.get(coupleInfo.coupleId) || [];
-
-          if (coupleChildren.length > 0) {
-            let minCX = Infinity, maxCX = -Infinity;
-            for (const cid of coupleChildren) {
-              if (positions[cid]) {
-                minCX = Math.min(minCX, positions[cid].x);
-                maxCX = Math.max(maxCX, positions[cid].x);
-              }
-            }
-            const subCenter = (minCX + maxCX) / 2;
-            const side = subCenter >= centerX ? 1 : -1;
-            const minSpouseX = centerX + side * (NODE_W + SPOUSE_GAP);
-            const spouseX = side > 0
-              ? Math.max(minSpouseX, subCenter + SPOUSE_GAP / 2 + NODE_W / 2)
-              : Math.min(minSpouseX, subCenter - SPOUSE_GAP / 2 - NODE_W / 2);
-            const midX = (centerX + spouseX) / 2;
-            positions[coupleInfo.coupleId] = { x: midX, y: midY };
-            positions[coupleInfo.spouse] = { x: spouseX, y: spouseY };
-          } else {
-            const side = ci % 2 === 0 ? 1 : -1;
-            const spouseX = centerX + side * (NODE_W + SPOUSE_GAP);
-            const midX = (centerX + spouseX) / 2;
-            positions[coupleInfo.coupleId] = { x: midX, y: midY };
-            positions[coupleInfo.spouse] = { x: spouseX, y: spouseY };
-          }
-        }
-        y = pivotY;
-
-      } else if (unit.type === 'couple') {
-        const couple = coupleMap.get(unit.id);
-        const ya = memberY.get(couple.a) || 0;
-        const yb = memberY.get(couple.b) || 0;
-        const midY = coupleY.get(unit.id) || 0;
-        positions[couple.a] = { x: centerX - (SPOUSE_GAP / 2) - (NODE_W / 2), y: ya };
-        positions[couple.b] = { x: centerX + (SPOUSE_GAP / 2) + (NODE_W / 2), y: yb };
-        positions[unit.id] = { x: centerX, y: midY };
-        y = midY;
-
-        positionChildren(unit.children, centerX);
-
-      } else {
-        y = memberY.get(unit.id) || 0;
-        positions[unit.id] = { x: centerX, y };
-        positionChildren(unit.children, centerX);
-      }
-    }
-
-    // Position root units
-    const rootUnits = genGroups[0] || [];
-    let totalRootWidth = 0;
-    for (const ru of rootUnits) totalRootWidth += (unitWidth.get(ru.id) || NODE_W);
-    totalRootWidth += (rootUnits.length - 1) * SIBLING_GAP * 2;
-
-    let rootX = -totalRootWidth / 2;
-    for (const ru of rootUnits) {
-      const w = unitWidth.get(ru.id) || NODE_W;
-      positionUnit(ru, rootX + w / 2);
-      rootX += w + SIBLING_GAP * 2;
-    }
-
-    // Disconnected subtrees
-    for (let g = 0; g <= maxGen; g++) {
-      for (const unit of genGroups[g]) {
-        if (!allUnitsPlaced.has(unit.id)) {
-          rootX += SIBLING_GAP * 2;
-          const w = unitWidth.get(unit.id) || NODE_W;
-          positionUnit(unit, rootX + w / 2);
-          rootX += w;
-        }
-      }
-    }
-
-    // Post-layout safety net
+    // Light overlap resolution with Y tolerance
     resolveOverlaps(positions, elements, { yTolerance: NODE_H });
 
     return { elements, positions };

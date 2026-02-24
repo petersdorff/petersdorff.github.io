@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   STAMMBAUM – Tree Visualization (Cytoscape.js)  v63
+   STAMMBAUM – Tree Visualization (Cytoscape.js)  v64
    Couple-centered layout: spouses side-by-side with shared
    descent line from the midpoint of the couple connector.
    PCB / Circuit Board aesthetic
@@ -939,8 +939,6 @@ const Tree = (() => {
             // Find the center X of this sub-couple's children
             let minCX = Infinity, maxCX = -Infinity;
             for (const cid of coupleChildren) {
-              const cu = getUnitForPerson(cid);
-              // A child unit could be a couple — find its center
               if (positions[cid]) {
                 minCX = Math.min(minCX, positions[cid].x);
                 maxCX = Math.max(maxCX, positions[cid].x);
@@ -948,22 +946,25 @@ const Tree = (() => {
             }
             const subCenter = (minCX + maxCX) / 2;
 
-            // Place midpoint at children center, spouse next to it
-            // (on the side away from pivot to avoid crossing)
-            const midX = subCenter;
-            const awayFromPivot = subCenter >= centerX ? 1 : -1;
-            const spouseX = midX + awayFromPivot * (SPOUSE_GAP / 2 + NODE_W / 2);
-            // Adjust midpoint between pivot and spouse
-            const adjustedMidX = (centerX + spouseX) / 2;
+            // Determine side: children are to the left or right of pivot
+            const side = subCenter >= centerX ? 1 : -1;
 
-            // Actually, just place spouse on far side from pivot
+            // Place spouse on the far side from pivot, at standard distance
+            // Spouse must be at least NODE_W + SPOUSE_GAP from pivot center
+            const minSpouseX = centerX + side * (NODE_W + SPOUSE_GAP);
+            // Also ensure spouse is at or beyond children center
+            const spouseX = side > 0
+              ? Math.max(minSpouseX, subCenter + SPOUSE_GAP / 2 + NODE_W / 2)
+              : Math.min(minSpouseX, subCenter - SPOUSE_GAP / 2 - NODE_W / 2);
+            // Midpoint between pivot and spouse
+            const midX = (centerX + spouseX) / 2;
             positions[coupleInfo.coupleId] = { x: midX, y };
             positions[coupleInfo.spouse] = { x: spouseX, y };
           } else {
-            // No children: place spouse next to pivot
+            // No children: place spouse next to pivot at standard distance
             const side = ci % 2 === 0 ? 1 : -1;
-            const midX = centerX + side * (NODE_W / 2 + SPOUSE_GAP / 2);
-            const spouseX = centerX + side * (NODE_W / 2 + SPOUSE_GAP + NODE_W / 2);
+            const spouseX = centerX + side * (NODE_W + SPOUSE_GAP);
+            const midX = (centerX + spouseX) / 2;
             positions[coupleInfo.coupleId] = { x: midX, y };
             positions[coupleInfo.spouse] = { x: spouseX, y };
           }
@@ -1164,15 +1165,18 @@ const Tree = (() => {
               }
             }
             const subCenter = (minCX + maxCX) / 2;
-            const midX = subCenter;
-            const awayFromPivot = subCenter >= centerX ? 1 : -1;
-            const spouseX = midX + awayFromPivot * (SPOUSE_GAP / 2 + NODE_W / 2);
+            const side = subCenter >= centerX ? 1 : -1;
+            const minSpouseX = centerX + side * (NODE_W + SPOUSE_GAP);
+            const spouseX = side > 0
+              ? Math.max(minSpouseX, subCenter + SPOUSE_GAP / 2 + NODE_W / 2)
+              : Math.min(minSpouseX, subCenter - SPOUSE_GAP / 2 - NODE_W / 2);
+            const midX = (centerX + spouseX) / 2;
             positions[coupleInfo.coupleId] = { x: midX, y: midY };
             positions[coupleInfo.spouse] = { x: spouseX, y: spouseY };
           } else {
             const side = ci % 2 === 0 ? 1 : -1;
-            const midX = centerX + side * (NODE_W / 2 + SPOUSE_GAP / 2);
-            const spouseX = centerX + side * (NODE_W / 2 + SPOUSE_GAP + NODE_W / 2);
+            const spouseX = centerX + side * (NODE_W + SPOUSE_GAP);
+            const midX = (centerX + spouseX) / 2;
             positions[coupleInfo.coupleId] = { x: midX, y: midY };
             positions[coupleInfo.spouse] = { x: spouseX, y: spouseY };
           }

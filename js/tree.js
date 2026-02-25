@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   STAMMBAUM – Tree Visualization (Cytoscape.js)  v69
+   STAMMBAUM – Tree Visualization (Cytoscape.js)  v70
    Bottom-up layout: children first, parents centered above.
    PCB / Circuit Board aesthetic
 

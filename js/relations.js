@@ -312,13 +312,35 @@ const Relations = (() => {
     const SIB = 'sibling';
 
     if (relType === 'sibling') {
-      // Both siblings share parents
+      // Share parents between siblings, but respect the 2-parent limit.
+      // Half-siblings (same father, different mothers) should NOT get a
+      // third parent pulled in from the other sibling.
       const relsA = await DB.getRelationshipsForMember(fromId);
       const relsB = await DB.getRelationshipsForMember(toId);
       const parentsA = relsA.filter(r => r.type === PC && r.toId === fromId).map(r => r.fromId);
       const parentsB = relsB.filter(r => r.type === PC && r.toId === toId).map(r => r.fromId);
-      for (const pid of parentsA) await DB.addRelationship(pid, toId, PC);
-      for (const pid of parentsB) await DB.addRelationship(pid, fromId, PC);
+
+      // Only copy parents from A to B if B has fewer than 2 parents
+      const currentParentsB = new Set(parentsB);
+      if (currentParentsB.size < 2) {
+        for (const pid of parentsA) {
+          if (!currentParentsB.has(pid) && currentParentsB.size < 2) {
+            await DB.addRelationship(pid, toId, PC);
+            currentParentsB.add(pid);
+          }
+        }
+      }
+
+      // Only copy parents from B to A if A has fewer than 2 parents
+      const currentParentsA = new Set(parentsA);
+      if (currentParentsA.size < 2) {
+        for (const pid of parentsB) {
+          if (!currentParentsA.has(pid) && currentParentsA.size < 2) {
+            await DB.addRelationship(pid, fromId, PC);
+            currentParentsA.add(pid);
+          }
+        }
+      }
 
     } else if (relType === 'child') {
       // fromId = parent, toId = child (parent_child stored as fromId→toId)
@@ -333,13 +355,18 @@ const Relations = (() => {
         await DB.addRelationship(childId, sibId, SIB);
       }
 
-      // Existing siblings of the child become children of this parent
+      // Existing siblings of the child become children of this parent,
+      // but only if the sibling doesn't already have 2 parents
       const childRels = await DB.getRelationshipsForMember(childId);
       const childSiblings = childRels
         .filter(r => r.type === SIB)
         .map(r => r.fromId === childId ? r.toId : r.fromId);
       for (const sibId of childSiblings) {
-        await DB.addRelationship(parentId, sibId, PC);
+        const sibRels = await DB.getRelationshipsForMember(sibId);
+        const sibParentCount = sibRels.filter(r => r.type === PC && r.toId === sibId).length;
+        if (sibParentCount < 2) {
+          await DB.addRelationship(parentId, sibId, PC);
+        }
       }
 
     } else if (relType === 'parent') {
@@ -355,13 +382,18 @@ const Relations = (() => {
         await DB.addRelationship(childId, sibId, SIB);
       }
 
-      // Existing siblings of the child become children of this parent
+      // Existing siblings of the child become children of this parent,
+      // but only if the sibling doesn't already have 2 parents
       const childRels = await DB.getRelationshipsForMember(childId);
       const childSiblings = childRels
         .filter(r => r.type === SIB)
         .map(r => r.fromId === childId ? r.toId : r.fromId);
       for (const sibId of childSiblings) {
-        await DB.addRelationship(parentId, sibId, PC);
+        const sibRels = await DB.getRelationshipsForMember(sibId);
+        const sibParentCount = sibRels.filter(r => r.type === PC && r.toId === sibId).length;
+        if (sibParentCount < 2) {
+          await DB.addRelationship(parentId, sibId, PC);
+        }
       }
 
     } else if (relType === 'spouse') {

@@ -28,15 +28,15 @@ const Auth = (() => {
     // Check URL for recovery tokens FIRST
     detectRecoveryFromUrl();
 
-    // Track whether the initial session has been handled (by checkSession)
-    // to avoid duplicate work from onAuthStateChange firing concurrently.
-    let initialSessionHandled = false;
+    // Track whether the initial session check has completed,
+    // so we don't double-fire from both checkSession and onAuthStateChange.
+    let initialCheckDone = false;
 
     // Listen for auth state changes (login, logout, token refresh)
     supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('[Auth] onAuthStateChange:', event, 'recoveryMode:', isRecoveryMode);
 
-      // Skip INITIAL_SESSION — checkSession handles it faster
+      // Skip INITIAL_SESSION — checkSession handles initial load
       if (event === 'INITIAL_SESSION') return;
 
       if (event === 'SIGNED_OUT') {
@@ -48,19 +48,23 @@ const Auth = (() => {
         isRecoveryMode = true;
         currentUser = session?.user || null;
         if (onPasswordRecoveryCallback) onPasswordRecoveryCallback();
-      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      } else if (event === 'SIGNED_IN') {
         currentUser = session?.user || null;
         if (isRecoveryMode) {
           console.log('[Auth] SIGNED_IN during recovery → showing password form');
           if (onPasswordRecoveryCallback) onPasswordRecoveryCallback();
           return;
         }
-        // Skip if initial session was already handled by checkSession
-        if (!initialSessionHandled) {
-          initialSessionHandled = true;
-          // Small delay only for non-initial auth transitions to avoid AbortError
-          setTimeout(() => resolveAndNotify(event), 100);
-        }
+        // If the initial check already fired SIGNED_IN, skip this duplicate.
+        // But if initial check showed no session (user was logged out) and
+        // user just logged in, this is a real new login — process it.
+        if (!initialCheckDone) return; // still loading, checkSession will handle it
+        // User just logged in — resolve and notify
+        resolveAndNotify(event);
+      } else if (event === 'TOKEN_REFRESHED') {
+        currentUser = session?.user || null;
+        // Just update user, don't re-trigger full flow
+        if (onAuthChangeCallback) onAuthChangeCallback(currentUser, currentMember, event);
       }
     });
 
@@ -68,7 +72,7 @@ const Auth = (() => {
     // has time to register the onAuthChange callback first
     setTimeout(async () => {
       await checkSession();
-      initialSessionHandled = true;
+      initialCheckDone = true;
     }, 0);
   }
 
@@ -205,7 +209,8 @@ const Auth = (() => {
     if (msg.includes('password')) return 'Passwort zu schwach (mind. 6 Zeichen).';
     if (msg.includes('invalid email')) return 'Ungültige E-Mail-Adresse.';
     if (msg.includes('rate limit')) return 'Zu viele Versuche. Bitte warte einen Moment.';
-    if (msg.includes('network')) return 'Netzwerkfehler. Bitte prüfe deine Verbindung.';
+    if (msg.includes('network') || msg.includes('failed to fetch') || msg.includes('fetch'))
+      return 'Netzwerkfehler. Bitte prüfe deine Verbindung.';
     if (msg.includes('email not confirmed')) return 'Bitte bestätige zuerst deine E-Mail-Adresse.';
     return message;
   }

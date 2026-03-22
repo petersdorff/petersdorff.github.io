@@ -144,7 +144,7 @@ const Auth = (() => {
       if (error) return { success: false, error: mapAuthError(error.message) };
       return { success: true, user: data.user };
     } catch (err) {
-      return { success: false, error: err.message };
+      return { success: false, error: mapAuthError(err.message) };
     }
   }
 
@@ -160,7 +160,7 @@ const Auth = (() => {
       if (error) return { success: false, error: mapAuthError(error.message) };
       return { success: true, user: data.user };
     } catch (err) {
-      return { success: false, error: err.message };
+      return { success: false, error: mapAuthError(err.message) };
     }
   }
 
@@ -172,7 +172,7 @@ const Auth = (() => {
       if (error) return { success: false, error: mapAuthError(error.message) };
       return { success: true };
     } catch (err) {
-      return { success: false, error: err.message };
+      return { success: false, error: mapAuthError(err.message) };
     }
   }
 
@@ -209,8 +209,8 @@ const Auth = (() => {
     if (msg.includes('password')) return 'Passwort zu schwach (mind. 6 Zeichen).';
     if (msg.includes('invalid email')) return 'Ungültige E-Mail-Adresse.';
     if (msg.includes('rate limit')) return 'Zu viele Versuche. Bitte warte einen Moment.';
-    if (msg.includes('network') || msg.includes('failed to fetch') || msg.includes('fetch'))
-      return 'Netzwerkfehler. Bitte prüfe deine Verbindung.';
+    if (msg.includes('network') || msg.includes('failed to fetch') || msg.includes('fetch') || msg.includes('load failed'))
+      return 'Netzwerkfehler. Bitte prüfe deine Verbindung und versuche es erneut.';
     if (msg.includes('email not confirmed')) return 'Bitte bestätige zuerst deine E-Mail-Adresse.';
     return message;
   }

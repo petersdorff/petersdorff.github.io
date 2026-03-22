@@ -60,6 +60,7 @@ const App = (() => {
 
         if (member) {
           Tree.setCurrentUser(member.id);
+          showView('loading-screen');
           await loadTree();
           showView('view-main');
           Admin.updateAdminMenu(isAdmin);

@@ -28,38 +28,48 @@ const Auth = (() => {
     // Check URL for recovery tokens FIRST
     detectRecoveryFromUrl();
 
+    // Track whether the initial session has been handled (by checkSession)
+    // to avoid duplicate work from onAuthStateChange firing concurrently.
+    let initialSessionHandled = false;
+
     // Listen for auth state changes (login, logout, token refresh)
-    // IMPORTANT: Don't make DB calls inside this callback — Supabase
-    // aborts in-flight requests during auth state transitions.
     supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('[Auth] onAuthStateChange:', event, 'recoveryMode:', isRecoveryMode);
+
+      // Skip INITIAL_SESSION — checkSession handles it faster
+      if (event === 'INITIAL_SESSION') return;
+
       if (event === 'SIGNED_OUT') {
         currentUser = null;
         currentMember = null;
         isRecoveryMode = false;
         if (onAuthChangeCallback) onAuthChangeCallback(null, null);
       } else if (event === 'PASSWORD_RECOVERY') {
-        // User clicked the password reset link in their email
         isRecoveryMode = true;
         currentUser = session?.user || null;
         if (onPasswordRecoveryCallback) onPasswordRecoveryCallback();
       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         currentUser = session?.user || null;
-        // If we're in recovery mode, show the password form instead of navigating
         if (isRecoveryMode) {
           console.log('[Auth] SIGNED_IN during recovery → showing password form');
           if (onPasswordRecoveryCallback) onPasswordRecoveryCallback();
-          return; // Don't proceed with normal sign-in flow
+          return;
         }
-        // Defer the DB lookup to avoid AbortError during auth transitions
-        // Pass the event type so the callback can distinguish TOKEN_REFRESHED
-        setTimeout(() => resolveAndNotify(event), 500);
+        // Skip if initial session was already handled by checkSession
+        if (!initialSessionHandled) {
+          initialSessionHandled = true;
+          // Small delay only for non-initial auth transitions to avoid AbortError
+          setTimeout(() => resolveAndNotify(event), 100);
+        }
       }
     });
 
     // Defer initial session check to next tick so the caller
     // has time to register the onAuthChange callback first
-    setTimeout(() => checkSession(), 0);
+    setTimeout(async () => {
+      await checkSession();
+      initialSessionHandled = true;
+    }, 0);
   }
 
   async function checkSession() {

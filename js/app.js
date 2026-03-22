@@ -15,6 +15,9 @@ const App = (() => {
 
   // ─── Initialize ───
 
+  // Prefetched graph data — starts loading before auth completes
+  let prefetchedGraph = null;
+
   async function init() {
     const { createClient } = window.supabase;
     const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -24,6 +27,9 @@ const App = (() => {
     Search.init();
     Tree.init('tree-container');
     Admin.initEmailJS();
+
+    // Start prefetching graph data immediately (doesn't depend on auth)
+    prefetchedGraph = DB.getFullGraph();
 
     // Register auth state listener BEFORE Auth.init()
     Auth.onAuthChange(async (user, member, event) => {
@@ -276,16 +282,23 @@ const App = (() => {
 
   async function loadTree() {
     try {
-      const { members, relationships } = await DB.getFullGraph();
-      cachedMembers = members;
-      cachedRelationships = relationships;
+      // Use prefetched data if available (first load), otherwise fetch fresh
+      let data;
+      if (prefetchedGraph) {
+        data = await prefetchedGraph;
+        prefetchedGraph = null; // Only use once
+      } else {
+        data = await DB.getFullGraph();
+      }
+      cachedMembers = data.members;
+      cachedRelationships = data.relationships;
 
-      if (members.length === 0) {
+      if (cachedMembers.length === 0) {
         toast('Demo-Daten werden geladen...', 'info');
         await DB.seedDemoData();
-        const data = await DB.getFullGraph();
-        cachedMembers = data.members;
-        cachedRelationships = data.relationships;
+        const fresh = await DB.getFullGraph();
+        cachedMembers = fresh.members;
+        cachedRelationships = fresh.relationships;
       }
 
       Tree.render(cachedMembers, cachedRelationships);

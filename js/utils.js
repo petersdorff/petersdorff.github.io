@@ -208,6 +208,22 @@ const Utils = (() => {
     sibling: 'Geschwister',
   });
 
+  function genderedRelLabel(relType, gender) {
+    if (relType === 'parent') {
+      return gender === 'm' ? 'Vater' : gender === 'f' ? 'Mutter' : 'Elternteil';
+    }
+    if (relType === 'sibling') {
+      return gender === 'm' ? 'Bruder' : gender === 'f' ? 'Schwester' : 'Geschwister';
+    }
+    if (relType === 'child') {
+      return gender === 'm' ? 'Sohn' : gender === 'f' ? 'Tochter' : 'Kind';
+    }
+    if (relType === 'spouse') {
+      return 'Partner';
+    }
+    return REL_LABELS[relType] || relType;
+  }
+
   const VIEW_IDS = Object.freeze({
     LOADING: 'loading-screen',
     AUTH: 'view-auth',
@@ -240,6 +256,7 @@ const Utils = (() => {
     REL_TYPES,
     REL_DIRECTIONS,
     REL_LABELS,
+    genderedRelLabel,
     VIEW_IDS,
   };
 })();

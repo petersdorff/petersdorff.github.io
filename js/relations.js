@@ -44,14 +44,15 @@ const Relations = (() => {
     list.innerHTML = '';
 
     const cachedMembers = App.getCachedMembers();
-    const nameMap = new Map();
+    const memberMap = new Map();
     for (const m of cachedMembers) {
-      nameMap.set(m.id, `${m.firstName} ${m.lastName}`);
+      memberMap.set(m.id, m);
     }
 
     for (const r of rels) {
       const otherId = r.fromId === memberId ? r.toId : r.fromId;
-      const otherName = nameMap.get(otherId) || 'Unbekannt';
+      const other = memberMap.get(otherId);
+      const otherName = other ? `${other.firstName} ${other.lastName}` : 'Unbekannt';
 
       let displayType;
       if (r.type === 'parent_child') {
@@ -60,7 +61,8 @@ const Relations = (() => {
         displayType = r.type;
       }
 
-      const badge = Utils.createEl('span', { className: `rel-type-badge ${displayType}`, textContent: REL_LABELS[displayType] });
+      const label = other ? Utils.genderedRelLabel(displayType, other.gender) : REL_LABELS[displayType];
+      const badge = Utils.createEl('span', { className: `rel-type-badge ${displayType}`, textContent: label });
       const nameSpan = Utils.createEl('span', { className: 'rel-name', textContent: otherName });
       nameSpan.addEventListener('click', () => Profile.show(otherId));
       const item = Utils.createEl('div', { className: 'rel-item' }, [badge, nameSpan]);
@@ -87,15 +89,16 @@ const Relations = (() => {
 
     container.innerHTML = '';
 
-    const nameMap = new Map();
+    const memberMap = new Map();
     const cachedMembers = App.getCachedMembers();
     for (const m of cachedMembers) {
-      nameMap.set(m.id, `${m.firstName} ${m.lastName}`);
+      memberMap.set(m.id, m);
     }
 
     for (const r of rels) {
       const otherId = r.fromId === memberId ? r.toId : r.fromId;
-      const otherName = nameMap.get(otherId) || 'Unbekannt';
+      const other = memberMap.get(otherId);
+      const otherName = other ? `${other.firstName} ${other.lastName}` : 'Unbekannt';
 
       let displayType;
       if (r.type === 'parent_child') {
@@ -104,7 +107,8 @@ const Relations = (() => {
         displayType = r.type;
       }
 
-      const badge = Utils.createEl('span', { className: `rel-type-badge ${displayType}`, textContent: REL_LABELS[displayType] });
+      const label = other ? Utils.genderedRelLabel(displayType, other.gender) : REL_LABELS[displayType];
+      const badge = Utils.createEl('span', { className: `rel-type-badge ${displayType}`, textContent: label });
       const nameSpan = Utils.createEl('span', { className: 'rel-name', textContent: otherName });
       const deleteBtn = Utils.createEl('button', { className: 'rel-delete', title: 'Verbindung löschen', textContent: '\u00d7' });
       const item = Utils.createEl('div', { className: 'rel-item' }, [badge, nameSpan, deleteBtn]);
@@ -179,6 +183,8 @@ const Relations = (() => {
     firstNameInput.value = preFirstName;
     const lastNameInput = Utils.createEl('input', { type: 'text', id: 'new-rel-lastname', placeholder: 'Nachname' });
     lastNameInput.value = preLastName;
+    const genderSelect = Utils.createEl('select', { id: 'new-rel-gender' });
+    genderSelect.innerHTML = '<option value="">— Bitte auswählen —</option><option value="m">Männlich</option><option value="f">Weiblich</option><option value="d">Divers</option>';
     const birthDateInput = Utils.createEl('input', { type: 'date', id: 'new-rel-birthdate' });
     Utils.attachDateAutoCorrect(birthDateInput);
     const confirmBtn = Utils.createEl('button', {
@@ -201,6 +207,9 @@ const Relations = (() => {
       Utils.createEl('div', { className: 'input-group', style: { marginBottom: '8px' } }, [
         Utils.createEl('label', { textContent: 'Nachname *' }), lastNameInput,
       ]),
+      Utils.createEl('div', { className: 'input-group', style: { marginBottom: '8px' } }, [
+        Utils.createEl('label', { textContent: 'Geschlecht *' }), genderSelect,
+      ]),
       Utils.createEl('div', { className: 'input-group', style: { marginBottom: '10px' } }, [
         Utils.createEl('label', { textContent: 'Geburtsdatum *' }), birthDateInput,
       ]),
@@ -211,10 +220,15 @@ const Relations = (() => {
     confirmBtn.addEventListener('click', async () => {
       const firstName = document.getElementById('new-rel-firstname').value.trim();
       const lastName = document.getElementById('new-rel-lastname').value.trim();
+      const newGender = document.getElementById('new-rel-gender').value;
       const birthDate = document.getElementById('new-rel-birthdate').value;
 
       if (!firstName || !lastName) {
         App.toast('Vor- und Nachname sind Pflichtfelder', 'error');
+        return;
+      }
+      if (!newGender) {
+        App.toast('Geschlecht ist ein Pflichtfeld', 'error');
         return;
       }
       if (!birthDate) {
@@ -249,6 +263,7 @@ const Relations = (() => {
           firstName,
           lastName,
           birthName: '',
+          gender: newGender,
           birthDate,
           deathDate: '',
           isDeceased: false,
@@ -343,8 +358,9 @@ const Relations = (() => {
       }
 
     } else if (relType === 'child') {
-      // fromId = parent, toId = child (parent_child stored as fromId→toId)
-      const parentId = fromId, childId = toId;
+      // "Ist Kind von..." — fromId = editing member (child), toId = target (parent)
+      // createRelationByType stores as DB.addRelationship(toId, fromId, PC)
+      const parentId = toId, childId = fromId;
       const parentRels = await DB.getRelationshipsForMember(parentId);
 
       // Other children of this parent become siblings of the new child
@@ -370,8 +386,9 @@ const Relations = (() => {
       }
 
     } else if (relType === 'parent') {
-      // fromId = child, toId = parent (parent_child stored as toId→fromId)
-      const parentId = toId, childId = fromId;
+      // "Ist Vater/Mutter von..." — fromId = editing member (parent), toId = target (child)
+      // createRelationByType stores as DB.addRelationship(fromId, toId, PC)
+      const parentId = fromId, childId = toId;
       const parentRels = await DB.getRelationshipsForMember(parentId);
 
       // Other children of this parent become siblings of the child

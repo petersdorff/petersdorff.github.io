@@ -92,6 +92,27 @@ const Relationship = (() => {
   }
 
   /**
+   * Get all ancestors of a person as a Set of IDs.
+   */
+  function getAncestorsOf(personId, graph) {
+    const { childOf } = graph;
+    const ancestors = new Set();
+    const queue = [personId];
+    const visited = new Set([personId]);
+    while (queue.length > 0) {
+      const id = queue.shift();
+      for (const parentId of (childOf.get(id) || [])) {
+        if (!visited.has(parentId)) {
+          visited.add(parentId);
+          ancestors.add(parentId);
+          queue.push(parentId);
+        }
+      }
+    }
+    return ancestors;
+  }
+
+  /**
    * Find the common ancestor between two people.
    * Returns { ancestor, stepsA, stepsB } or null.
    */
@@ -493,13 +514,28 @@ const Relationship = (() => {
     const dna = estimateSharedDNA(fromId, toId, graph);
     const path = relationship.path || findPath(fromId, toId, graph);
 
-    // Find common ancestor for display
+    // Find common ancestor for display — show both parents if possible
     const commonAncestor = findCommonAncestor(fromId, toId, graph);
     let commonAncestorName = null;
     if (commonAncestor && commonAncestor.id) {
       const ancestor = membersMap.get(commonAncestor.id);
       if (ancestor) {
-        commonAncestorName = `${ancestor.firstName} ${ancestor.lastName}`;
+        // Check if the ancestor's spouse is also a common ancestor
+        const spouses = graph.spouseOf.get(commonAncestor.id) || [];
+        let spouseAncestor = null;
+        for (const spId of spouses) {
+          const ancestorsA = getAncestorsOf(fromId, graph);
+          const ancestorsB = getAncestorsOf(toId, graph);
+          if (ancestorsA.has(spId) && ancestorsB.has(spId)) {
+            spouseAncestor = membersMap.get(spId);
+            break;
+          }
+        }
+        if (spouseAncestor) {
+          commonAncestorName = `${ancestor.firstName} ${ancestor.lastName} & ${spouseAncestor.firstName} ${spouseAncestor.lastName}`;
+        } else {
+          commonAncestorName = `${ancestor.firstName} ${ancestor.lastName}`;
+        }
       }
     }
 

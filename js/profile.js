@@ -66,6 +66,16 @@ const Profile = (() => {
       genderRow.style.display = 'none';
     }
 
+    // Occupation
+    const occupationEl = document.getElementById('profile-occupation');
+    const occupationRow = document.getElementById('profile-occupation-row');
+    if (member.occupation) {
+      occupationEl.textContent = member.occupation;
+      occupationRow.style.display = '';
+    } else {
+      occupationRow.style.display = 'none';
+    }
+
     locationEl.textContent = member.location || '—';
     contactEl.textContent = member.contact || member.email || '—';
     notesEl.textContent = member.notes || '—';
@@ -75,9 +85,9 @@ const Profile = (() => {
     if (member.isDeceased) {
       badgesEl.appendChild(Utils.createEl('span', { className: 'badge badge-deceased', textContent: '\u2020 Verstorben' }));
     }
-    if (member.claimedByUid) {
+    if (member.claimedByUid && !member.isPlaceholder) {
       badgesEl.appendChild(Utils.createEl('span', { className: 'badge', textContent: '\u2713 Registriert' }));
-    } else if (member.isPlaceholder) {
+    } else if (member.isPlaceholder || !member.claimedByUid) {
       badgesEl.appendChild(Utils.createEl('span', { className: 'badge badge-placeholder', textContent: '\u25cc Platzhalter' }));
     }
 
@@ -118,16 +128,40 @@ const Profile = (() => {
     document.getElementById('edit-birthname').value = member?.birthName || '';
     document.getElementById('edit-birthdate').value = member?.birthDate || '';
     document.getElementById('edit-deathdate').value = member?.deathDate || '';
+    document.getElementById('edit-occupation').value = member?.occupation || '';
     document.getElementById('edit-location').value = member?.location || '';
     document.getElementById('edit-email').value = member?.contact || member?.email || '';
     document.getElementById('edit-phone').value = member?.phone || '';
     document.getElementById('edit-photo').value = member?.photo || '';
+    document.getElementById('edit-photo-file').value = '';
+    const photoPreview = document.getElementById('edit-photo-preview');
+    if (member?.photo) {
+      photoPreview.innerHTML = `<img src="${Utils.escapeHtml(member.photo)}" style="max-width:80px;max-height:80px;border-radius:4px;">`;
+    } else {
+      photoPreview.innerHTML = '';
+    }
     document.getElementById('edit-notes').value = member?.notes || '';
     document.getElementById('edit-gender').value = member?.gender || '';
 
     // Attach live date auto-correction
     Utils.attachDateAutoCorrect(document.getElementById('edit-birthdate'));
     Utils.attachDateAutoCorrect(document.getElementById('edit-deathdate'));
+
+    // Protect core fields on claimed profiles: only claimer or admin can edit
+    const currentUser = Auth.getUser();
+    const isAdmin = currentUser?.email === Admin.getAdminEmail();
+    const isClaimer = member?.claimedByUid && currentUser?.id === member.claimedByUid;
+    const coreEditable = !member?.claimedByUid || isClaimer || isAdmin;
+
+    const coreFieldIds = [
+      'edit-firstname', 'edit-lastname', 'edit-birthname', 'edit-gender',
+      'edit-birthdate', 'edit-deathdate', 'edit-occupation', 'edit-location',
+      'edit-email', 'edit-phone', 'edit-photo', 'edit-notes',
+    ];
+    for (const fid of coreFieldIds) {
+      const el = document.getElementById(fid);
+      if (el) el.disabled = !coreEditable;
+    }
 
     // Clear relation search
     document.getElementById('edit-rel-type').value = '';
@@ -193,8 +227,14 @@ const Profile = (() => {
       return;
     }
 
-    if (!editingMemberId && !birthDate) {
-      App.toast('Geburtsdatum ist Pflichtfeld für neue Personen', 'error');
+    const gender = document.getElementById('edit-gender').value;
+    if (!gender) {
+      App.toast('Geschlecht ist ein Pflichtfeld', 'error');
+      return;
+    }
+
+    if (!birthDate) {
+      App.toast('Geburtsdatum ist ein Pflichtfeld', 'error');
       return;
     }
 
@@ -217,11 +257,8 @@ const Profile = (() => {
       return;
     }
 
-    const photoUrl = document.getElementById('edit-photo').value.trim();
-    if (photoUrl && !Utils.isValidUrl(photoUrl)) {
-      App.toast('Foto-URL muss mit https:// beginnen', 'error');
-      return;
-    }
+    const photoFile = document.getElementById('edit-photo-file').files[0];
+    let photoUrl = document.getElementById('edit-photo').value.trim();
 
     const email = document.getElementById('edit-email').value.trim();
     if (email && !Utils.isValidEmail(email)) {
@@ -245,15 +282,27 @@ const Profile = (() => {
       birthDate,
       deathDate,
       isDeceased: !!deathDate,
+      occupation: Utils.sanitizeInput(document.getElementById('edit-occupation').value),
       location: Utils.sanitizeInput(document.getElementById('edit-location').value),
       contact: email,
       phone: Utils.sanitizePhone(document.getElementById('edit-phone').value),
       photo: photoUrl,
       notes: Utils.sanitizeInput(notes),
-      gender: document.getElementById('edit-gender').value || null,
+      gender: gender || null,
     };
 
     try {
+      // Upload photo file if selected
+      if (photoFile && editingMemberId) {
+        try {
+          photoUrl = await DB.uploadPhoto(editingMemberId, photoFile);
+          data.photo = photoUrl;
+        } catch (uploadErr) {
+          console.error('Photo upload error:', uploadErr);
+          App.toast('Foto-Upload fehlgeschlagen', 'error');
+        }
+      }
+
       if (editingMemberId) {
         await DB.updateMember(editingMemberId, data);
         App.toast('Profil gespeichert', 'success');
@@ -263,6 +312,16 @@ const Profile = (() => {
         data.createdBy = Auth.getUser()?.id || null;
         const newId = await DB.createMember(data);
         editingMemberId = newId;
+
+        // Upload photo for newly created member
+        if (photoFile && newId) {
+          try {
+            const url = await DB.uploadPhoto(newId, photoFile);
+            await DB.updateMember(newId, { photo: url });
+          } catch (uploadErr) {
+            console.error('Photo upload error:', uploadErr);
+          }
+        }
 
         if (pendingFirstRelation) {
           const { targetId, relType } = pendingFirstRelation;

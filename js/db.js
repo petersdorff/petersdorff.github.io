@@ -64,9 +64,10 @@ const DB = (() => {
       .select()
       .single();
     if (error) {
-      // Retry without unknown columns (e.g. gender before migration)
-      if (error.code === 'PGRST204' && error.message.includes('gender')) {
+      // Retry without unknown columns (e.g. new columns before migration)
+      if (error.message && (error.message.includes('gender') || error.message.includes('occupation'))) {
         delete row.gender;
+        delete row.occupation;
         const { data: d2, error: e2 } = await supabase.from('members').insert(row).select().single();
         if (e2) throw e2;
         return d2.id;
@@ -85,9 +86,10 @@ const DB = (() => {
       .update(row)
       .eq('id', id);
     if (error) {
-      // Retry without unknown columns (e.g. gender before migration)
-      if (error.code === 'PGRST204' && error.message.includes('gender')) {
+      // Retry without unknown columns (e.g. new columns before migration)
+      if (error.message && (error.message.includes('gender') || error.message.includes('occupation'))) {
         delete row.gender;
+        delete row.occupation;
         const { error: retryErr } = await supabase.from('members').update(row).eq('id', id);
         if (retryErr) throw retryErr;
         return;
@@ -260,6 +262,25 @@ const DB = (() => {
     return true;
   }
 
+  // ─── Photo Upload ───
+
+  async function uploadPhoto(memberId, file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const path = `${memberId}.${ext}`;
+
+    // Remove old photo if exists (ignore errors)
+    await supabase.storage.from('photos').remove([path]);
+
+    const { error } = await supabase.storage
+      .from('photos')
+      .upload(path, file, { upsert: true, contentType: file.type });
+    if (error) throw error;
+
+    const { data } = supabase.storage.from('photos').getPublicUrl(path);
+    // Append cache-buster to force reload after re-upload
+    return data.publicUrl + '?t=' + Date.now();
+  }
+
   // ─── User Approvals ───
 
   async function createApprovalRequest(userUid, email, displayName) {
@@ -351,6 +372,7 @@ const DB = (() => {
       location: row.location || '',
       notes: row.notes || '',
       gender: row.gender || null,
+      occupation: row.occupation || '',
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -374,6 +396,7 @@ const DB = (() => {
     if (m.location !== undefined) row.location = m.location;
     if (m.notes !== undefined) row.notes = m.notes;
     if (m.gender !== undefined) row.gender = m.gender || null;
+    if (m.occupation !== undefined) row.occupation = m.occupation || '';
     return row;
   }
 
@@ -409,6 +432,7 @@ const DB = (() => {
     createApprovalRequest,
     getApprovalStatus,
     getPendingApprovals,
+    uploadPhoto,
     approveUser,
     rejectUser,
   };

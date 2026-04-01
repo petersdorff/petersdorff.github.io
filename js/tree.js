@@ -1207,10 +1207,6 @@ const Tree = (() => {
         node.animate({ position: pos }, { duration, easing: 'ease-in-out-cubic' });
       }
     }
-
-    setTimeout(() => {
-      cy.animate({ fit: { padding: 60 }, duration: 400, easing: 'ease-out' });
-    }, duration);
   }
 
   /**
@@ -1263,7 +1259,7 @@ const Tree = (() => {
             const year = ele.data('yearLabel');
             const sub = ele.data('subLabel');
             let text = name;
-            if (sub) text += `\n${sub}`;
+            if (sub) text += `\n${sub.startsWith('geb.') ? sub : 'geb. ' + sub}`;
             if (year) text += `\n${year}`;
             return text;
           },
@@ -1291,12 +1287,12 @@ const Tree = (() => {
       },
       {
         selector: 'node.placeholder',
-        style: { 'border-style': 'dotted' },
+        style: { 'border-style': 'dashed' },
       },
       {
         selector: 'node.deceased',
         style: {
-          'border-style': 'dashed', 'border-color': COLORS.textMuted,
+          'border-color': COLORS.textMuted,
           'color': COLORS.textMuted, 'background-color': COLORS.bgSecondary,
         },
       },
@@ -1315,7 +1311,7 @@ const Tree = (() => {
       },
       {
         selector: 'node.dimmed',
-        style: { 'opacity': 0.15 },
+        style: { 'display': 'none' },
       },
       {
         selector: 'node:selected',
@@ -1358,7 +1354,7 @@ const Tree = (() => {
       },
       {
         selector: 'edge.dimmed',
-        style: { 'opacity': 0.1 },
+        style: { 'display': 'none' },
       },
     ];
   }

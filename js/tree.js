@@ -1444,22 +1444,102 @@ const Tree = (() => {
     }
   }
 
+  // Store original positions so we can restore them when clearing highlight
+  let savedPositions = null;
+
   function highlightConnection(fromId, toId) {
     clearHighlight();
 
-    const { nodeIds: pathNodeIds, edgePairs: pathEdgePairs } = Relationship.getPathData(fromId, toId, members, relationships);
+    const { nodeIds: pathNodeIds, edgePairs: pathEdgePairs, expandedPath } = Relationship.getPathData(fromId, toId, members, relationships);
     if (pathNodeIds.length === 0) return;
 
     highlightedPath = pathNodeIds;
     highlightedFromId = fromId;
     highlightedToId = toId;
 
+    // Save all node positions before re-layout
+    savedPositions = new Map();
+    cy.nodes().forEach(n => {
+      savedPositions.set(n.id(), { ...n.position() });
+    });
+
     applyHighlightStyling(pathNodeIds, pathEdgePairs);
 
-    const pathNodes = cy.nodes().filter(n => pathNodeIds.includes(n.id()));
-    if (pathNodes.length > 0) {
-      cy.animate({ fit: { eles: pathNodes, padding: 100 }, duration: 600, easing: 'ease-out' });
+    // Re-layout path nodes compactly:
+    // Walk the expanded path, track generation level (up = -1, down = +1, spouse = 0)
+    // Then position nodes in a compact vertical layout
+    const ROW_GAP = GEN_GAP;
+    const COL_GAP = NODE_W + SPOUSE_GAP;
+
+    // Assign generation levels from the path
+    const genLevel = new Map();
+    let currentGen = 0;
+    genLevel.set(expandedPath[0].id, 0);
+
+    for (let i = 1; i < expandedPath.length; i++) {
+      const step = expandedPath[i];
+      if (step.edgeType === 'parent') {
+        currentGen -= 1; // going up
+      } else if (step.edgeType === 'child') {
+        currentGen += 1; // going down
+      }
+      // spouse stays same level
+      genLevel.set(step.id, currentGen);
     }
+
+    // Group nodes by generation level
+    const genGroups = new Map();
+    for (const [id, gen] of genLevel) {
+      if (!genGroups.has(gen)) genGroups.set(gen, []);
+      genGroups.get(gen).push(id);
+    }
+
+    // Position: center each generation row, stack vertically
+    const sortedGens = [...genGroups.keys()].sort((a, b) => a - b);
+    const centerX = 0;
+
+    for (const gen of sortedGens) {
+      const ids = genGroups.get(gen);
+      const totalWidth = ids.length * COL_GAP;
+      const startX = centerX - totalWidth / 2 + COL_GAP / 2;
+
+      for (let i = 0; i < ids.length; i++) {
+        const node = cy.getElementById(ids[i]);
+        if (node.length) {
+          node.animate({
+            position: { x: startX + i * COL_GAP, y: gen * ROW_GAP },
+          }, { duration: 500, easing: 'ease-in-out-cubic' });
+        }
+      }
+
+      // Also reposition couple midpoints between spouses on this row
+      if (ids.length === 2) {
+        const personToCouples = new Map();
+        cy.nodes('.couple-midpoint').forEach(cpNode => {
+          const cpId = cpNode.id();
+          const inner = cpId.substring('couple-'.length);
+          if (inner.length >= 73) {
+            const p1 = inner.substring(0, 36);
+            const p2 = inner.substring(37);
+            if (ids.includes(p1) && ids.includes(p2)) {
+              const x1 = startX;
+              const x2 = startX + COL_GAP;
+              cpNode.animate({
+                position: { x: (x1 + x2) / 2, y: gen * ROW_GAP },
+              }, { duration: 500, easing: 'ease-in-out-cubic' });
+            }
+          }
+        });
+      }
+    }
+
+    // Fit to the re-laid-out path nodes after animation
+    setTimeout(() => {
+      const pathNodes = cy.nodes().filter(n => pathNodeIds.includes(n.id()));
+      if (pathNodes.length > 0) {
+        cy.animate({ fit: { eles: pathNodes, padding: 80 }, duration: 400, easing: 'ease-out' });
+      }
+    }, 550);
   }
 
   function clearHighlight() {
@@ -1467,6 +1547,17 @@ const Tree = (() => {
     highlightedFromId = null;
     highlightedToId = null;
     cy.elements().removeClass('dimmed highlighted');
+
+    // Restore original positions
+    if (savedPositions) {
+      for (const [id, pos] of savedPositions) {
+        const node = cy.getElementById(id);
+        if (node.length) {
+          node.animate({ position: pos }, { duration: 500, easing: 'ease-in-out-cubic' });
+        }
+      }
+      savedPositions = null;
+    }
   }
 
   function restoreHighlight() {

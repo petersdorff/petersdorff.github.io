@@ -586,7 +586,7 @@ const Relationship = (() => {
     for (let i = 0; i < expanded.length - 1; i++) {
       edgePairs.push([expanded[i].id, expanded[i + 1].id]);
     }
-    return { nodeIds, edgePairs };
+    return { nodeIds, edgePairs, expandedPath: expanded };
   }
 
   return {

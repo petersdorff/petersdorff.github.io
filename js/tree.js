@@ -1498,48 +1498,57 @@ const Tree = (() => {
     const sortedGens = [...genGroups.keys()].sort((a, b) => a - b);
     const centerX = 0;
 
+    // Compute target positions for all path nodes first
+    const targetPos = new Map();
     for (const gen of sortedGens) {
       const ids = genGroups.get(gen);
       const totalWidth = ids.length * COL_GAP;
       const startX = centerX - totalWidth / 2 + COL_GAP / 2;
-
       for (let i = 0; i < ids.length; i++) {
-        const node = cy.getElementById(ids[i]);
-        if (node.length) {
-          node.animate({
-            position: { x: startX + i * COL_GAP, y: gen * ROW_GAP },
-          }, { duration: 500, easing: 'ease-in-out-cubic' });
-        }
+        targetPos.set(ids[i], { x: startX + i * COL_GAP, y: gen * ROW_GAP });
       }
+    }
 
-      // Also reposition couple midpoints between spouses on this row
-      if (ids.length === 2) {
-        const personToCouples = new Map();
-        cy.nodes('.couple-midpoint').forEach(cpNode => {
-          const cpId = cpNode.id();
-          const inner = cpId.substring('couple-'.length);
-          if (inner.length >= 73) {
-            const p1 = inner.substring(0, 36);
-            const p2 = inner.substring(37);
-            if (ids.includes(p1) && ids.includes(p2)) {
-              const x1 = startX;
-              const x2 = startX + COL_GAP;
-              cpNode.animate({
-                position: { x: (x1 + x2) / 2, y: gen * ROW_GAP },
-              }, { duration: 500, easing: 'ease-in-out-cubic' });
-            }
-          }
-        });
+    // Now find and position couple midpoint nodes that connect path nodes.
+    // These are the invisible nodes that edges route through.
+    cy.nodes('.couple-midpoint').forEach(cpNode => {
+      if (cpNode.hasClass('dimmed')) return; // not part of path
+      const cpId = cpNode.id();
+      const inner = cpId.substring('couple-'.length);
+      if (inner.length < 73) return;
+      const p1 = inner.substring(0, 36);
+      const p2 = inner.substring(37);
+
+      const pos1 = targetPos.get(p1);
+      const pos2 = targetPos.get(p2);
+
+      if (pos1 && pos2) {
+        // Both spouses on path — midpoint between them
+        targetPos.set(cpId, { x: (pos1.x + pos2.x) / 2, y: (pos1.y + pos2.y) / 2 });
+      } else if (pos1) {
+        // Only one spouse on path — place midpoint at that spouse's position
+        targetPos.set(cpId, { x: pos1.x, y: pos1.y });
+      } else if (pos2) {
+        targetPos.set(cpId, { x: pos2.x, y: pos2.y });
+      }
+    });
+
+    // Animate all nodes (path + couple midpoints) to their target positions
+    const animDuration = 500;
+    for (const [id, pos] of targetPos) {
+      const node = cy.getElementById(id);
+      if (node.length) {
+        node.animate({ position: pos }, { duration: animDuration, easing: 'ease-in-out-cubic' });
       }
     }
 
     // Fit to the re-laid-out path nodes after animation
     setTimeout(() => {
-      const pathNodes = cy.nodes().filter(n => pathNodeIds.includes(n.id()));
-      if (pathNodes.length > 0) {
-        cy.animate({ fit: { eles: pathNodes, padding: 80 }, duration: 400, easing: 'ease-out' });
+      const visibleNodes = cy.nodes().filter(n => !n.hasClass('dimmed'));
+      if (visibleNodes.length > 0) {
+        cy.animate({ fit: { eles: visibleNodes, padding: 80 }, duration: 400, easing: 'ease-out' });
       }
-    }, 550);
+    }, animDuration + 50);
   }
 
   function clearHighlight() {

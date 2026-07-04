@@ -1,14 +1,30 @@
 /* ═══════════════════════════════════════════════════════════
    STAMMBAUM – Connection Overlay & Deep Links
-   "How are we connected?" feature, QR scan result, deep links
+   "Wie sind wir verwandt?", QR-Scan-Ergebnis, Deep Links,
+   Schritt-für-Schritt-Erklärung des Verwandtschaftswegs
    ═══════════════════════════════════════════════════════════ */
 
 const Connection = (() => {
 
+  // Deep-link target that waits until the user's identity is known
+  // (after login OR after picking an identity in guest mode).
+  let pendingConnectId = null;
+
   async function showConnectionToMe() {
     const profileId = Profile.getCurrentProfileId();
     const myMember = Auth.getMember();
-    if (!profileId || !myMember) return;
+    if (!profileId) return;
+    if (!myMember) {
+      // No identity yet (guest without selection) → let them pick first
+      pendingConnectId = profileId;
+      if (Guest.isActive()) {
+        App.toast('Wähle zuerst, wer du bist', 'info');
+        Guest.showIdentityPicker();
+      } else {
+        App.toast('Bitte verknüpfe zuerst dein Profil', 'error');
+      }
+      return;
+    }
 
     App.showView('view-main');
     await showOverlay(myMember.id, profileId);
@@ -35,7 +51,6 @@ const Connection = (() => {
     const personB = document.getElementById('conn-person-b');
     const relationEl = document.getElementById('conn-relation');
     const dnaEl = document.getElementById('conn-dna');
-    const pathEl = document.getElementById('conn-path');
 
     personA.innerHTML = '';
     personA.appendChild(Utils.createEl('div', { className: 'conn-avatar', textContent: getInitials(memberA) }));
@@ -48,17 +63,81 @@ const Connection = (() => {
     const ancestorEl = document.getElementById('conn-ancestor');
 
     relationEl.textContent = connection.term || 'Unbekannt';
-    dnaEl.textContent = connection.sharedDNA ? `~${connection.sharedDNA}%` : '—';
-    pathEl.textContent = connection.pathLength !== null
-      ? `${connection.pathLength} Verbindung${connection.pathLength !== 1 ? 'en' : ''}`
-      : 'Kein Pfad';
+    dnaEl.textContent = connection.sharedDNA !== null && connection.sharedDNA !== undefined
+      ? `~${connection.sharedDNA}%` : '—';
     ancestorEl.textContent = connection.commonAncestor || '—';
+
+    // Step-by-step explanation of the path
+    renderSteps(fromId, toId, cachedMembers, cachedRelationships);
 
     // Show overlay
     document.getElementById('connection-overlay').classList.remove('hidden');
 
     // Highlight path in tree
     Tree.highlightConnection(fromId, toId);
+  }
+
+  /**
+   * Render the connection path as a plain-language step list:
+   * each hop explains who the person is relative to the previous one.
+   */
+  function renderSteps(fromId, toId, members, relationships) {
+    const stepsEl = document.getElementById('conn-steps');
+    stepsEl.innerHTML = '';
+
+    const { expandedPath } = Relationship.getPathData(fromId, toId, members, relationships);
+    if (!expandedPath || expandedPath.length === 0) {
+      stepsEl.appendChild(Utils.createEl('div', {
+        className: 'conn-step-hint',
+        textContent: 'Kein Verwandtschaftsweg gefunden.',
+      }));
+      return;
+    }
+
+    const byId = new Map(members.map(m => [m.id, m]));
+    const myMember = Auth.getMember();
+
+    const hopLabel = (edgeType, person, prev) => {
+      const g = person.gender;
+      const prevName = prev.firstName;
+      switch (edgeType) {
+        case 'parent':
+          return `${g === 'm' ? 'Vater' : g === 'f' ? 'Mutter' : 'Elternteil'} von ${prevName}`;
+        case 'child':
+          return `${g === 'm' ? 'Sohn' : g === 'f' ? 'Tochter' : 'Kind'} von ${prevName}`;
+        case 'spouse':
+          return `verheiratet mit ${prevName}`;
+        case 'sibling':
+          return `${g === 'm' ? 'Bruder' : g === 'f' ? 'Schwester' : 'Geschwister'} von ${prevName}`;
+        default:
+          return '';
+      }
+    };
+
+    for (let i = 0; i < expandedPath.length; i++) {
+      const step = expandedPath[i];
+      const person = byId.get(step.id);
+      if (!person) continue;
+
+      let sub = '';
+      if (i === 0) {
+        sub = myMember && person.id === myMember.id ? 'Das bist du' : 'Start';
+      } else {
+        const prev = byId.get(expandedPath[i - 1].id);
+        sub = prev ? hopLabel(step.edgeType, person, prev) : '';
+      }
+
+      const nameEl = Utils.createEl('div', {
+        className: 'conn-step-name',
+        textContent: `${person.firstName} ${person.lastName}`,
+      });
+      const subEl = Utils.createEl('div', { className: 'conn-step-sub', textContent: sub });
+      const dot = Utils.createEl('div', { className: 'conn-step-dot' });
+      const body = Utils.createEl('div', { className: 'conn-step-body' }, [nameEl, subEl]);
+      const item = Utils.createEl('div', { className: 'conn-step' }, [dot, body]);
+      item.addEventListener('click', () => Profile.show(person.id));
+      stepsEl.appendChild(item);
+    }
   }
 
   function closeOverlay() {
@@ -88,7 +167,13 @@ const Connection = (() => {
     // Show connection between me and scanned person
     const myMember = Auth.getMember();
     if (!myMember) {
-      Profile.show(memberId);
+      if (Guest.isActive()) {
+        pendingConnectId = memberId;
+        App.toast('Wähle zuerst, wer du bist', 'info');
+        Guest.showIdentityPicker();
+      } else {
+        Profile.show(memberId);
+      }
       return;
     }
 
@@ -98,18 +183,35 @@ const Connection = (() => {
 
   // ─── Deep Links ───
 
+  /**
+   * Remember a connect target from a deep link; it is resolved as soon
+   * as the user's identity is known (login or guest identity pick).
+   */
+  function setPendingConnect(memberId) {
+    pendingConnectId = memberId;
+  }
+
+  async function resolvePendingConnect() {
+    if (!pendingConnectId) return false;
+    const myMember = Auth.getMember();
+    if (!myMember) return false;
+    const targetId = pendingConnectId;
+    pendingConnectId = null;
+    if (targetId === myMember.id) return false;
+    App.showView('view-main');
+    await showOverlay(myMember.id, targetId);
+    return true;
+  }
+
   function handleDeepLink() {
     const hash = window.location.hash;
     if (hash.startsWith('#connect/')) {
       const memberId = hash.replace('#connect/', '');
-      const checkAuth = setInterval(() => {
-        const myMember = Auth.getMember();
-        if (myMember) {
-          clearInterval(checkAuth);
-          showOverlay(myMember.id, memberId);
-        }
-      }, 500);
-      setTimeout(() => clearInterval(checkAuth), 10000);
+      setPendingConnect(memberId);
+      // Clean the hash so reloads don't re-trigger
+      if (window.history.replaceState) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
     } else if (hash === '#admin') {
       const checkAdmin = setInterval(() => {
         const user = Auth.getUser();
@@ -125,6 +227,10 @@ const Connection = (() => {
     }
   }
 
+  function hasPendingConnect() {
+    return !!pendingConnectId;
+  }
+
   // ─── Helpers ───
 
   function getInitials(member) {
@@ -137,5 +243,8 @@ const Connection = (() => {
     closeOverlay,
     handleQRScanned,
     handleDeepLink,
+    setPendingConnect,
+    resolvePendingConnect,
+    hasPendingConnect,
   };
 })();

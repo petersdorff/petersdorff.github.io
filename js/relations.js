@@ -426,8 +426,19 @@ const Relations = (() => {
       if (otherSpousesA.length === 0 && otherSpousesB.length === 0) {
         const childrenA = relsA.filter(r => r.type === PC && r.fromId === fromId).map(r => r.toId);
         const childrenB = relsB.filter(r => r.type === PC && r.fromId === toId).map(r => r.toId);
-        for (const cid of childrenA) await DB.addRelationship(toId, cid, PC);
-        for (const cid of childrenB) await DB.addRelationship(fromId, cid, PC);
+        // Never create a THIRD parent: only share a child with the new
+        // spouse if the child has fewer than 2 recorded parents. Otherwise
+        // a step-parent would silently become a blood parent in the data.
+        const canAddParent = async (childId) => {
+          const childRels = await DB.getRelationshipsForMember(childId);
+          return childRels.filter(r => r.type === PC && r.toId === childId).length < 2;
+        };
+        for (const cid of childrenA) {
+          if (await canAddParent(cid)) await DB.addRelationship(toId, cid, PC);
+        }
+        for (const cid of childrenB) {
+          if (await canAddParent(cid)) await DB.addRelationship(fromId, cid, PC);
+        }
       }
     }
   }

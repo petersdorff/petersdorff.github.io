@@ -91,17 +91,19 @@ const Profile = (() => {
       badgesEl.appendChild(Utils.createEl('span', { className: 'badge badge-placeholder', textContent: '\u25cc Platzhalter' }));
     }
 
-    // Everyone can edit any profile
-    document.getElementById('btn-profile-edit').style.display = '';
+    // Everyone can edit any profile — except in read-only (guest/offline) mode
+    const readOnly = DB.isOffline();
+    document.getElementById('btn-profile-edit').style.display = readOnly ? 'none' : '';
 
-    // Show/hide "How are we connected?" button
+    // Show/hide "How are we connected?" button. In guest mode it stays
+    // visible even without identity — tapping it leads to the identity picker.
     const myMember = Auth.getMember();
-    const showConnBtn = myMember && myMember.id !== memberId;
+    const showConnBtn = (myMember && myMember.id !== memberId) || (Guest.isActive() && !myMember);
     document.getElementById('btn-show-connection').style.display = showConnBtn ? '' : 'none';
 
     // Show/hide delete button
     const isTruePlaceholder = member.isPlaceholder && !member.claimedByUid;
-    const canDelete = isTruePlaceholder && (!myMember || myMember.id !== memberId);
+    const canDelete = !readOnly && isTruePlaceholder && (!myMember || myMember.id !== memberId);
     document.getElementById('btn-delete-member').style.display = canDelete ? '' : 'none';
 
     // Show existing relationships

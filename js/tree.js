@@ -581,7 +581,8 @@ const Tree = (() => {
 
     // Person nodes
     for (const m of members) {
-      const displayName = `${m.firstName} ${m.lastName}`;
+      const isMe = m.id === currentUserId;
+      const displayName = (isMe ? '➤ DU · ' : '') + `${m.firstName} ${m.lastName}`;
       elements.push({
         group: 'nodes',
         data: {
@@ -1041,7 +1042,9 @@ const Tree = (() => {
     }
 
     // ─── Lay out each root unit's subtree ───
-    const rootUnits = genGroups[0] || [];
+    // Stable branch order: oldest root (by birth year) first, left to right.
+    const rootUnits = (genGroups[0] || []).slice()
+      .sort((a, b) => unitBirthYear(a.id).localeCompare(unitBirthYear(b.id)));
     let nextX = 0;
 
     for (const ru of rootUnits) {
@@ -1171,6 +1174,7 @@ const Tree = (() => {
       : buildGenerationalLayout(members, relationships);
     const { elements, positions } = result;
 
+    cy.resize();
     cy.elements().remove();
     cy.add(elements);
 
@@ -1184,9 +1188,24 @@ const Tree = (() => {
       if (node.length) node.addClass('current-user');
     }
 
+    // Allow zooming out far enough to actually fit large trees
+    updateMinZoom();
+
     cy.fit(undefined, 60);
     applySpouseEdgeStyle();
     cy.style().update();
+  }
+
+  /**
+   * Set minZoom so "fit all" is always reachable, even for very wide trees.
+   */
+  function updateMinZoom() {
+    const bb = cy.elements().boundingBox();
+    const w = cy.width() || 1, h = cy.height() || 1;
+    if (bb.w > 0 && bb.h > 0) {
+      const fitZoom = Math.min(w / (bb.w + 120), h / (bb.h + 120));
+      cy.minZoom(Math.min(0.1, fitZoom * 0.9));
+    }
   }
 
   /**
@@ -1444,11 +1463,9 @@ const Tree = (() => {
     }
   }
 
-  // Store original positions so we can restore them when clearing highlight
-  let savedPositions = null;
-
   function highlightConnection(fromId, toId) {
     clearHighlight();
+    cy.resize();
 
     const { nodeIds: pathNodeIds, edgePairs: pathEdgePairs, expandedPath } = Relationship.getPathData(fromId, toId, members, relationships);
     if (pathNodeIds.length === 0) return;
@@ -1456,12 +1473,6 @@ const Tree = (() => {
     highlightedPath = pathNodeIds;
     highlightedFromId = fromId;
     highlightedToId = toId;
-
-    // Save all node positions before re-layout
-    savedPositions = new Map();
-    cy.nodes().forEach(n => {
-      savedPositions.set(n.id(), { ...n.position() });
-    });
 
     applyHighlightStyling(pathNodeIds, pathEdgePairs);
 
@@ -1542,30 +1553,54 @@ const Tree = (() => {
       }
     }
 
-    // Fit to the re-laid-out path nodes after animation
-    setTimeout(() => {
-      const visibleNodes = cy.nodes().filter(n => !n.hasClass('dimmed'));
-      if (visibleNodes.length > 0) {
-        cy.animate({ fit: { eles: visibleNodes, padding: 80 }, duration: 400, easing: 'ease-out' });
-      }
-    }, animDuration + 50);
+    // Fit the viewport to the TARGET positions, computed directly —
+    // deterministic, no race with the node animations. Leaves room for
+    // the connection panel (right on desktop, bottom sheet on mobile).
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const [id, pos] of targetPos) {
+      if (id.startsWith('couple-')) continue;
+      minX = Math.min(minX, pos.x - NODE_W / 2);
+      maxX = Math.max(maxX, pos.x + NODE_W / 2);
+      minY = Math.min(minY, pos.y - NODE_H / 2);
+      maxY = Math.max(maxY, pos.y + NODE_H / 2);
+    }
+    if (isFinite(minX)) {
+      cy.stop(); // cancel queued viewport animations (e.g. a running centerOn)
+      const isDesktop = window.innerWidth >= 600;
+      const panelW = isDesktop ? Math.min(320, cy.width() * 0.5) : 0;
+      const panelH = isDesktop ? 0 : Math.min(window.innerHeight * 0.45, cy.height() * 0.5);
+      const pad = 50;
+      const availW = cy.width() - panelW - 2 * pad;
+      const availH = cy.height() - panelH - 2 * pad;
+      const zoom = Math.max(cy.minZoom(),
+        Math.min(1.1, availW / (maxX - minX), availH / (maxY - minY)));
+      const cx = (minX + maxX) / 2, cyMid = (minY + maxY) / 2;
+      const pan = {
+        x: (cy.width() - panelW) / 2 - zoom * cx,
+        y: (cy.height() - panelH) / 2 - zoom * cyMid,
+      };
+      cy.animate({ zoom, pan }, { duration: animDuration, easing: 'ease-in-out-cubic' });
+    }
   }
 
   function clearHighlight() {
+    const hadHighlight = highlightedFromId && highlightedToId;
     highlightedPath = [];
     highlightedFromId = null;
     highlightedToId = null;
     cy.elements().removeClass('dimmed highlighted');
 
-    // Restore original positions
-    if (savedPositions) {
-      for (const [id, pos] of savedPositions) {
+    // Restore positions deterministically by re-running the current layout
+    if (hadHighlight && members.length > 0) {
+      const result = viewMode === 'temporal'
+        ? buildTemporalLayout(members, relationships)
+        : buildGenerationalLayout(members, relationships);
+      for (const [id, pos] of Object.entries(result.positions)) {
         const node = cy.getElementById(id);
         if (node.length) {
-          node.animate({ position: pos }, { duration: 500, easing: 'ease-in-out-cubic' });
+          node.animate({ position: pos }, { duration: 400, easing: 'ease-in-out-cubic' });
         }
       }
-      savedPositions = null;
     }
   }
 
@@ -1583,14 +1618,26 @@ const Tree = (() => {
   //  NAVIGATION
   // ═══════════════════════════════════════════════════════════
 
-  function centerOn(memberId, zoom = 1.5) {
+  function centerOn(memberId, zoom = 1.5, animate = true) {
     const node = cy.getElementById(memberId);
     if (node.length) {
-      cy.animate({ center: { eles: node }, zoom, duration: 500, easing: 'ease-out' });
+      // Refresh cached container size — it may have been 0 while the
+      // main view was hidden (display:none), which breaks center math.
+      cy.resize();
+      if (animate) {
+        cy.animate({ center: { eles: node }, zoom, duration: 500, easing: 'ease-out' });
+      } else {
+        // Instant placement for the initial view: works even in background
+        // tabs where requestAnimationFrame (and thus animations) is frozen.
+        cy.zoom(zoom);
+        cy.center(node);
+      }
     }
   }
 
   function fitAll() {
+    cy.resize();
+    updateMinZoom();
     cy.animate({ fit: { padding: 60 }, duration: 500, easing: 'ease-out' });
   }
 

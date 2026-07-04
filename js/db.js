@@ -4,9 +4,50 @@
 
 const DB = (() => {
   let supabase = null;
+  let offlineMode = false;
 
   function init(supabaseClient) {
     supabase = supabaseClient;
+  }
+
+  // ─── Offline-Fallback (gebündelter Snapshot) ───
+  // Wird aktiv, wenn Supabase nicht erreichbar ist (Projekt pausiert/gelöscht
+  // oder kein Netz). Lesend voll funktionsfähig, Schreiben deaktiviert.
+
+  function isOffline() {
+    return offlineMode;
+  }
+
+  function setOffline(value) {
+    offlineMode = value;
+  }
+
+  function snapshotAvailable() {
+    return typeof LocalSnapshot !== 'undefined'
+      && Array.isArray(LocalSnapshot.members)
+      && LocalSnapshot.members.length > 0;
+  }
+
+  function getSnapshotGraph() {
+    return {
+      members: LocalSnapshot.members.map(mapMember),
+      relationships: LocalSnapshot.relationships.map(mapRelationship),
+    };
+  }
+
+  function assertWritable() {
+    if (offlineMode) {
+      const err = new Error('offline');
+      err.userMessage = 'Offline-Modus: Änderungen sind zurzeit nicht möglich.';
+      throw err;
+    }
+  }
+
+  function withTimeout(promise, ms, label) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`${label || 'DB'} Timeout nach ${ms}ms`)), ms)),
+    ]);
   }
 
   // ─── Members ───
@@ -21,6 +62,10 @@ const DB = (() => {
   }
 
   async function getMember(id) {
+    if (offlineMode) {
+      const row = LocalSnapshot.members.find(m => m.id === id);
+      return row ? mapMember(row) : null;
+    }
     const { data, error } = await supabase
       .from('members')
       .select('*')
@@ -32,6 +77,12 @@ const DB = (() => {
 
   async function searchMembers(query) {
     const q = query.toLowerCase().trim();
+    if (offlineMode) {
+      const all = LocalSnapshot.members.map(mapMember);
+      if (!q) return all;
+      return all.filter(m =>
+        `${m.firstName} ${m.lastName} ${m.birthName || ''}`.toLowerCase().includes(q));
+    }
     if (!q) return getAllMembers();
 
     // Escape PostgREST filter special characters to prevent filter syntax injection
@@ -57,6 +108,7 @@ const DB = (() => {
   }
 
   async function createMember(memberData) {
+    assertWritable();
     const row = unmapMember(memberData);
     const { data, error } = await supabase
       .from('members')
@@ -78,6 +130,7 @@ const DB = (() => {
   }
 
   async function updateMember(id, memberData) {
+    assertWritable();
     const row = unmapMember(memberData);
     delete row.id;
     delete row.created_at;
@@ -99,6 +152,7 @@ const DB = (() => {
   }
 
   async function claimMember(memberId, uid) {
+    assertWritable();
     const { error } = await supabase
       .from('members')
       .update({
@@ -110,6 +164,7 @@ const DB = (() => {
   }
 
   async function deleteMember(id) {
+    assertWritable();
     // Relationships cascade on delete via FK constraint
     const { error } = await supabase
       .from('members')
@@ -129,6 +184,7 @@ const DB = (() => {
   }
 
   async function addRelationship(fromId, toId, type, metadata = {}) {
+    assertWritable();
     // Check for existing
     const { data: existing } = await supabase
       .from('relationships')
@@ -170,6 +226,7 @@ const DB = (() => {
   }
 
   async function removeRelationship(id) {
+    assertWritable();
     const { error } = await supabase
       .from('relationships')
       .delete()
@@ -178,6 +235,11 @@ const DB = (() => {
   }
 
   async function getRelationshipsForMember(memberId) {
+    if (offlineMode) {
+      return LocalSnapshot.relationships
+        .filter(r => r.from_id === memberId || r.to_id === memberId)
+        .map(mapRelationship);
+    }
     const { data, error } = await supabase
       .from('relationships')
       .select('*')
@@ -189,11 +251,22 @@ const DB = (() => {
   // ─── Full Graph ───
 
   async function getFullGraph() {
-    const [members, relationships] = await Promise.all([
-      getAllMembers(),
-      getAllRelationships(),
-    ]);
-    return { members, relationships };
+    if (offlineMode) return getSnapshotGraph();
+    try {
+      const [members, relationships] = await withTimeout(
+        Promise.all([getAllMembers(), getAllRelationships()]),
+        6000, 'getFullGraph'
+      );
+      return { members, relationships };
+    } catch (err) {
+      // Supabase nicht erreichbar → auf gebündelten Snapshot ausweichen
+      if (snapshotAvailable()) {
+        console.warn('[DB] Supabase nicht erreichbar, nutze lokalen Snapshot:', err.message);
+        offlineMode = true;
+        return getSnapshotGraph();
+      }
+      throw err;
+    }
   }
 
   // ─── Seed Demo Data ───
@@ -265,6 +338,7 @@ const DB = (() => {
   // ─── Photo Upload ───
 
   async function uploadPhoto(memberId, file) {
+    assertWritable();
     const ext = file.name.split('.').pop().toLowerCase();
     const path = `${memberId}.${ext}`;
 
@@ -415,6 +489,10 @@ const DB = (() => {
 
   return {
     init,
+    isOffline,
+    setOffline,
+    snapshotAvailable,
+    getSnapshotGraph,
     getAllMembers,
     getMember,
     searchMembers,

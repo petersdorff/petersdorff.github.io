@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Lokale Tool-Konfiguration
+.claude/
+
+# Skripte mit Service-Role-Keys — NIEMALS committen.
+# (Der Service-Role-Key umgeht alle Row-Level-Security-Regeln.)
+fetch-db.sh
+update-db.sh
+
+# Python
+__pycache__/

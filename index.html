@@ -11,7 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=4">
 </head>
 <body>
 
@@ -86,6 +86,9 @@
         <button id="btn-login" class="btn btn-primary">Anmelden</button>
         <p class="auth-forgot"><a href="#" id="show-forgot">Passwort vergessen?</a></p>
         <p class="auth-switch">Noch kein Konto? <a href="#" id="show-register">Registrieren</a></p>
+        <div class="claim-divider"><span>oder</span></div>
+        <button id="btn-guest" class="btn btn-secondary">Familientag: Ohne Konto ansehen</button>
+        <p class="auth-hint" style="margin-top:8px;">Stammbaum ansehen &amp; Verwandtschaft entdecken – ganz ohne Registrierung.</p>
       </div>
 
       <!-- Forgot Password Form -->
@@ -196,6 +199,27 @@
   </div>
 
   <!-- ═══════════════════════════════════════ -->
+  <!-- WHO AM I (Familientag identity picker)   -->
+  <!-- ═══════════════════════════════════════ -->
+  <div id="view-whoami" class="view">
+    <div class="claim-container">
+      <div class="view-header">
+        <h2>Wer bist du?</h2>
+        <p>Wähle dich selbst im Stammbaum aus – dann siehst du sofort, wie du mit allen anderen verwandt bist.</p>
+      </div>
+      <div class="input-group">
+        <label>Dein Name</label>
+        <input type="text" id="whoami-search" placeholder="Vor- oder Nachname eingeben..." autocomplete="off">
+      </div>
+      <div id="whoami-results" class="claim-results"></div>
+      <div class="claim-divider">
+        <span>oder</span>
+      </div>
+      <button id="btn-whoami-skip" class="btn btn-secondary">Nur ansehen (ohne Auswahl)</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════ -->
   <!-- MAIN APP VIEW                            -->
   <!-- ═══════════════════════════════════════ -->
   <div id="view-main" class="view">
@@ -243,6 +267,12 @@
     <!-- Tree Container -->
     <div id="tree-container"></div>
 
+    <!-- Offline / read-only banner -->
+    <div id="offline-banner" class="offline-banner hidden">
+      <span class="offline-dot"></span>
+      <span id="offline-banner-text">Offline-Modus – Daten vom lokalen Stand</span>
+    </div>
+
     <!-- Search Results Dropdown -->
     <div id="search-results" class="search-results hidden"></div>
 
@@ -278,21 +308,25 @@
           <div class="connection-person" id="conn-person-b"></div>
         </div>
         <div id="connection-details">
-          <div class="conn-detail">
+          <div class="conn-detail conn-detail-main">
             <span class="conn-label">Verwandtschaft</span>
             <span class="conn-value" id="conn-relation">—</span>
+          </div>
+          <div class="conn-steps-wrap">
+            <span class="conn-label">So seid ihr verbunden</span>
+            <div id="conn-steps" class="conn-steps"></div>
+          </div>
+          <div class="conn-detail">
+            <span class="conn-label">Gemeinsamer Vorfahre</span>
+            <span class="conn-value" id="conn-ancestor">—</span>
           </div>
           <div class="conn-detail">
             <span class="conn-label">Gemeinsame DNA</span>
             <span class="conn-value" id="conn-dna">—</span>
           </div>
-          <div class="conn-detail">
+          <div class="conn-detail hidden" id="conn-path-row">
             <span class="conn-label">Pfadlänge</span>
             <span class="conn-value" id="conn-path">—</span>
-          </div>
-          <div class="conn-detail">
-            <span class="conn-label">Gemeinsamer Vorfahre</span>
-            <span class="conn-value" id="conn-ancestor">—</span>
           </div>
         </div>
       </div>
@@ -539,6 +573,9 @@
         <li><a href="#" id="menu-scan">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
           QR scannen</a></li>
+        <li id="menu-whoami-item" style="display:none;"><a href="#" id="menu-whoami">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Wer bin ich?</a></li>
         <li id="menu-admin-item" style="display:none;"><a href="#" id="menu-admin">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           Nutzer-Verwaltung</a></li>
@@ -572,18 +609,20 @@
   <script defer src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
   <!-- App modules -->
-  <script src="js/utils.js?v=4"></script>
-  <script src="js/db.js?v=22"></script>
-  <script src="js/auth.js?v=27"></script>
-  <script src="js/relationship.js?v=25"></script>
-  <script src="js/tree.js?v=73"></script>
-  <script src="js/qr.js?v=20"></script>
-  <script src="js/search.js?v=19"></script>
-  <script src="js/admin.js?v=1"></script>
-  <script src="js/claim.js?v=2"></script>
-  <script src="js/connection.js?v=1"></script>
-  <script src="js/relations.js?v=6"></script>
-  <script src="js/profile.js?v=26"></script>
-  <script src="js/app.js?v=35"></script>
+  <script src="js/utils.js?v=7"></script>
+  <script src="js/data-snapshot.js?v=3"></script>
+  <script src="js/db.js?v=25"></script>
+  <script src="js/auth.js?v=30"></script>
+  <script src="js/relationship.js?v=28"></script>
+  <script src="js/tree.js?v=78"></script>
+  <script src="js/qr.js?v=23"></script>
+  <script src="js/search.js?v=22"></script>
+  <script src="js/admin.js?v=4"></script>
+  <script src="js/claim.js?v=5"></script>
+  <script src="js/guest.js?v=4"></script>
+  <script src="js/connection.js?v=4"></script>
+  <script src="js/relations.js?v=10"></script>
+  <script src="js/profile.js?v=29"></script>
+  <script src="js/app.js?v=39"></script>
 </body>
 </html>

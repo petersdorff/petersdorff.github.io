@@ -114,10 +114,14 @@ const Relationship = (() => {
 
   /**
    * Find the common ancestor between two people.
-   * Returns { ancestor, stepsA, stepsB } or null.
+   * Returns { id, stepsA, stepsB, isCouple } or null.
+   * isCouple: true if the ancestor's spouse is ALSO a common ancestor at the
+   * same distances — i.e. a full (vollbürtig) relationship. false means the
+   * relation runs over a single shared ancestor (halbbürtig, e.g. half-siblings
+   * or relatives via a second marriage) and shares only half the DNA.
    */
   function findCommonAncestor(fromId, toId, graph) {
-    const { childOf } = graph;
+    const { childOf, spouseOf } = graph;
 
     // Get all ancestors of person A with their distance
     function getAncestors(personId) {
@@ -156,6 +160,13 @@ const Relationship = (() => {
       }
     }
 
+    if (bestAncestor) {
+      bestAncestor.isCouple = (spouseOf.get(bestAncestor.id) || []).some(spId =>
+        ancestorsA.get(spId) === bestAncestor.stepsA &&
+        ancestorsB.get(spId) === bestAncestor.stepsB
+      );
+    }
+
     return bestAncestor;
   }
 
@@ -191,7 +202,7 @@ const Relationship = (() => {
    * Uses the path and common ancestor analysis following proper
    * German genealogical terminology.
    */
-  function getRelationshipTerm(fromId, toId, graph, membersMap) {
+  function getRelationshipTerm(fromId, toId, graph, membersMap, genderOverride = null) {
     if (fromId === toId) return { term: 'Ich selbst', degree: 0 };
 
     const path = findPath(fromId, toId, graph);
@@ -200,9 +211,12 @@ const Relationship = (() => {
     // Analyze path for edge types
     const edges = path.slice(1).map(p => p.edgeType);
 
-    // Get gender of the target person for gendered terms
+    // Get gender of the target person for gendered terms.
+    // genderOverride is used when wording an in-law relation: the blood
+    // relation is computed towards the PARTNER, but the term must use the
+    // gender of the actual target person (Onkels Frau → "Tante").
     const targetPerson = membersMap.get(toId);
-    const gender = targetPerson?.gender || null;
+    const gender = genderOverride !== null ? genderOverride : (targetPerson?.gender || null);
 
     // Detect if path goes through a spouse edge (in-law / angeheiratet)
     const hasSpouse = edges.includes('spouse');
@@ -248,9 +262,13 @@ const Relationship = (() => {
       const stepsA = common.stepsA;  // steps from person A to common ancestor
       const stepsB = common.stepsB;  // steps from person B to common ancestor
 
+      // A blood common ancestor exists → this IS a blood relation, even if
+      // the shortest BFS path happens to take a shortcut over a marriage.
+      // "halbbürtig" (single shared ancestor) is noted for siblings.
       const result = getTermFromAncestorSteps(stepsA, stepsB, gender);
-      const suffix = hasSpouse ? ' (angeheiratet)' : '';
-      return { term: result.term + suffix, degree: result.degree, path };
+      const halb = !common.isCouple && stepsA === 1 && stepsB === 1 ? 'Halb' : '';
+      const term = halb ? halb + result.term.toLowerCase() : result.term;
+      return { term, degree: result.degree, path };
     }
 
     // ─── Path-based fallback (no common ancestor found) ───
@@ -277,12 +295,12 @@ const Relationship = (() => {
       const firstEdge = edges[0];
 
       if (lastEdge === 'spouse') {
-        // Target is the spouse of someone we're blood-related to
+        // Target is the spouse of someone we're blood-related to.
+        // Compute the blood relation to the partner, but word it with the
+        // TARGET's gender (Onkels Frau ist die "Tante", nicht der "Onkel").
         const partnerId = path[path.length - 2].id;
-        const partnerGender = membersMap.get(partnerId)?.gender || null;
-        const bloodResult = getRelationshipTerm(fromId, partnerId, graph, membersMap);
+        const bloodResult = getRelationshipTerm(fromId, partnerId, graph, membersMap, gender || 'x');
         if (bloodResult.term && !bloodResult.term.startsWith('Verwandt')) {
-          const targetGender = gender;
           const base = bloodResult.term.replace(' (angeheiratet)', '');
           return { term: base + ' (angeheiratet)', degree: bloodResult.degree, path };
         }
@@ -482,11 +500,14 @@ const Relationship = (() => {
         return Math.max(0.01, (100 / Math.pow(2, generations))).toFixed(2);
       }
 
-      // For relatives through common ancestor:
-      // Shared DNA ≈ (1/2)^(stepsA + stepsB) * 100 * 2
-      // The *2 accounts for two paths through both common ancestors (couple)
+      // Relatives via common ancestor(s):
+      // Full relation (ancestor COUPLE shared): (1/2)^(stepsA+stepsB-1)
+      //   → Geschwister 50%, Cousins 12.5%, ...
+      // Half relation (only ONE shared ancestor, e.g. half-siblings or
+      // lines from different marriages): half of that → (1/2)^(stepsA+stepsB)
       const totalSteps = stepsA + stepsB;
-      const shared = (1 / Math.pow(2, totalSteps - 1)) * 100;
+      const exponent = common.isCouple ? totalSteps - 1 : totalSteps;
+      const shared = (1 / Math.pow(2, exponent)) * 100;
       return Math.max(0.01, shared).toFixed(2);
     }
 

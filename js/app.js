@@ -52,7 +52,14 @@ const App = (() => {
               return;
             }
           } catch (err) {
+            // Backend nicht erreichbar (z.B. Projekt pausiert): statt den Nutzer
+            // auf dem Warte-Screen zu stranden, lesend in den Offline-Modus gehen.
             console.error('[App] Approval check failed:', err);
+            if (DB.snapshotAvailable()) {
+              toast('Server nicht erreichbar – Offline-Modus', 'info');
+              await Guest.enter();
+              return;
+            }
             showView('view-pending');
             return;
           }
@@ -63,12 +70,23 @@ const App = (() => {
           showView('loading-screen');
           await loadTree();
           showView('view-main');
-          Admin.updateAdminMenu(isAdmin);
+          applyReadOnlyUI();
+          Admin.updateAdminMenu(isAdmin && !DB.isOffline());
+          // Auf mich zentrieren statt "Wand aus 113 Kästchen"
+          Tree.centerOn(member.id, 0.9, false);
+          const resolved = await Connection.resolvePendingConnect();
+          if (resolved) return;
         } else {
           showView('view-claim');
         }
       } else {
         authHandled = false;
+        // Familientag: wer schon mal als Gast eine Identität gewählt hat,
+        // landet direkt wieder im Stammbaum statt auf dem Login.
+        if (Guest.hasStoredIdentity() && DB.snapshotAvailable()) {
+          await Guest.enter();
+          return;
+        }
         showView('view-auth');
       }
     });
@@ -138,6 +156,15 @@ const App = (() => {
     // Claim view
     document.getElementById('claim-search').addEventListener('input', Claim.handleClaimSearch);
     document.getElementById('btn-claim-new').addEventListener('click', Claim.handleClaimNew);
+
+    // Guest / Familientag mode
+    document.getElementById('btn-guest').addEventListener('click', () => Guest.enter());
+    document.getElementById('whoami-search').addEventListener('input',
+      Utils.debounce(Guest.handleSearchInput, 150));
+    document.getElementById('btn-whoami-skip').addEventListener('click', Guest.skipIdentity);
+    document.getElementById('menu-whoami').addEventListener('click', (e) => {
+      e.preventDefault(); closeMenu(); Guest.showIdentityPicker();
+    });
 
     // Top bar
     document.getElementById('btn-menu').addEventListener('click', openMenu);
@@ -230,7 +257,12 @@ const App = (() => {
       e.preventDefault(); closeMenu(); openScanner();
     });
     document.getElementById('menu-logout').addEventListener('click', (e) => {
-      e.preventDefault(); closeMenu(); Auth.logout();
+      e.preventDefault(); closeMenu();
+      if (Guest.isActive()) {
+        Guest.exit();
+      } else {
+        Auth.logout();
+      }
     });
     document.getElementById('menu-admin').addEventListener('click', (e) => {
       e.preventDefault(); closeMenu(); Admin.showAdminPanel();
@@ -292,10 +324,48 @@ const App = (() => {
       Tree.render(cachedMembers, cachedRelationships);
       Search.setMembers(cachedMembers);
       updateMenuUser();
+      updateOfflineBanner();
     } catch (err) {
       console.error('Load tree error:', err);
       toast('Fehler beim Laden des Stammbaums', 'error');
     }
+  }
+
+  // ─── Offline banner & read-only UI ───
+
+  function updateOfflineBanner() {
+    const banner = document.getElementById('offline-banner');
+    if (!banner) return;
+    if (DB.isOffline()) {
+      const textEl = document.getElementById('offline-banner-text');
+      const date = (typeof LocalSnapshot !== 'undefined' && LocalSnapshot.snapshot_date) || '';
+      textEl.textContent = Guest.isActive()
+        ? `Familientag-Modus · Datenstand ${date}`
+        : `Offline-Modus · Datenstand ${date}`;
+      banner.classList.remove('hidden');
+    } else {
+      banner.classList.add('hidden');
+    }
+  }
+
+  /**
+   * Hide all editing affordances when the data source is read-only
+   * (guest mode or offline fallback).
+   */
+  function applyReadOnlyUI() {
+    const readOnly = DB.isOffline();
+    document.getElementById('fab-add').style.display = readOnly ? 'none' : '';
+    const whoamiItem = document.getElementById('menu-whoami-item');
+    if (whoamiItem) whoamiItem.style.display = Guest.isActive() ? '' : 'none';
+    updateOfflineBanner();
+  }
+
+  /**
+   * Re-apply the current-user marking on the tree without a full reload
+   * (used after picking an identity in guest mode).
+   */
+  function refreshTreeHighlight() {
+    Tree.render(cachedMembers, cachedRelationships);
   }
 
   async function refreshTree() {
@@ -357,7 +427,7 @@ const App = (() => {
 
     if (member) {
       nameEl.textContent = `${member.firstName} ${member.lastName}`;
-      emailEl.textContent = user?.email || '';
+      emailEl.textContent = user?.email || (Guest.isActive() ? 'Familientag-Modus' : '');
 
       if (member.photo) {
         photoEl.innerHTML = '';
@@ -372,6 +442,10 @@ const App = (() => {
       nameEl.textContent = displayName;
       emailEl.textContent = user.email || '';
       photoEl.textContent = (displayName || 'U')[0];
+    } else {
+      nameEl.textContent = 'Gast';
+      emailEl.textContent = Guest.isActive() ? 'Familientag-Modus' : '';
+      photoEl.textContent = 'G';
     }
   }
 
@@ -380,7 +454,12 @@ const App = (() => {
   function showMyQR() {
     const member = Auth.getMember();
     if (!member) {
-      toast('Bitte verknüpfe zuerst dein Profil', 'error');
+      if (Guest.isActive()) {
+        toast('Wähle zuerst, wer du bist', 'info');
+        Guest.showIdentityPicker();
+      } else {
+        toast('Bitte verknüpfe zuerst dein Profil', 'error');
+      }
       return;
     }
     QR.generate('qr-code-canvas', member.id);
@@ -476,6 +555,9 @@ const App = (() => {
     toast,
     refreshTree,
     loadTree,
+    applyReadOnlyUI,
+    refreshTreeHighlight,
+    updateOfflineBanner,
     getCachedMembers() { return cachedMembers; },
     getCachedRelationships() { return cachedRelationships; },
   };

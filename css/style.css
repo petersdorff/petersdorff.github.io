@@ -672,10 +672,15 @@ a {
 
 .legend-panel {
   position: absolute;
-  bottom: 88px;
-  right: 16px;
-  width: 260px;
-  max-width: 80vw;
+  /* Links neben der FAB-Spalte und über dem Offline-Banner, damit sie
+     weder die Buttons (3 im Gastmodus, 4 eingeloggt) noch den Banner
+     unten in der Mitte verdeckt. */
+  bottom: 60px;
+  right: 76px;
+  width: 250px;
+  max-width: calc(100vw - 100px);
+  max-height: calc(100% - 100px);
+  overflow-y: auto;
   background: var(--bg);
   border: 2px solid var(--trace);
   border-radius: var(--radius-lg);
@@ -1466,6 +1471,9 @@ a {
   }
   #fab-container {
     bottom: max(24px, calc(env(safe-area-inset-bottom) + 12px));
+  }
+  .legend-panel {
+    bottom: max(60px, calc(env(safe-area-inset-bottom) + 48px));
   }
   .menu-header {
     padding-top: max(32px, calc(env(safe-area-inset-top) + 12px));

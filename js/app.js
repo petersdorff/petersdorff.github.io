@@ -176,6 +176,12 @@ const App = (() => {
     document.getElementById('fab-add').addEventListener('click', () => Profile.edit(null));
     document.getElementById('fab-myqr').addEventListener('click', showMyQR);
     document.getElementById('fab-center').addEventListener('click', centerOnMe);
+    document.getElementById('fab-legend').addEventListener('click', () => {
+      document.getElementById('legend-panel').classList.toggle('hidden');
+    });
+    document.getElementById('legend-close').addEventListener('click', () => {
+      document.getElementById('legend-panel').classList.add('hidden');
+    });
 
     // Profile view
     document.getElementById('btn-profile-back').addEventListener('click', () => {

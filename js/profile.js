@@ -85,10 +85,10 @@ const Profile = (() => {
     if (member.isDeceased) {
       badgesEl.appendChild(Utils.createEl('span', { className: 'badge badge-deceased', textContent: '\u2020 Verstorben' }));
     }
-    if (member.claimedByUid && !member.isPlaceholder) {
-      badgesEl.appendChild(Utils.createEl('span', { className: 'badge', textContent: '\u2713 Registriert' }));
-    } else if (member.isPlaceholder || !member.claimedByUid) {
+    if (member.isPlaceholder) {
       badgesEl.appendChild(Utils.createEl('span', { className: 'badge badge-placeholder', textContent: '\u25cc Platzhalter' }));
+    } else {
+      badgesEl.appendChild(Utils.createEl('span', { className: 'badge', textContent: '\u2713 Registriert' }));
     }
 
     // Everyone can edit any profile — except in read-only (guest/offline) mode

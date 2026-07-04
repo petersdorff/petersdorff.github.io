@@ -667,6 +667,80 @@ a {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   LEGEND PANEL — meaning of node border styles
+   ═══════════════════════════════════════════════════════════ */
+
+.legend-panel {
+  position: absolute;
+  bottom: 88px;
+  right: 16px;
+  width: 260px;
+  max-width: 80vw;
+  background: var(--bg);
+  border: 2px solid var(--trace);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 12px 14px;
+  z-index: 60;
+  font-size: 12px;
+}
+
+.legend-panel.hidden {
+  display: none;
+}
+
+.legend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.legend-close {
+  border: none;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  color: var(--text-secondary);
+}
+
+.legend-swatch {
+  flex: none;
+  width: 22px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--bg);
+}
+
+.legend-swatch-solid {
+  border: 2px solid var(--trace);
+}
+
+.legend-swatch-dashed {
+  border: 2px dashed var(--trace);
+}
+
+.legend-swatch-deceased {
+  border: 2px solid var(--text-muted);
+  background: var(--bg-secondary);
+}
+
+.legend-swatch-current {
+  border: 3px solid var(--red);
+  background: #fff5f5;
+}
+
+/* ═══════════════════════════════════════════════════════════
    CONNECTION SIDE PANEL
    Slides in from the right, doesn't cover the tree
    ═══════════════════════════════════════════════════════════ */

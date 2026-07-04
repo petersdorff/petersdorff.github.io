@@ -11,7 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=4">
+  <link rel="stylesheet" href="css/style.css?v=5">
 </head>
 <body>
 
@@ -294,6 +294,35 @@
           <circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
         </svg>
       </button>
+      <button id="fab-legend" class="fab fab-small" aria-label="Zeichenerklärung" title="Was bedeuten die Rahmen?">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><circle cx="12" cy="8" r="0.5" fill="currentColor"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Legend: meaning of node border styles -->
+    <div id="legend-panel" class="legend-panel hidden">
+      <div class="legend-header">
+        <span>Zeichenerklärung</span>
+        <button class="legend-close" id="legend-close" aria-label="Schließen">&times;</button>
+      </div>
+      <div class="legend-item">
+        <span class="legend-swatch legend-swatch-solid"></span>
+        <span>Durchgezogen — registriert (Profil beansprucht)</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-swatch legend-swatch-dashed"></span>
+        <span>Gestrichelt — Platzhalter (noch nicht beansprucht)</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-swatch legend-swatch-deceased"></span>
+        <span>Grau — verstorben</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-swatch legend-swatch-current"></span>
+        <span>Rot, dick — du, ausgewählt oder Verwandtschaftspfad</span>
+      </div>
     </div>
 
     <!-- Connection Side Panel (shown when comparing two profiles) -->
@@ -622,7 +651,7 @@
   <script src="js/guest.js?v=4"></script>
   <script src="js/connection.js?v=4"></script>
   <script src="js/relations.js?v=10"></script>
-  <script src="js/profile.js?v=29"></script>
-  <script src="js/app.js?v=39"></script>
+  <script src="js/profile.js?v=30"></script>
+  <script src="js/app.js?v=40"></script>
 </body>
 </html>

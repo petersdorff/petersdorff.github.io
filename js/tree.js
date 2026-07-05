@@ -1671,6 +1671,7 @@ const Tree = (() => {
       // Refresh cached container size — it may have been 0 while the
       // main view was hidden (display:none), which breaks center math.
       cy.resize();
+      if (zoom === null) zoom = cy.zoom(); // null = keep current zoom
       if (animate) {
         cy.animate({ center: { eles: node }, zoom, duration: 500, easing: 'ease-out' });
       } else {

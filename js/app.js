@@ -12,7 +12,6 @@ const App = (() => {
   let cachedRelationships = [];
   let isInitialized = false;
   let authHandled = false;
-  let focusMemberId = null;
 
   // ─── Initialize ───
 
@@ -212,11 +211,6 @@ const App = (() => {
         setTimeout(() => Tree.centerOn(profileId), 300);
       }
     });
-    document.getElementById('btn-focus-tree').addEventListener('click', () => {
-      const profileId = Profile.getCurrentProfileId();
-      if (profileId) enterFocus(profileId);
-    });
-    document.getElementById('btn-focus-exit').addEventListener('click', exitFocus);
 
     // Edit view
     document.getElementById('btn-edit-cancel').addEventListener('click', () => {
@@ -301,8 +295,10 @@ const App = (() => {
     // Admin panel back button
     document.getElementById('btn-admin-back').addEventListener('click', () => showView('view-main'));
 
-    // Tree node tap
+    // Tree node tap: center the person (instantly, at the current zoom —
+    // an animation would be cut off by the view switch), then open profile
     Tree.onNodeTap((nodeId) => {
+      Tree.centerOn(nodeId, null, false);
       Profile.show(nodeId);
     });
 
@@ -343,81 +339,8 @@ const App = (() => {
     }
   }
 
-  // ─── Fokus-Modus (Person ±2 Generationen) ───
-
-  /**
-   * Wer gehört zum "Umfeld" einer Person? Vorfahren bis 2 Generationen
-   * samt deren Kindern (Geschwister, Onkel/Tanten), Nachkommen bis
-   * 2 Generationen, und die Partner aller Enthaltenen.
-   */
-  function computeFocusSubset(focusId) {
-    const parentsOf = new Map(), childrenOf = new Map(), spousesOf = new Map();
-    const add = (map, k, v) => { if (!map.has(k)) map.set(k, []); map.get(k).push(v); };
-    for (const r of cachedRelationships) {
-      if (r.type === 'parent_child') { add(parentsOf, r.toId, r.fromId); add(childrenOf, r.fromId, r.toId); }
-      else if (r.type === 'spouse') { add(spousesOf, r.fromId, r.toId); add(spousesOf, r.toId, r.fromId); }
-    }
-    const include = new Set([focusId]);
-    let level = [focusId];
-    for (let g = 0; g < 2; g++) {
-      const next = [];
-      for (const id of level) {
-        for (const p of (parentsOf.get(id) || [])) {
-          if (!include.has(p)) { include.add(p); next.push(p); }
-          for (const c of (childrenOf.get(p) || [])) include.add(c);
-        }
-      }
-      level = next;
-    }
-    level = [focusId];
-    for (let g = 0; g < 2; g++) {
-      const next = [];
-      for (const id of level) {
-        for (const c of (childrenOf.get(id) || [])) {
-          if (!include.has(c)) { include.add(c); next.push(c); }
-        }
-      }
-      level = next;
-    }
-    for (const id of [...include]) {
-      for (const s of (spousesOf.get(id) || [])) include.add(s);
-    }
-    return include;
-  }
-
-  /**
-   * Render the tree, applying the focus filter when active.
-   */
   function renderTree() {
-    const banner = document.getElementById('focus-banner');
-    const focusPerson = focusMemberId && cachedMembers.find(m => m.id === focusMemberId);
-    if (!focusPerson) focusMemberId = null;
-
-    if (focusMemberId) {
-      const include = computeFocusSubset(focusMemberId);
-      Tree.render(
-        cachedMembers.filter(m => include.has(m.id)),
-        cachedRelationships.filter(r => include.has(r.fromId) && include.has(r.toId))
-      );
-      document.getElementById('focus-banner-text').textContent =
-        `Fokus: ${focusPerson.firstName} ${focusPerson.lastName}`;
-      banner.classList.remove('hidden');
-    } else {
-      Tree.render(cachedMembers, cachedRelationships);
-      banner.classList.add('hidden');
-    }
-  }
-
-  function enterFocus(memberId) {
-    focusMemberId = memberId;
-    showView('view-main');
-    renderTree();
-    setTimeout(() => Tree.centerOn(memberId, 0.9, false), 100);
-  }
-
-  function exitFocus() {
-    focusMemberId = null;
-    renderTree();
+    Tree.render(cachedMembers, cachedRelationships);
   }
 
   // ─── Offline banner & read-only UI ───

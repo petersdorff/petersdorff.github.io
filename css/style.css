@@ -1548,6 +1548,49 @@ a {
   pointer-events: none;
 }
 
+.focus-banner {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 72px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px 6px 14px;
+  background: var(--bg);
+  border: 2px solid var(--red);
+  border-radius: 20px;
+  font-size: 11px;
+  color: var(--text);
+  z-index: 90;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  white-space: nowrap;
+  max-width: calc(100vw - 24px);
+}
+
+.focus-banner #focus-banner-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.focus-banner button {
+  flex: none;
+  border: none;
+  background: var(--red);
+  color: #fff;
+  font-family: var(--font);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+@supports (padding: env(safe-area-inset-top)) {
+  .focus-banner {
+    top: max(72px, calc(env(safe-area-inset-top) + 64px));
+  }
+}
+
 .offline-banner .offline-dot {
   width: 8px;
   height: 8px;

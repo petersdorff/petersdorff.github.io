@@ -11,7 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=6">
+  <link rel="stylesheet" href="css/style.css?v=7">
 </head>
 <body>
 
@@ -273,6 +273,12 @@
       <span id="offline-banner-text">Offline-Modus – Daten vom lokalen Stand</span>
     </div>
 
+    <!-- Focus mode banner -->
+    <div id="focus-banner" class="focus-banner hidden">
+      <span id="focus-banner-text"></span>
+      <button id="btn-focus-exit" aria-label="Fokus beenden">Alle anzeigen &times;</button>
+    </div>
+
     <!-- Search Results Dropdown -->
     <div id="search-results" class="search-results hidden"></div>
 
@@ -438,6 +444,7 @@
       <div class="profile-actions">
         <button id="btn-show-qr" class="btn btn-secondary">QR-Code zeigen</button>
         <button id="btn-show-in-tree" class="btn btn-secondary">Im Stammbaum zeigen</button>
+        <button id="btn-focus-tree" class="btn btn-secondary">Fokus-Ansicht (±2 Generationen)</button>
         <button id="btn-delete-member" class="btn btn-danger" style="display:none; margin-top:16px;">Platzhalter löschen</button>
       </div>
     </div>
@@ -643,7 +650,7 @@
   <script src="js/db.js?v=25"></script>
   <script src="js/auth.js?v=30"></script>
   <script src="js/relationship.js?v=28"></script>
-  <script src="js/tree.js?v=78"></script>
+  <script src="js/tree.js?v=79"></script>
   <script src="js/qr.js?v=23"></script>
   <script src="js/search.js?v=22"></script>
   <script src="js/admin.js?v=4"></script>
@@ -652,6 +659,6 @@
   <script src="js/connection.js?v=4"></script>
   <script src="js/relations.js?v=10"></script>
   <script src="js/profile.js?v=30"></script>
-  <script src="js/app.js?v=40"></script>
+  <script src="js/app.js?v=41"></script>
 </body>
 </html>

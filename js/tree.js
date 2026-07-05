@@ -35,6 +35,13 @@ const Tree = (() => {
     spouseLine: '#1a1a1a',
   };
 
+  // Semantic zoom (level of detail): below LOD_MID only first names are
+  // shown in larger type; below LOD_FAR labels disappear entirely and the
+  // tree silhouette is what the user navigates by.
+  const LOD_MID = 0.55;
+  const LOD_FAR = 0.28;
+  let lodTier = 'full';
+
   // Layout constants
   const NODE_W = 170;
   const NODE_H = 62;
@@ -75,6 +82,9 @@ const Tree = (() => {
         if (onBackgroundTapCallback) onBackgroundTapCallback();
       }
     });
+
+    // Semantic zoom: swap label detail when crossing zoom thresholds
+    cy.on('zoom', () => applyLod());
 
     // Re-render highlights on tab switch (without zoom animation)
     document.addEventListener('visibilitychange', () => {
@@ -587,6 +597,7 @@ const Tree = (() => {
         group: 'nodes',
         data: {
           id: m.id, label: displayName,
+          firstName: m.firstName,
           initials: getInitials(m.firstName, m.lastName),
           subLabel: m.birthName || '',
           yearLabel: getYearLabel(m.birthDate, m.deathDate),
@@ -1194,6 +1205,25 @@ const Tree = (() => {
     cy.fit(undefined, 60);
     applySpouseEdgeStyle();
     cy.style().update();
+    applyLod(true);
+  }
+
+  /**
+   * Apply the level-of-detail tier matching the current zoom.
+   * Cheap: only touches classes when the tier actually changes.
+   */
+  function applyLod(force = false) {
+    if (!cy) return;
+    const z = cy.zoom();
+    const tier = z < LOD_FAR ? 'far' : (z < LOD_MID ? 'mid' : 'full');
+    if (!force && tier === lodTier) return;
+    lodTier = tier;
+    cy.batch(() => {
+      const nodes = cy.nodes().not('.couple-midpoint');
+      nodes.removeClass('lod-mid lod-far');
+      if (tier === 'mid') nodes.addClass('lod-mid');
+      else if (tier === 'far') nodes.addClass('lod-far');
+    });
   }
 
   /**
@@ -1303,6 +1333,23 @@ const Tree = (() => {
           'background-opacity': 0, 'border-width': 0, 'label': '',
           'events': 'no', 'z-index': 1,
         },
+      },
+      {
+        // Semantic zoom, middle tier: first name only, larger type.
+        // Must come after node[yearLabel] so it wins the label/font cascade.
+        selector: 'node.lod-mid',
+        style: {
+          'label': (ele) => ele.data('coupleNode') ? '' : (ele.data('firstName') || ''),
+          'font-size': 24,
+          'text-wrap': 'ellipsis',
+          'text-max-width': NODE_W - 10,
+          'text-margin-y': 0,
+        },
+      },
+      {
+        // Semantic zoom, far tier: silhouette only
+        selector: 'node.lod-far',
+        style: { 'label': '' },
       },
       {
         selector: 'node.placeholder',

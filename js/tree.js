@@ -35,9 +35,8 @@ const Tree = (() => {
     spouseLine: '#1a1a1a',
   };
 
-  // Semantic zoom (level of detail): below LOD_MID only first names are
-  // shown in larger type; below LOD_FAR labels disappear entirely and the
-  // tree silhouette is what the user navigates by.
+  // Semantic zoom (level of detail): full = Vorname + Nachname + Daten,
+  // mid = Vorname + Geburtsjahr, far = nur Vorname (nie ganz ohne Label).
   const LOD_MID = 0.55;
   const LOD_FAR = 0.28;
   let lodTier = 'full';
@@ -598,6 +597,7 @@ const Tree = (() => {
         data: {
           id: m.id, label: displayName,
           firstName: m.firstName,
+          birthYear: m.birthDate ? `* ${m.birthDate.substring(0, 4)}` : '',
           initials: getInitials(m.firstName, m.lastName),
           subLabel: m.birthName || '',
           yearLabel: getYearLabel(m.birthDate, m.deathDate),
@@ -1335,21 +1335,32 @@ const Tree = (() => {
         },
       },
       {
-        // Semantic zoom, middle tier: first name only, larger type.
+        // Semantic zoom, middle tier: Vorname + Geburtsjahr.
         // Must come after node[yearLabel] so it wins the label/font cascade.
         selector: 'node.lod-mid',
         style: {
-          'label': (ele) => ele.data('coupleNode') ? '' : (ele.data('firstName') || ''),
-          'font-size': 24,
-          'text-wrap': 'ellipsis',
+          'label': (ele) => {
+            if (ele.data('coupleNode')) return '';
+            const year = ele.data('birthYear');
+            return (ele.data('firstName') || '') + (year ? `\n${year}` : '');
+          },
+          'font-size': 22,
+          'text-wrap': 'wrap',
+          'line-height': 1.3,
           'text-max-width': NODE_W - 10,
           'text-margin-y': 0,
         },
       },
       {
-        // Semantic zoom, far tier: silhouette only
+        // Semantic zoom, far tier: nur der Vorname, groß
         selector: 'node.lod-far',
-        style: { 'label': '' },
+        style: {
+          'label': (ele) => ele.data('coupleNode') ? '' : (ele.data('firstName') || ''),
+          'font-size': 30,
+          'text-wrap': 'ellipsis',
+          'text-max-width': NODE_W - 4,
+          'text-margin-y': 0,
+        },
       },
       {
         selector: 'node.placeholder',
@@ -1723,6 +1734,12 @@ const Tree = (() => {
     clearHighlight,
     centerOn,
     fitAll,
+    getZoom: () => (cy ? cy.zoom() : null),
+    // Effektives (LOD-abhängiges) Label eines Knotens — für Debugging/Tests
+    getEffectiveLabel: (id) => {
+      const n = cy && cy.getElementById(id);
+      return n && n.length ? n.style('label') : null;
+    },
     getNodePosition,
     setViewMode,
     getViewMode,

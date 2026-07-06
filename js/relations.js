@@ -279,8 +279,11 @@ const Relations = (() => {
         if (sourceId) {
           await cleanConflictingRelations(sourceId, newId, relType);
           await createRelationByType(sourceId, newId, relType);
-          await propagateLogicalRelations(sourceId, newId, relType);
+          const auto = await propagateLogicalRelations(sourceId, newId, relType);
           App.toast(`${firstName} ${lastName} angelegt & verbunden`, 'success');
+          if (auto > 0) {
+            App.toast(`${auto} Verbindung${auto > 1 ? 'en' : ''} automatisch ergänzt`, 'info');
+          }
         }
 
         await App.refreshTree();
@@ -309,138 +312,90 @@ const Relations = (() => {
 
   /**
    * Propagate logically implied relationships after adding a new relation.
-   * DB.addRelationship() already deduplicates, so we can call it freely.
    *
-   * Rules:
-   *  sibling(A,B):   B gets A's parents, A gets B's parents
-   *  child(A→B):     A = parent, B = child.
-   *                  B gets A's other children as siblings.
-   *                  A gets B's existing siblings as own children.
-   *  parent(A→B):    A = child, B = parent (stored as B→A parent_child).
-   *                  A gets B's other children as siblings.
-   *                  B gets A's existing siblings as own children.
-   *  spouse(A,B):    B gets A's children as own children.
-   *                  A gets B's children as own children.
+   * Kaskadierende Regel-Engine: Jede automatisch ergänzte Beziehung wird
+   * selbst wieder geprüft (Kind→Mutter ⇒ Vater ⇒ Geschwister ⇒ …), bis
+   * nichts sicher Ableitbares mehr übrig ist. Der Beziehungsgraph wird
+   * dafür EINMAL geladen und in-memory fortgeschrieben.
+   *
+   * Nur eindeutig sichere Ergänzungen:
+   *  parent_child(P→C):
+   *    a) Hat P genau EINEN Partner S (nie mehrere Ehen erfasst), wird S
+   *       zweites Elternteil von C. Bei mehreren Ehen: mehrdeutig → nichts.
+   *    b) Andere Kinder von P werden Geschwister von C.
+   *    c) Explizite Geschwister von C erben P als Elternteil.
+   *  sibling(A,B): Eltern werden gegenseitig kopiert.
+   *  spouse(A,B):  Kinder werden geteilt — nur wenn es für BEIDE die
+   *                einzige Ehe ist (Stiefeltern-Schutz).
+   *  Hart überall: nie ein drittes Elternteil pro Kind.
+   *
+   * @returns {number} Anzahl automatisch ergänzter Beziehungen
    */
   async function propagateLogicalRelations(fromId, toId, relType) {
-    const PC = 'parent_child';
-    const SIB = 'sibling';
+    const PC = 'parent_child', SIB = 'sibling', SP = 'spouse';
 
-    if (relType === 'sibling') {
-      // Share parents between siblings, but respect the 2-parent limit.
-      // Half-siblings (same father, different mothers) should NOT get a
-      // third parent pulled in from the other sibling.
-      const relsA = await DB.getRelationshipsForMember(fromId);
-      const relsB = await DB.getRelationshipsForMember(toId);
-      const parentsA = relsA.filter(r => r.type === PC && r.toId === fromId).map(r => r.fromId);
-      const parentsB = relsB.filter(r => r.type === PC && r.toId === toId).map(r => r.fromId);
+    const all = await DB.getAllRelationships();
+    const parentsOf = new Map(), childrenOf = new Map(),
+          spousesOf = new Map(), siblingsOf = new Map();
+    const keys = new Set();
+    const keyOf = (f, t, type) =>
+      type === PC ? `${type}:${f}>${t}` : `${type}:${[f, t].sort().join('~')}`;
+    const get = (map, k) => map.get(k) || new Set();
+    const index = (f, t, type) => {
+      keys.add(keyOf(f, t, type));
+      const push = (map, k, v) => { if (!map.has(k)) map.set(k, new Set()); map.get(k).add(v); };
+      if (type === PC) { push(parentsOf, t, f); push(childrenOf, f, t); }
+      else if (type === SP) { push(spousesOf, f, t); push(spousesOf, t, f); }
+      else if (type === SIB) { push(siblingsOf, f, t); push(siblingsOf, t, f); }
+    };
+    for (const r of all) index(r.fromId, r.toId, r.type);
 
-      // Only copy parents from A to B if B has fewer than 2 parents
-      const currentParentsB = new Set(parentsB);
-      if (currentParentsB.size < 2) {
-        for (const pid of parentsA) {
-          if (!currentParentsB.has(pid) && currentParentsB.size < 2) {
-            await DB.addRelationship(pid, toId, PC);
-            currentParentsB.add(pid);
-          }
+    // Die soeben manuell angelegte Beziehung ist der Ausgangspunkt der Kaskade
+    const queue = [];
+    if (relType === 'parent') queue.push({ f: fromId, t: toId, type: PC });
+    else if (relType === 'child') queue.push({ f: toId, t: fromId, type: PC });
+    else if (relType === 'spouse') queue.push({ f: fromId, t: toId, type: SP });
+    else if (relType === 'sibling') queue.push({ f: fromId, t: toId, type: SIB });
+
+    let added = 0;
+    const addRel = async (f, t, type) => {
+      if (f === t || keys.has(keyOf(f, t, type))) return;
+      if (type === PC && get(parentsOf, t).size >= 2) return;
+      await DB.addRelationship(f, t, type);
+      index(f, t, type);
+      queue.push({ f, t, type });
+      added++;
+    };
+
+    while (queue.length) {
+      const { f, t, type } = queue.shift();
+
+      if (type === PC) {
+        const parentId = f, childId = t;
+        const spouses = get(spousesOf, parentId);
+        if (spouses.size === 1) {
+          await addRel([...spouses][0], childId, PC);
         }
-      }
-
-      // Only copy parents from B to A if A has fewer than 2 parents
-      const currentParentsA = new Set(parentsA);
-      if (currentParentsA.size < 2) {
-        for (const pid of parentsB) {
-          if (!currentParentsA.has(pid) && currentParentsA.size < 2) {
-            await DB.addRelationship(pid, fromId, PC);
-            currentParentsA.add(pid);
-          }
+        for (const k of get(childrenOf, parentId)) {
+          if (k !== childId) await addRel(childId, k, SIB);
         }
-      }
-
-    } else if (relType === 'child') {
-      // "Ist Kind von..." — fromId = editing member (child), toId = target (parent)
-      // createRelationByType stores as DB.addRelationship(toId, fromId, PC)
-      const parentId = toId, childId = fromId;
-      const parentRels = await DB.getRelationshipsForMember(parentId);
-
-      // Other children of this parent become siblings of the new child
-      const otherChildren = parentRels
-        .filter(r => r.type === PC && r.fromId === parentId && r.toId !== childId)
-        .map(r => r.toId);
-      for (const sibId of otherChildren) {
-        await DB.addRelationship(childId, sibId, SIB);
-      }
-
-      // Existing siblings of the child become children of this parent,
-      // but only if the sibling doesn't already have 2 parents
-      const childRels = await DB.getRelationshipsForMember(childId);
-      const childSiblings = childRels
-        .filter(r => r.type === SIB)
-        .map(r => r.fromId === childId ? r.toId : r.fromId);
-      for (const sibId of childSiblings) {
-        const sibRels = await DB.getRelationshipsForMember(sibId);
-        const sibParentCount = sibRels.filter(r => r.type === PC && r.toId === sibId).length;
-        if (sibParentCount < 2) {
-          await DB.addRelationship(parentId, sibId, PC);
+        for (const g of get(siblingsOf, childId)) {
+          await addRel(parentId, g, PC);
         }
-      }
 
-    } else if (relType === 'parent') {
-      // "Ist Vater/Mutter von..." — fromId = editing member (parent), toId = target (child)
-      // createRelationByType stores as DB.addRelationship(fromId, toId, PC)
-      const parentId = fromId, childId = toId;
-      const parentRels = await DB.getRelationshipsForMember(parentId);
+      } else if (type === SIB) {
+        for (const p of get(parentsOf, f)) await addRel(p, t, PC);
+        for (const p of get(parentsOf, t)) await addRel(p, f, PC);
 
-      // Other children of this parent become siblings of the child
-      const otherChildren = parentRels
-        .filter(r => r.type === PC && r.fromId === parentId && r.toId !== childId)
-        .map(r => r.toId);
-      for (const sibId of otherChildren) {
-        await DB.addRelationship(childId, sibId, SIB);
-      }
-
-      // Existing siblings of the child become children of this parent,
-      // but only if the sibling doesn't already have 2 parents
-      const childRels = await DB.getRelationshipsForMember(childId);
-      const childSiblings = childRels
-        .filter(r => r.type === SIB)
-        .map(r => r.fromId === childId ? r.toId : r.fromId);
-      for (const sibId of childSiblings) {
-        const sibRels = await DB.getRelationshipsForMember(sibId);
-        const sibParentCount = sibRels.filter(r => r.type === PC && r.toId === sibId).length;
-        if (sibParentCount < 2) {
-          await DB.addRelationship(parentId, sibId, PC);
-        }
-      }
-
-    } else if (relType === 'spouse') {
-      // Share children between spouses — but ONLY if this is the first
-      // spouse for both. If either person already has another spouse,
-      // skip auto-sharing to avoid assigning a new spouse as parent of
-      // children from a previous marriage.
-      const relsA = await DB.getRelationshipsForMember(fromId);
-      const relsB = await DB.getRelationshipsForMember(toId);
-      const otherSpousesA = relsA.filter(r => r.type === 'spouse' && r.fromId !== toId && r.toId !== toId);
-      const otherSpousesB = relsB.filter(r => r.type === 'spouse' && r.fromId !== fromId && r.toId !== fromId);
-
-      if (otherSpousesA.length === 0 && otherSpousesB.length === 0) {
-        const childrenA = relsA.filter(r => r.type === PC && r.fromId === fromId).map(r => r.toId);
-        const childrenB = relsB.filter(r => r.type === PC && r.fromId === toId).map(r => r.toId);
-        // Never create a THIRD parent: only share a child with the new
-        // spouse if the child has fewer than 2 recorded parents. Otherwise
-        // a step-parent would silently become a blood parent in the data.
-        const canAddParent = async (childId) => {
-          const childRels = await DB.getRelationshipsForMember(childId);
-          return childRels.filter(r => r.type === PC && r.toId === childId).length < 2;
-        };
-        for (const cid of childrenA) {
-          if (await canAddParent(cid)) await DB.addRelationship(toId, cid, PC);
-        }
-        for (const cid of childrenB) {
-          if (await canAddParent(cid)) await DB.addRelationship(fromId, cid, PC);
+      } else if (type === SP) {
+        if (get(spousesOf, f).size === 1 && get(spousesOf, t).size === 1) {
+          for (const c of get(childrenOf, f)) await addRel(t, c, PC);
+          for (const c of get(childrenOf, t)) await addRel(f, c, PC);
         }
       }
     }
+
+    return added;
   }
 
   /**
@@ -562,9 +517,12 @@ const Relations = (() => {
       }
 
       await createRelationByType(editingMemberId, selectedRelTarget, relType);
-      await propagateLogicalRelations(editingMemberId, selectedRelTarget, relType);
+      const auto = await propagateLogicalRelations(editingMemberId, selectedRelTarget, relType);
 
       App.toast('Verbindung hinzugefügt', 'success');
+      if (auto > 0) {
+        App.toast(`${auto} Verbindung${auto > 1 ? 'en' : ''} automatisch ergänzt`, 'info');
+      }
       document.getElementById('edit-rel-type').value = '';
       document.getElementById('edit-rel-search').value = '';
       document.getElementById('edit-rel-results').innerHTML = '';

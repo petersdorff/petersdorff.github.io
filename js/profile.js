@@ -329,9 +329,12 @@ const Profile = (() => {
           const { targetId, relType } = pendingFirstRelation;
           await Relations.cleanConflictingRelations(newId, targetId, relType);
           await Relations.createRelationByType(newId, targetId, relType);
-          await Relations.propagateLogicalRelations(newId, targetId, relType);
+          const auto = await Relations.propagateLogicalRelations(newId, targetId, relType);
           Relations.clearPendingFirstRelation();
           App.toast('Person angelegt & verbunden', 'success');
+          if (auto > 0) {
+            App.toast(`${auto} Verbindung${auto > 1 ? 'en' : ''} automatisch ergänzt`, 'info');
+          }
         }
       }
 

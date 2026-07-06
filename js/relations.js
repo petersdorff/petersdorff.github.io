@@ -324,6 +324,9 @@ const Relations = (() => {
    *       zweites Elternteil von C. Bei mehreren Ehen: mehrdeutig → nichts.
    *    b) Andere Kinder von P werden Geschwister von C.
    *    c) Explizite Geschwister von C erben P als Elternteil.
+   *    d) Hat C jetzt zwei Eltern, werden diese als Partner verbunden —
+   *       Eltern gemeinsamer Kinder sind Partner, auch unverheiratet
+   *       oder getrennt.
    *  sibling(A,B): Eltern werden gegenseitig kopiert.
    *  spouse(A,B):  Kinder werden geteilt — nur wenn es für BEIDE die
    *                einzige Ehe ist (Stiefeltern-Schutz).
@@ -381,6 +384,10 @@ const Relations = (() => {
         }
         for (const g of get(siblingsOf, childId)) {
           await addRel(parentId, g, PC);
+        }
+        const bothParents = [...get(parentsOf, childId)];
+        if (bothParents.length === 2) {
+          await addRel(bothParents[0], bothParents[1], SP);
         }
 
       } else if (type === SIB) {

@@ -2031,37 +2031,54 @@ a {
 }
 
 /* Rändelrad: rechts, bildschirmfix; vertikal ziehen dreht den Fächer.
-   Bewusst minimal: schmal, lang, keine Kontur — nur feine Rillen. */
+   .fan-wheel ist nur der (unsichtbare, großzügige) Griffbereich; die
+   sichtbare Leiste mit Rillen zeichnet ::before. Die Maske liegt auf
+   ::before, weil Chrome maskierte Bereiche beim Hit-Test ausblendet. */
 .fan-wheel {
   position: absolute;
-  right: 10px;
+  right: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 14px;
+  width: 40px;                 /* Griffbereich */
   height: min(300px, 48vh);
-  border-radius: 7px;
-  background-color: transparent;
-  background-image: repeating-linear-gradient(to bottom, var(--trace-light) 0 1px, transparent 1px 7px);
-  background-position-y: 0;
-  /* Rillen laufen oben/unten weich aus */
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
-  mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
-  opacity: 0.85;
   cursor: grab;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   z-index: 60;
+}
+.fan-wheel::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 50%;
+  width: 20px;                 /* sichtbare Leiste */
+  transform: translateX(-50%);
+  border-radius: 10px;
+  background-image: repeating-linear-gradient(to bottom, var(--trace-light) 0 1px, transparent 1px 7px);
+  /* Rillen laufen oben/unten weich aus */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+  opacity: 0.85;
   transition: opacity var(--transition);
 }
-
-.fan-wheel:hover,
-.fan-wheel.is-active {
+.fan-wheel:hover::before,
+.fan-wheel.is-active::before {
   opacity: 1;
   background-image: repeating-linear-gradient(to bottom, var(--trace) 0 1px, transparent 1px 7px);
 }
-
 .fan-wheel.is-active { cursor: grabbing; }
+
+/* Touch: breitere Leiste, Griffbereich ≥ 48 px */
+@media (pointer: coarse) {
+  .fan-wheel { width: 52px; }
+  .fan-wheel::before { width: 28px; border-radius: 14px; opacity: 0.95; }
+}
+/* Schmale Screens: Rad ins obere Drittel, damit es nicht hinter dem
+   FAB-Stapel unten rechts verschwindet */
+@media (max-width: 768px) {
+  .fan-wheel { top: 15%; transform: none; height: min(260px, 34vh); }
+}
 
 /* Plus-Chips (Kind/Geschwister anlegen) */
 .fan-ghost { cursor: pointer; }

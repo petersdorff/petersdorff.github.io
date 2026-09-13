@@ -221,7 +221,12 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   ihrer Pose (`theta`, `rm`, `tangential`) neu ausgerichtet, damit die
   Lesbarkeitsregel für den absoluten Winkel gilt; Chips, `centerOn`/
   `panTo` und Highlight-Anker rechnen mit `rotPt()`. Rotation wird nicht
-  gespeichert. Nur in den Fächer-Ansichten sichtbar.
+  gespeichert. Nur in den Fächer-Ansichten sichtbar. `.fan-wheel` selbst
+  ist nur der unsichtbare Griffbereich (40 px, Touch 52 px), die sichtbare
+  Leiste (20 px, Touch 28 px) zeichnet `::before` — die Ausblend-Maske
+  muss auf `::before` liegen, weil Chrome maskierte Bereiche beim
+  Hit-Test ignoriert. Unter 768 px Breite sitzt das Rad im oberen
+  Drittel (`top: 15%`), damit es nicht mit dem FAB-Stapel kollidiert.
 - **Hover:** Kopie des Segments zuoberst mit 12-px-Rand in Segmentfarbe
   plus 1,5-px weißem Saum außen (`showHoverHalo`, `vector-effect:
   non-scaling-stroke`) — wirkt größer, verschiebt nichts; gedimmte

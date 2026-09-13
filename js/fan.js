@@ -34,6 +34,8 @@ const Fan = (() => {
   let ghostLayer = null;    // Plus-Chips „Kind / Geschwister anlegen"
   let ghostFor = null;      // Segment-ID, für die Chips gezeigt werden (Hover/Auswahl)
   let canEdit = false;      // nur online mit Schreibrecht
+  let colorMode = 'gender'; // 'gender' | 'year' (Geburtsjahr-Skala)
+  let yearRange = { min: 1800, max: 2030 };
   let onAddCallback = null;
   let selectedId = null;    // zuletzt angetippte Person (Chips bleiben bis zur nächsten Auswahl)
   let unreachable = [];     // IDs, die in keiner Familie vorkommen (Waisen-Ablage)
@@ -246,6 +248,7 @@ const Fan = (() => {
     segById = new Map(); hostOf = new Map(); labelSpecs = []; lodTier = null;
     ghostLayer.innerHTML = ''; ghostFor = null;
 
+    computeYearRange();
     buildFamilies();
     if (!families.length) return;
     activeFamilyId = pickFamily();
@@ -296,7 +299,7 @@ const Fan = (() => {
     const span = Math.min(a1 - a0, Math.PI * 2 - 1e-4);
 
     const g = el('g', { class: 'fan-seg', 'data-id': m.id });
-    const fill = segColor(m.gender, node.depth, m.isDeceased);
+    const fill = segColor(m, node.depth);
     const stroke = isMe ? '#e63946' : (m.isPlaceholder ? 'none' : '#1a1a1a');
     const sw = isMe ? 3 : (m.isPlaceholder ? 0 : 1.6);
     const d = arcPath(r0, r1, a0, a0 + span, SEG_GAP);
@@ -327,7 +330,7 @@ const Fan = (() => {
     const m = root.m;
     const g = el('g', { class: 'fan-seg fan-center', 'data-id': m.id });
     g.appendChild(el('circle', {
-      r: CENTER_R, fill: segColor(m.gender, 0, m.isDeceased),
+      r: CENTER_R, fill: segColor(m, 0),
       stroke: isMe ? '#e63946' : (m.isPlaceholder ? 'none' : '#1a1a1a'),
       'stroke-width': isMe ? 3 : (m.isPlaceholder ? 0 : 1.6),
     }));
@@ -605,12 +608,53 @@ const Fan = (() => {
            `L${p(r0, i1)} A${r0},${r0} 0 ${largeI} 0 ${p(r0, i0)} Z`;
   }
 
-  /** Männer hellblau, Frauen rosa, unbekannt neutral; Verstorbene entsättigt. */
-  function segColor(gender, depth, deceased) {
-    const [h, s] = gender === 'm' ? [207, 72] : gender === 'f' ? [340, 72] : [0, 0];
-    const sat = deceased ? Math.round(s * 0.45) : s;
-    const l = Math.min(93, (deceased ? 84 : 80) + depth * 2);
+  /** Männer hellblau, Frauen rosa, unbekannt neutral; Verstorbene entsättigt.
+      Im Jahres-Modus: Geburtsjahr auf gemeinsamer Skala (alt → jung). */
+  function segColor(m, depth) {
+    if (colorMode === 'year') {
+      const y = m.birthDate ? parseInt(m.birthDate.substring(0, 4), 10) : NaN;
+      if (!isFinite(y)) return 'hsl(0 0% 88%)';
+      const span = yearRange.max - yearRange.min;
+      return yearColor(span > 0 ? (y - yearRange.min) / span : 0.5);
+    }
+    const [h, s] = m.gender === 'm' ? [207, 72] : m.gender === 'f' ? [340, 72] : [0, 0];
+    const sat = m.isDeceased ? Math.round(s * 0.45) : s;
+    const l = Math.min(93, (m.isDeceased ? 84 : 80) + depth * 2);
     return `hsl(${h} ${sat}% ${l}%)`;
+  }
+
+  /** Farbskala 0 (älteste) → 1 (jüngste): Blau → Türkis → Grün → Gelb → Orange. */
+  function yearColor(t) {
+    const h = 235 - Math.max(0, Math.min(1, t)) * 210;
+    return `hsl(${Math.round(h)} 66% 80%)`;
+  }
+
+  /** Jahresbereich über ALLE Personen (alle Familien), damit die Skala vergleichbar bleibt. */
+  function computeYearRange() {
+    const years = members.map(m => m.birthDate ? parseInt(m.birthDate.substring(0, 4), 10) : NaN).filter(isFinite);
+    if (!years.length) return;
+    yearRange = { min: Math.min(...years), max: Math.max(...years) };
+  }
+
+  function setColorMode(mode) {
+    if (mode !== 'gender' && mode !== 'year') return;
+    if (mode === colorMode) return;
+    colorMode = mode;
+    if (members.length) {
+      // nur Farben tauschen, Geometrie bleibt
+      for (const g of segLayer.children) {
+        const id = g.getAttribute('data-id');
+        const spec = labelSpecs.find(x => x.m.id === id);
+        if (!spec) continue;
+        const shape = g.querySelector('path, circle');
+        const depth = Math.max(0, Math.round((segById.get(id).r0 - CENTER_R) / RING));
+        if (shape) shape.setAttribute('fill', segColor(spec.m, depth));
+      }
+    }
+  }
+
+  function getYearScale() {
+    return { min: yearRange.min, max: yearRange.max, stops: [0, 0.25, 0.5, 0.75, 1].map(yearColor) };
   }
 
   /** Angeheiratete: Vorname + Geburtsname (falls vorhanden), sonst Nachname. */
@@ -797,6 +841,7 @@ const Fan = (() => {
 
   return { init, onTap, onAddRelative, setCanEdit, isActive, show, hide, toggle, render, fit, centerOn, panTo, highlightConnection, clearHighlight,
            getFamilies, setFamily, familyOf,
+           setColorMode, getColorMode: () => colorMode, getYearScale,
            setPreferredFamily: (id) => { preferredFamilyId = id; },
            onFamilyChange: (cb) => { onFamilyChangeCallback = cb; },
            getUnreachable: () => unreachable.slice(),

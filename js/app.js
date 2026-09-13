@@ -363,10 +363,13 @@ const App = (() => {
       // Erster Render: gespeicherte Ansicht anwenden, Standard ist der Fächer.
       viewApplied = true;
       const name = getStoredView();
-      if (name !== 'fan') Tree.setViewMode(name);
+      const isFan = name === 'fan' || name === 'fan-years';
+      if (!isFan) Tree.setViewMode(name);
       Tree.render(cachedMembers, cachedRelationships);
-      setFanMode(name === 'fan');
+      Fan.setColorMode(name === 'fan-years' ? 'year' : 'gender');
+      setFanMode(isFan);
       updateToggleButton();
+      updateLegendBlocks();
       updateFamilySwitch();
       updateOrphanTray();
       return;
@@ -464,7 +467,7 @@ const App = (() => {
 
   // ─── Ansichten: fan | generational | temporal ───
 
-  const VIEW_ORDER = ['fan', 'generational', 'temporal'];
+  const VIEW_ORDER = ['fan', 'fan-years', 'generational', 'temporal'];
 
   function getStoredView() {
     let v = null;
@@ -473,12 +476,14 @@ const App = (() => {
   }
 
   function getCurrentView() {
-    return Fan.isActive() ? 'fan' : Tree.getViewMode();
+    if (!Fan.isActive()) return Tree.getViewMode();
+    return Fan.getColorMode() === 'year' ? 'fan-years' : 'fan';
   }
 
   /** Ansicht umschalten und merken. */
   function applyView(name) {
-    if (name === 'fan') {
+    if (name === 'fan' || name === 'fan-years') {
+      Fan.setColorMode(name === 'fan-years' ? 'year' : 'gender');
       setFanMode(true);
     } else {
       setFanMode(false);
@@ -486,6 +491,22 @@ const App = (() => {
     }
     try { localStorage.setItem('stammbaum_view', name); } catch { /* privat/blockiert */ }
     updateToggleButton();
+    updateLegendBlocks();
+  }
+
+  /** Legende passend zur Ansicht: Baum / Fächer (Geschlecht) / Fächer (Geburtsjahr). */
+  function updateLegendBlocks() {
+    const fan = Fan.isActive(), year = fan && Fan.getColorMode() === 'year';
+    document.getElementById('legend-tree').classList.toggle('hidden', fan);
+    document.getElementById('legend-fan').classList.toggle('hidden', !fan || year);
+    const yl = document.getElementById('legend-fan-year');
+    yl.classList.toggle('hidden', !year);
+    if (year) {
+      const sc = Fan.getYearScale();
+      document.getElementById('legend-year-bar').style.background = `linear-gradient(90deg, ${sc.stops.join(', ')})`;
+      document.getElementById('legend-year-min').textContent = sc.min;
+      document.getElementById('legend-year-max').textContent = sc.max;
+    }
   }
 
   /** Fächer-Overlay ein-/ausblenden inkl. passender Legende. */
@@ -496,8 +517,7 @@ const App = (() => {
     } else {
       Fan.hide();
     }
-    document.getElementById('legend-tree').classList.toggle('hidden', on);
-    document.getElementById('legend-fan').classList.toggle('hidden', !on);
+    updateLegendBlocks();
     if (cachedMembers.length) { updateFamilySwitch(); updateOrphanTray(); }
   }
 
@@ -687,9 +707,11 @@ const App = (() => {
     if (!btn) return;
     const mode = getCurrentView();
     btn.classList.toggle('mode-fan', mode === 'fan');
+    btn.classList.toggle('mode-fan-years', mode === 'fan-years');
     btn.classList.toggle('mode-temporal', mode === 'temporal');
     btn.title = {
-      fan: 'Fächer-Ansicht aktiv – klicken für Generationen-Ansicht',
+      fan: 'Fächer (Geschlecht) aktiv – klicken für Fächer nach Geburtsjahr',
+      'fan-years': 'Fächer nach Geburtsjahr aktiv – klicken für Generationen-Ansicht',
       generational: 'Generationen-Ansicht aktiv – klicken für zeitliche Ansicht',
       temporal: 'Zeitliche Ansicht aktiv – klicken für Fächer-Ansicht',
     }[mode];

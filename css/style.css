@@ -1543,7 +1543,8 @@ a {
 
 #btn-view-toggle .icon-gen,
 #btn-view-toggle .icon-temp,
-#btn-view-toggle .icon-fan {
+#btn-view-toggle .icon-fan,
+#btn-view-toggle .icon-fan-years {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -1573,6 +1574,33 @@ a {
 
 #btn-view-toggle.mode-fan .icon-fan {
   opacity: 1;
+}
+
+#btn-view-toggle .icon-fan-years {
+  opacity: 0;
+}
+
+#btn-view-toggle.mode-fan-years .icon-gen {
+  opacity: 0;
+}
+
+#btn-view-toggle.mode-fan-years .icon-fan-years {
+  opacity: 1;
+}
+
+/* Legende: Geburtsjahr-Skala */
+.legend-year { padding: 4px 0 6px; }
+.legend-year-bar {
+  height: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--trace-faint);
+}
+.legend-year-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
 }
 
 /* Dark mode support (future) */

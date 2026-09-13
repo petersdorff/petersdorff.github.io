@@ -11,7 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=18">
+  <link rel="stylesheet" href="css/style.css?v=19">
 </head>
 <body>
 
@@ -245,6 +245,12 @@
           <path d="M12 7.5a4.5 4.5 0 0 1 4.5 4.5M12 7.5a4.5 4.5 0 0 0-4.5 4.5"/>
           <path d="M12 12v9"/>
         </svg>
+        <!-- Fan by birth year (radial + Uhr) -->
+        <svg class="icon-fan-years" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M12 3a9 9 0 0 1 9 9M12 3a9 9 0 0 0-9 9" stroke-dasharray="3 2"/>
+          <circle cx="12" cy="14" r="5"/>
+          <path d="M12 11.5V14l1.8 1.2"/>
+        </svg>
         <!-- Generational icon (tree/hierarchy) -->
         <svg class="icon-gen" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="4" r="2"/><line x1="12" y1="6" x2="12" y2="10"/>
@@ -377,6 +383,25 @@
           <span>Angeheirateter Partner — antippen öffnet dessen Profil</span>
         </div>
         <div class="legend-hint">Innen die Stammeltern, jeder Ring eine Generation. Tippen öffnet das Profil.</div>
+      </div>
+      <div id="legend-fan-year" class="hidden">
+        <div class="legend-year">
+          <div id="legend-year-bar" class="legend-year-bar"></div>
+          <div class="legend-year-labels"><span id="legend-year-min">1830</span><span>Geburtsjahr</span><span id="legend-year-max">2026</span></div>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch" style="background:hsl(0 0% 88%)"></span>
+          <span>Geburtsjahr unbekannt</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-registered" style="background:hsl(130 66% 80%)"></span>
+          <span>Registriertes Mitglied</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-fan-current" style="background:hsl(130 66% 80%)"></span>
+          <span>Du oder Verwandtschaftspfad</span>
+        </div>
+        <div class="legend-hint">Gleicher Ring = gleiche Generation. Unterschiedliche Farben im selben Ring zeigen, wie ungleich schnell die Zweige gewachsen sind.</div>
       </div>
     </div>
 
@@ -706,7 +731,7 @@
   <script src="js/auth.js?v=30"></script>
   <script src="js/relationship.js?v=28"></script>
   <script src="js/tree.js?v=82"></script>
-  <script src="js/fan.js?v=17"></script>
+  <script src="js/fan.js?v=18"></script>
   <script src="js/qr.js?v=23"></script>
   <script src="js/search.js?v=22"></script>
   <script src="js/admin.js?v=4"></script>
@@ -715,6 +740,6 @@
   <script src="js/connection.js?v=6"></script>
   <script src="js/relations.js?v=13"></script>
   <script src="js/profile.js?v=31"></script>
-  <script src="js/app.js?v=47"></script>
+  <script src="js/app.js?v=48"></script>
 </body>
 </html>

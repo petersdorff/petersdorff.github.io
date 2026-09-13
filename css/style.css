@@ -2100,7 +2100,7 @@ a {
 .gotha-doc {
   max-width: 900px;
   margin: 0 auto;
-  padding: 16px 16px 120px;
+  padding: 52px 16px 120px;   /* Platz für den Familien-Umschalter oben */
   font-size: 13px;
   line-height: 1.5;
 }
@@ -2210,7 +2210,7 @@ a {
 .gotha-row.is-off-path { opacity: 0.45; }
 
 @media (max-width: 480px) {
-  .gotha-doc { padding: 12px 8px 120px; font-size: 12px; }
+  .gotha-doc { padding: 52px 8px 120px; font-size: 12px; }
   .gotha-children { margin-left: 6px; padding-left: 8px; }
   .gotha-gen { min-width: 22px; }
 }

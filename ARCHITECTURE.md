@@ -164,8 +164,16 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   Person ohne Eltern mit Kindern, die nicht in eine dokumentierte Linie
   eingeheiratet ist (Partner hat Eltern); ein Stammelternpaar = eine
   Familie (ältester Partner ist Wurzel). Jede Familie bekommt ihren
-  eigenen Fächer; Umschalter `#family-switch` oben (nur bei ≥2), Auswahl
-  in `localStorage.stammbaum_family`. Namen per `FAMILY_NAMES` nach
+  eigenen Fächer. **Die Zweig-Auswahl ist App-weit** (`app.js`:
+  `computeFamilies`, `activeFamilyId`, `setActiveFamily`, `ensureFamilyFor`,
+  `familySubset`) und gilt in allen fünf Ansichten: Umschalter
+  `#family-switch` oben (nur bei ≥2), Auswahl in
+  `localStorage.stammbaum_family`; Baum-Ansichten bekommen nur die
+  Personen/Beziehungen des aktiven Zweigs, Gotha rendert nur ihn, der
+  Fächer wählt ihn per `setPreferredFamily`/`setFamily` (interner
+  Auto-Wechsel meldet über `onFamilyChange` zurück). Zentrieren/„Im
+  Stammbaum zeigen"/Verwandtschaft wechseln bei Bedarf in den Zweig der
+  Person. Waisen-Ablage = in keiner Familie erreichbar (einheitlich). Namen per `FAMILY_NAMES` nach
   Nachname der Wurzel („…-Campen" → Märkische, „Petersdorff" → Pommersche,
   sonst „Familie <Nachname>"). Eine bekannte Familie ohne Wurzel bekommt
   als Wurzel den ältesten elternlosen, nicht eingeheirateten Namensträger —
@@ -255,8 +263,8 @@ Gen. III einklappen". Namen öffnen das Profil; Du = roter Balken,
 registriert = fett. `scrollTo(id)` klappt Vorfahren auf und blinkt die
 Zeile (genutzt von „Auf mich zentrieren" und „Im Stammbaum zeigen");
 `highlightConnection` markiert Pfad-Zeilen und dämpft den Rest. Nicht
-zugeordnete Personen stehen am Ende in „Nicht zugeordnet" (Waisen-Ablage
-und Familien-Umschalter sind in dieser Ansicht ausgeblendet).
+zugeordnete Personen zeigt die Waisen-Ablage (wie in allen Ansichten);
+der Familien-Umschalter oben wählt den gezeigten Zweig.
 
 ## Beziehungs-Automatik (`relations.js → propagateLogicalRelations`)
 

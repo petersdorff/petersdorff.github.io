@@ -14,6 +14,7 @@ const Gotha = (() => {
   let collapsed = new Set();       // IDs mit eingeklappten Kindern (Sitzung)
   let onTapCallback = null;
   let pathIds = null;              // markierte Zeilen (Verwandtschaftspfad)
+  let familyId = null;             // aktiver Zweig (App-weit gewählt)
 
   const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
   const roman = n => ROMAN[n] || String(n + 1);
@@ -41,18 +42,22 @@ const Gotha = (() => {
   //  RENDER
   // ═══════════════════════════════════════════════════════════
 
-  function render(memberData, relationshipData) {
+  function render(memberData, relationshipData, opts = {}) {
     members = memberData;
     relationships = relationshipData;
+    if (opts.familyId !== undefined) familyId = opts.familyId;
     if (!active) return;
     const me = (typeof Tree !== 'undefined' && Tree.getCurrentUser) ? Tree.getCurrentUser() : null;
-    const { families, unreachable } = Fan.buildFamiliesFrom(members, relationships);
+    const all = Fan.buildFamiliesFrom(members, relationships).families;
+    // Nur der aktive Zweig (Umschalter oben); Fallback: größte Familie
+    const families = all.filter(f => f.rootId === familyId);
+    if (!families.length && all.length) families.push(all[0]);
     const byId = new Map(members.map(m => [m.id, m]));
 
     const frag = document.createDocumentFragment();
 
     // Kopf mit Werkzeugen
-    const tools = el('div', 'gotha-tools');
+    const tools = el('div', 'gotha-tools');   // unter dem Familien-Umschalter
     tools.append(
       btn('Alle ausklappen', () => { collapsed = new Set(); render(members, relationships); }),
       btn('Bis Gen. III einklappen', () => { collapsed = new Set(); collapseBelow(families, 2); render(members, relationships); }),
@@ -67,22 +72,6 @@ const Gotha = (() => {
       sub.textContent = `${fam.size} Personen · ${countGenerations(fam.root)} Generationen`;
       sec.append(h, sub);
       sec.appendChild(renderNode(fam.root, me, byId));
-      frag.appendChild(sec);
-    }
-
-    if (unreachable.length) {
-      const sec = el('section', 'gotha-family gotha-orphans');
-      const h = el('h2', 'gotha-title'); h.textContent = 'Nicht zugeordnet';
-      const sub = el('div', 'gotha-subtitle'); sub.textContent = 'Noch ohne Verbindung zu einem Stammvater';
-      sec.append(h, sub);
-      const ul = el('ul', 'gotha-list');
-      for (const id of unreachable) {
-        const m = byId.get(id); if (!m) continue;
-        const li = el('li', 'gotha-item');
-        li.appendChild(renderRow(m, null, [], me, false));
-        ul.appendChild(li);
-      }
-      sec.appendChild(ul);
       frag.appendChild(sec);
     }
 

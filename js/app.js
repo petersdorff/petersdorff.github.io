@@ -13,6 +13,10 @@ const App = (() => {
   let isInitialized = false;
   let authHandled = false;
   let viewApplied = false;
+  // Familienzweige (aus Fan.buildFamiliesFrom), App-weit für alle Ansichten
+  let families = [];
+  let unreachableIds = [];
+  let activeFamilyId = null;
 
   // ─── Initialize ───
 
@@ -33,13 +37,15 @@ const App = (() => {
     });
     Fan.onAddRelative(addRelative);
     Fan.onConnect((memberId) => Connection.showConnectionTo(memberId));
+    // Fächer wechselt intern die Familie (z.B. Zentrieren auf eine Person
+    // des anderen Zweigs) → App-Zustand nachziehen
     Fan.onFamilyChange((rootId) => {
+      activeFamilyId = rootId;
       try { localStorage.setItem('stammbaum_family', rootId); } catch { /* privat/blockiert */ }
       updateFamilySwitch();
       updateOrphanTray();
       updateLegendBlocks();   // Jahres-Skala ist je Zweig
     });
-    try { Fan.setPreferredFamily(localStorage.getItem('stammbaum_family')); } catch { /* egal */ }
     Admin.initEmailJS();
 
     // Register auth state listener BEFORE Auth.init()
@@ -97,7 +103,8 @@ const App = (() => {
           applyReadOnlyUI();
           Admin.updateAdminMenu(isAdmin && !DB.isOffline());
           // Auf mich zentrieren statt "Wand aus 113 Kästchen"
-          if (Fan.isActive()) Fan.centerOn(member.id); else Tree.centerOn(member.id, 0.9, false);
+          ensureFamilyFor(member.id);
+          if (Fan.isActive()) Fan.centerOn(member.id); else if (!Gotha.isActive()) Tree.centerOn(member.id, 0.9, false);
           const resolved = await Connection.resolvePendingConnect();
           if (resolved) return;
         } else {
@@ -237,6 +244,7 @@ const App = (() => {
       const profileId = Profile.getCurrentProfileId();
       if (profileId) {
         showView('view-main');
+        ensureFamilyFor(profileId);
         if (Gotha.isActive()) Gotha.scrollTo(profileId);
         else if (Fan.isActive()) Fan.centerOn(profileId);
         else setTimeout(() => Tree.centerOn(profileId), 300);
@@ -371,16 +379,18 @@ const App = (() => {
   }
 
   function renderTree() {
+    computeFamilies();
+    const sub = familySubset();
     if (!viewApplied) {
       // Erster Render: gespeicherte Ansicht anwenden, Standard ist der Fächer.
       viewApplied = true;
       const name = getStoredView();
       const isFan = name === 'fan' || name === 'fan-years';
       if (!isFan && name !== 'gotha') Tree.setViewMode(name);
-      Tree.render(cachedMembers, cachedRelationships);
+      Tree.render(sub.members, sub.relationships);
       Fan.setColorMode(name === 'fan-years' ? 'year' : 'gender');
       setFanMode(isFan);
-      Gotha.render(cachedMembers, cachedRelationships);
+      Gotha.render(cachedMembers, cachedRelationships, { familyId: activeFamilyId });
       if (name === 'gotha') Gotha.show();
       updateToggleButton();
       updateLegendBlocks();
@@ -388,11 +398,66 @@ const App = (() => {
       updateOrphanTray();
       return;
     }
-    Tree.render(cachedMembers, cachedRelationships);
+    Tree.render(sub.members, sub.relationships);
     if (Fan.isActive()) Fan.render(cachedMembers, cachedRelationships);
-    Gotha.render(cachedMembers, cachedRelationships);
+    Gotha.render(cachedMembers, cachedRelationships, { familyId: activeFamilyId });
     updateFamilySwitch();
     updateOrphanTray();
+  }
+
+  // ─── Familienzweige: App-weiter Zustand für alle Ansichten ───
+
+  /** Familien aus den Daten ableiten und die aktive wählen
+      (gespeichert → die des Nutzers → größte). */
+  function computeFamilies() {
+    const res = Fan.buildFamiliesFrom(cachedMembers, cachedRelationships);
+    families = res.families;
+    unreachableIds = res.unreachable;
+    const valid = id => id && families.some(f => f.rootId === id);
+    if (!valid(activeFamilyId)) {
+      let stored = null;
+      try { stored = localStorage.getItem('stammbaum_family'); } catch { /* egal */ }
+      const me = Auth.getMember()?.id;
+      const mine = me && families.find(f => f.assigned.has(me));
+      activeFamilyId = valid(stored) ? stored : (mine ? mine.rootId : (families[0]?.rootId || null));
+    }
+    Fan.setPreferredFamily(activeFamilyId);
+  }
+
+  /** Personen und Beziehungen des aktiven Zweigs (für Baum-Ansichten). */
+  function familySubset() {
+    const f = families.find(x => x.rootId === activeFamilyId);
+    if (!f) return { members: cachedMembers, relationships: cachedRelationships };
+    return {
+      members: cachedMembers.filter(m => f.assigned.has(m.id)),
+      relationships: cachedRelationships.filter(r => f.assigned.has(r.fromId) && f.assigned.has(r.toId)),
+    };
+  }
+
+  function familyOf(memberId) {
+    const f = families.find(x => x.assigned.has(memberId));
+    return f ? f.rootId : null;
+  }
+
+  /** Zweig wechseln — in jeder Ansicht. */
+  function setActiveFamily(rootId) {
+    if (!rootId || rootId === activeFamilyId || !families.some(f => f.rootId === rootId)) return;
+    activeFamilyId = rootId;
+    try { localStorage.setItem('stammbaum_family', rootId); } catch { /* privat/blockiert */ }
+    Fan.setPreferredFamily(rootId);
+    if (Fan.isActive()) Fan.setFamily(rootId);   // rendert den Fächer selbst neu
+    const sub = familySubset();
+    Tree.render(sub.members, sub.relationships);
+    Gotha.render(cachedMembers, cachedRelationships, { familyId: rootId });
+    updateFamilySwitch();
+    updateOrphanTray();
+    updateLegendBlocks();
+  }
+
+  /** Vor dem Zentrieren ggf. in den Zweig der Person wechseln. */
+  function ensureFamilyFor(memberId) {
+    const fid = familyOf(memberId);
+    if (fid && fid !== activeFamilyId) setActiveFamily(fid);
   }
 
   // ─── Familienzweige (Fächer) ───
@@ -400,17 +465,17 @@ const App = (() => {
   function updateFamilySwitch() {
     const sw = document.getElementById('family-switch');
     if (!sw) return;
-    const fams = Fan.isActive() && !Gotha.isActive() ? Fan.getFamilies() : [];
-    sw.classList.toggle('hidden', fams.length < 2);
+    sw.classList.toggle('hidden', families.length < 2);
     sw.innerHTML = '';
-    for (const f of fams) {
+    for (const f of families) {
+      const active = f.rootId === activeFamilyId;
       const b = document.createElement('button');
-      b.className = 'family-btn' + (f.active ? ' active' : '');
+      b.className = 'family-btn' + (active ? ' active' : '');
       b.setAttribute('role', 'tab');
-      b.setAttribute('aria-selected', String(f.active));
+      b.setAttribute('aria-selected', String(active));
       b.textContent = f.short;
       b.title = `${f.name} · ${f.size} Personen`;
-      b.addEventListener('click', () => Fan.setFamily(f.rootId));
+      b.addEventListener('click', () => setActiveFamily(f.rootId));
       sw.appendChild(b);
     }
   }
@@ -424,15 +489,7 @@ const App = (() => {
   function updateOrphanTray() {
     const tray = document.getElementById('orphan-tray');
     if (!tray) return;
-    if (Gotha.isActive()) { tray.classList.add('hidden'); return; }   // Gotha listet sie selbst
-    let ids;
-    if (Fan.isActive()) {
-      ids = Fan.getUnreachable();
-    } else {
-      const linked = new Set();
-      for (const r of cachedRelationships) { linked.add(r.fromId); linked.add(r.toId); }
-      ids = cachedMembers.filter(m => !linked.has(m.id)).map(m => m.id);
-    }
+    const ids = unreachableIds;
     const byId = new Map(cachedMembers.map(m => [m.id, m]));
     const orphans = ids.map(id => byId.get(id)).filter(Boolean)
       .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`));
@@ -747,6 +804,7 @@ const App = (() => {
 
   function centerOnMe() {
     const member = Auth.getMember();
+    if (member) ensureFamilyFor(member.id);
     if (Gotha.isActive()) {
       if (!member || !Gotha.scrollTo(member.id)) toast('Wähle zuerst, wer du bist', 'info');
       return;
@@ -783,6 +841,8 @@ const App = (() => {
   return {
     showView,
     applyView,
+    setActiveFamily,
+    ensureFamilyFor,
     addRelative,
     toast,
     refreshTree,

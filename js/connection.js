@@ -79,6 +79,7 @@ const Connection = (() => {
     document.getElementById('connection-overlay').classList.remove('hidden');
 
     // Highlight path in tree and (if shown) in the fan chart
+    App.ensureFamilyFor(toId);
     Tree.highlightConnection(fromId, toId);
     Fan.highlightConnection(fromId, toId);
     if (Gotha.isActive()) Gotha.highlightConnection(fromId, toId);

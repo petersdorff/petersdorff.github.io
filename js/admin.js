@@ -26,6 +26,22 @@ const Admin = (() => {
     return ADMIN_EMAIL;
   }
 
+  // Aktuelle Rolle: aus der Freigabe-Zeile beim Login gesetzt.
+  // Die Bootstrap-E-Mail ist immer Admin (spiegelt is_admin() in der DB).
+  let currentIsAdmin = false;
+
+  function setCurrentRole(user, approval) {
+    currentIsAdmin = !!user && (
+      user.email === ADMIN_EMAIL ||
+      (approval && approval.status === 'approved' && approval.role === 'admin')
+    );
+    return currentIsAdmin;
+  }
+
+  function isAdmin() { return currentIsAdmin; }
+
+  function isBootstrapAdmin(email) { return email === ADMIN_EMAIL; }
+
   function updateAdminMenu(isAdmin) {
     const adminItem = document.getElementById('menu-admin-item');
     if (adminItem) {
@@ -60,15 +76,18 @@ const Admin = (() => {
         el.innerHTML = '';
         const countEl = document.getElementById(`admin-${key}-count`);
         if (countEl) countEl.textContent = groups[key].length ? `(${groups[key].length})` : '';
-        if (key === 'approved') el.appendChild(adminCard());   // der Admin selbst, ohne Antragszeile
+        // Fallback: eingeloggter (Bootstrap-)Admin ohne eigene Zeile (vor Migration 005)
+        if (key === 'approved' && !rows.some(r => r.user_uid === Auth.getUser()?.id)) el.appendChild(adminCard());
         if (!groups[key].length && key !== 'approved') {
           el.appendChild(Utils.createEl('p', { style: { color: 'var(--text-muted)', fontSize: '13px' }, textContent: key === 'pending' ? 'Keine offenen Anträge.' : 'Niemand.' }));
           continue;
         }
         for (const r of groups[key]) el.appendChild(userCard(r, claimedBy.get(r.user_uid)));
       }
+      const hasOwnRow = rows.some(r => r.user_uid === Auth.getUser()?.id);
+      const extra = hasOwnRow ? 0 : 1;
       const summary = document.getElementById('admin-summary');
-      if (summary) summary.textContent = `${rows.length + 1} Konten · ${groups.approved.length + 1} mit Zugriff · ${groups.pending.length} offen`;
+      if (summary) summary.textContent = `${rows.length + extra} Konten · ${groups.approved.length + extra} mit Zugriff · ${rows.filter(r => r.role === 'admin').length + (hasOwnRow ? 0 : 1)} Admins · ${groups.pending.length} offen`;
     } catch (err) {
       console.error('Admin panel error:', err);
       for (const el of Object.values(lists)) {
@@ -191,10 +210,35 @@ const Admin = (() => {
       });
       return b;
     };
+    const isSelf = req.user_uid === Auth.getUser()?.id;
+    const bootstrap = isBootstrapAdmin(req.email);
+    const roleBtn = (label, role, confirmText) => {
+      const b = Utils.createEl('button', { className: 'btn btn-small btn-secondary', textContent: label });
+      b.addEventListener('click', async () => {
+        if (confirmText && !confirm(confirmText)) return;
+        try {
+          await DB.setApprovalRole(req.id, role);
+          App.toast(`${displayName}: ${role === 'admin' ? 'ist jetzt Administrator' : 'Admin-Rechte entzogen'}`, 'success');
+          showAdminPanel();
+        } catch (err) {
+          console.error('Role error:', err);
+          App.toast('Änderung fehlgeschlagen', 'error');
+        }
+      });
+      return b;
+    };
     if (req.status === 'pending') {
       actions.append(act('Freigeben', 'btn-primary', 'approved'), act('Ablehnen', 'btn-danger', 'rejected', `${displayName} wirklich ablehnen?`));
     } else if (req.status === 'approved') {
-      actions.append(act('Sperren', 'btn-danger', 'revoked', `${displayName} sperren? Der Zugriff endet sofort, das Konto bleibt bestehen.`));
+      if (!isSelf && !bootstrap) {
+        actions.append(act('Sperren', 'btn-danger', 'revoked', `${displayName} sperren? Der Zugriff endet sofort, das Konto bleibt bestehen.`));
+      }
+      if (req.role === 'admin') {
+        // Eigene Rechte und die des Hauptadmins sind nicht entziehbar (kein Aussperren)
+        if (!isSelf && !bootstrap) actions.append(roleBtn('Admin-Rechte entziehen', 'member', `${displayName} die Admin-Rechte entziehen?`));
+      } else {
+        actions.append(roleBtn('Zum Admin machen', 'admin', `${displayName} zum Administrator machen? Kann dann Konten freigeben, sperren und Admins ernennen.`));
+      }
     } else {
       actions.append(act('Freigeben', 'btn-primary', 'approved'));
     }
@@ -218,11 +262,10 @@ const Admin = (() => {
       actions.appendChild(unlink);
     }
 
-    return Utils.createEl('div', { className: 'admin-user-card' }, [
-      Utils.createEl('div', { className: 'user-name' }, [
-        document.createTextNode(displayName),
-        Utils.createEl('span', { className: `status-badge ${req.status}`, textContent: STATUS_LABEL[req.status] || req.status }),
-      ]),
+    const badges = [Utils.createEl('span', { className: `status-badge ${req.status}`, textContent: STATUS_LABEL[req.status] || req.status })];
+    if (req.role === 'admin' || bootstrap) badges.push(Utils.createEl('span', { className: 'status-badge admin', textContent: bootstrap ? 'Admin · fest' : 'Admin' }));
+    return Utils.createEl('div', { className: 'admin-user-card' + (req.role === 'admin' || bootstrap ? ' is-admin' : '') }, [
+      Utils.createEl('div', { className: 'user-name' }, [document.createTextNode(displayName), ...badges]),
       Utils.createEl('div', { className: 'user-email', textContent: req.email }),
       meta,
       actions,
@@ -253,6 +296,8 @@ const Admin = (() => {
   return {
     initEmailJS,
     getAdminEmail,
+    setCurrentRole,
+    isAdmin,
     updateAdminMenu,
     showAdminPanel,
     sendAdminNotification,

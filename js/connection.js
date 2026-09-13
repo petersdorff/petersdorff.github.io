@@ -252,7 +252,7 @@ const Connection = (() => {
         const user = Auth.getUser();
         if (user) {
           clearInterval(checkAdmin);
-          if (user.email === Admin.getAdminEmail()) {
+          if (Admin.isAdmin()) {
             Admin.showAdminPanel();
           }
           window.location.hash = '';

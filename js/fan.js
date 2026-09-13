@@ -322,7 +322,7 @@ const Fan = (() => {
       lineH: 1.25,
     });
 
-    segById.set(m.id, { x: rm * Math.cos(theta), y: rm * Math.sin(theta), shape: { d }, r0, r1, a0, a1: a0 + span, theta });
+    segById.set(m.id, { x: rm * Math.cos(theta), y: rm * Math.sin(theta), shape: { d }, r0, r1, a0, a1: a0 + span, theta, spouses: node.spouses.length });
     node.spouses.forEach(sp => hostOf.set(sp.id, m.id));
     return g;
   }
@@ -340,7 +340,7 @@ const Fan = (() => {
       x: 0, y: 0, rot: 0, along: CENTER_R * 2 - 24, across: CENTER_R * 2 - 24, lineH: 1.3,
     });
     segLayer.appendChild(g);
-    segById.set(m.id, { x: 0, y: 0, shape: { r: CENTER_R }, r0: 0, r1: CENTER_R, a0: -Math.PI / 2, a1: Math.PI * 1.5, theta: -Math.PI / 2, center: true });
+    segById.set(m.id, { x: 0, y: 0, shape: { r: CENTER_R }, r0: 0, r1: CENTER_R, a0: -Math.PI / 2, a1: Math.PI * 1.5, theta: -Math.PI / 2, center: true, spouses: root.spouses.length });
     root.spouses.forEach(sp => hostOf.set(sp.id, m.id));
   }
 
@@ -565,11 +565,11 @@ const Fan = (() => {
     // Chips in Bildschirm-Pixeln konstant halten (unabhängig vom Zoom)
     const k = (svg.clientWidth || 1) / vb.w;   // px pro Einheit
     const r = 12 / k, off = 15 / k;
-    const chip = (x, y, kind, title) => {
+    const chip = (x, y, kind, title, glyph = '+') => {
       const g = el('g', { class: 'fan-ghost', 'data-id': ghostFor, 'data-add': kind, transform: `translate(${x.toFixed(2)},${y.toFixed(2)})` });
       g.appendChild(el('circle', { r, fill: '#ffffff', stroke: '#1a1a1a', 'stroke-width': 1.6 / k }));
-      const t = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': (16 / k).toFixed(2), 'font-weight': 600, fill: '#1a1a1a' });
-      t.textContent = '+';
+      const t = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': ((glyph === '+' ? 16 : 13) / k).toFixed(2), 'font-weight': 600, fill: '#1a1a1a' });
+      t.textContent = glyph;
       g.appendChild(t);
       const tt = el('title'); tt.textContent = title; g.appendChild(tt);
       ghostLayer.appendChild(g);
@@ -577,11 +577,19 @@ const Fan = (() => {
     // Kind: außen an der Segmentmitte
     const rc = seg.r1 + off;
     chip(rc * Math.cos(seg.theta), rc * Math.sin(seg.theta), 'child', 'Kind anlegen');
-    // Geschwister: seitlich am Ende des Segments (nicht für die Wurzel)
     if (!seg.center) {
       const rm = (seg.r0 + seg.r1) / 2;
+      // Geschwister: seitlich am Ende des Segments
       const a = seg.a1 + off / rm;
       chip(rm * Math.cos(a), rm * Math.sin(a), 'sibling', 'Geschwister anlegen');
+      // Partner: innen an der Segmentmitte — nur, wenn noch keiner eingetragen ist
+      if (!seg.spouses) {
+        const ri = seg.r0 - off;
+        chip(ri * Math.cos(seg.theta), ri * Math.sin(seg.theta), 'spouse', 'Partner anlegen', '∞');
+      }
+    } else if (!seg.spouses) {
+      // Wurzel ohne Partner: Chip unten am Kreis
+      chip(0, seg.r1 + off, 'spouse', 'Partner anlegen', '∞');
     }
   }
 

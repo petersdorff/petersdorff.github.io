@@ -418,6 +418,15 @@ const DB = (() => {
     if (error) throw error;
   }
 
+  /** Rolle setzen: 'admin' | 'member' (nur Admins, per RLS). */
+  async function setApprovalRole(approvalId, role) {
+    const { error } = await supabase
+      .from('user_approvals')
+      .update({ role })
+      .eq('id', approvalId);
+    if (error) throw error;
+  }
+
   /** Profil-Verknüpfung eines Kontos lösen: Profil wird wieder Platzhalter. */
   async function unclaimMember(memberId) {
     assertWritable();
@@ -542,6 +551,7 @@ const DB = (() => {
     approveUser,
     getAllApprovals,
     setApprovalStatus,
+    setApprovalRole,
     unclaimMember,
     rejectUser,
   };

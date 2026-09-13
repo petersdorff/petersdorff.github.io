@@ -57,10 +57,14 @@ Gotha-Datenbasis). Vanilla HTML/CSS/JS ohne Build-Schritt, PCB-Ästhetik
 - **Zugriffsmodell (4 Stufen):** Gast/Familientag (Snapshot, nur lesen) ·
   registriert-wartend (nichts, Warteseite) · Mitglied `approved` (alles
   lesen, Personen/Beziehungen anlegen und ändern, Kernfelder beanspruchter
-  Profile nur Inhaber/Admin) · Admin (fest `kaivonpetersdorff@me.com` in
-  `js/admin.js`, `is_approved()`, `is_admin()`). Status in `user_approvals`:
-  `pending | approved | rejected | revoked` (revoked = gesperrt, Konto
-  bleibt). Profil ↔ Konto über `members.claimed_by_uid`.
+  Profile nur Inhaber/Admin) · Admin. **Admin = `user_approvals.role =
+  'admin'`** (Migration 005, vergebbar in der Nutzerverwaltung durch jeden
+  Admin) **oder die Bootstrap-E-Mail** `kaivonpetersdorff@me.com` (fest in
+  `js/admin.js` und `is_admin()`; kann nicht ausgesperrt werden). Client:
+  `Admin.setCurrentRole(user, approval)` beim Login, danach
+  `Admin.isAdmin()`. Status in `user_approvals`: `pending | approved |
+  rejected | revoked` (revoked = gesperrt, Konto bleibt). Profil ↔ Konto
+  über `members.claimed_by_uid` (Nutzerverwaltung: verknüpfen / lösen).
 - **Nutzerverwaltung** (Menü → Admin, `Admin.showAdminPanel`): alle Konten
   gruppiert nach Status mit verknüpftem Profil; Aktionen Freigeben /
   Ablehnen / Sperren / Entsperren / Profil-Verknüpfung lösen
@@ -190,8 +194,9 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   bekommt erst Größe, wenn `view-main` sichtbar ist — der ResizeObserver
   passt beim Sichtbarwerden ein.
 - **Plus-Chips (nur mit Schreibrecht, `Fan.setCanEdit`):** bei Maus-Hover
-  bzw. an der zuletzt angetippten Person erscheinen „+ Kind" (außen) und
-  „+ Geschwister" (seitlich). Klick → `App.addRelative(relType, id)` öffnet
+  bzw. an der zuletzt angetippten Person erscheinen „+ Kind" (außen),
+  „+ Geschwister" (seitlich) und „∞ Partner" (innen; nur ohne
+  eingetragenen Partner). Klick → `App.addRelative(relType, id)` öffnet
   „Neue Person anlegen" als Seitenpanel mit vorbelegter Beziehung
   (`Relations.presetRelation`) und Nachname; die Regel-Engine ergänzt
   beim Speichern zweites Elternteil/Geschwister.

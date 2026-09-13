@@ -151,7 +151,7 @@ const Profile = (() => {
 
     // Protect core fields on claimed profiles: only claimer or admin can edit
     const currentUser = Auth.getUser();
-    const isAdmin = currentUser?.email === Admin.getAdminEmail();
+    const isAdmin = Admin.isAdmin();
     const isClaimer = member?.claimedByUid && currentUser?.id === member.claimedByUid;
     const coreEditable = !member?.claimedByUid || isClaimer || isAdmin;
 

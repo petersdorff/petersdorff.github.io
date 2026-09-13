@@ -47,11 +47,13 @@ const App = (() => {
       authHandled = true;
 
       if (user) {
-        const isAdmin = user.email === Admin.getAdminEmail();
-
-        if (!isAdmin) {
-          try {
-            const approval = await DB.getApprovalStatus(user.id);
+        // Bootstrap-E-Mail ist sofort Admin; alle anderen Rollen kommen aus
+        // der Freigabe-Zeile (Status UND Rolle) — sie wird für jeden gelesen.
+        let isAdmin = Admin.setCurrentRole(user, null);
+        try {
+          const approval = await DB.getApprovalStatus(user.id);
+          isAdmin = Admin.setCurrentRole(user, approval);
+          if (!isAdmin) {
             if (!approval) {
               const displayName = user.user_metadata?.display_name || user.email || '';
               await DB.createApprovalRequest(user.id, user.email, displayName);
@@ -70,18 +72,18 @@ const App = (() => {
               showView('view-pending');
               return;
             }
-          } catch (err) {
-            // Backend nicht erreichbar (z.B. Projekt pausiert): statt den Nutzer
-            // auf dem Warte-Screen zu stranden, lesend in den Offline-Modus gehen.
-            console.error('[App] Approval check failed:', err);
-            if (DB.snapshotAvailable()) {
-              toast('Server nicht erreichbar – Offline-Modus', 'info');
-              await Guest.enter();
-              return;
-            }
-            showView('view-pending');
+          }
+        } catch (err) {
+          // Backend nicht erreichbar (z.B. Projekt pausiert): statt den Nutzer
+          // auf dem Warte-Screen zu stranden, lesend in den Offline-Modus gehen.
+          console.error('[App] Approval check failed:', err);
+          if (DB.snapshotAvailable()) {
+            toast('Server nicht erreichbar – Offline-Modus', 'info');
+            await Guest.enter();
             return;
           }
+          showView('view-pending');
+          return;
         }
 
         if (member) {
@@ -460,13 +462,16 @@ const App = (() => {
     await Profile.edit(null);
     const year = target.birthDate ? ` (* ${target.birthDate.substring(0, 4)})` : '';
     Relations.presetRelation(relType, targetId, `${target.firstName} ${target.lastName}${year}`);
+    // Nachname nur für Kind/Geschwister vorbelegen — ein Partner hat i.d.R. einen anderen
     const ln = document.getElementById('edit-lastname');
-    if (!ln.value) ln.value = target.lastName || '';
+    if (!ln.value && relType !== 'spouse') ln.value = target.lastName || '';
     const title = document.querySelector('.edit-header h2');
     if (title) {
-      title.textContent = relType === 'child'
-        ? `Kind von ${target.firstName} anlegen`
-        : `Geschwister von ${target.firstName} anlegen`;
+      title.textContent = {
+        child: `Kind von ${target.firstName} anlegen`,
+        sibling: `Geschwister von ${target.firstName} anlegen`,
+        spouse: `Partner von ${target.firstName} anlegen`,
+      }[relType] || 'Neue Person anlegen';
     }
     document.getElementById('edit-firstname').focus();
   }

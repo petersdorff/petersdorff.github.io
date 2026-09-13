@@ -15,13 +15,16 @@ const Fan = (() => {
   const CHAR_W = 0.6;      // IBM Plex Mono: Zeichenbreite in em
   const NS = 'http://www.w3.org/2000/svg';
 
-  let container = null, svg = null, layer = null;
+  let container = null, svg = null;
+  let segLayer = null, hlLayer = null, labelLayer = null;   // z-Reihenfolge
   let members = [], relationships = [];
   let active = false;
   let vb = { x: -500, y: -500, w: 1000, h: 1000 };
   let chartRadius = 400;
   let onTapCallback = null;
-  let segments = [];        // { id, x, y, ... } für centerOn
+  let segById = new Map();  // id → { x, y, shape } (Blutlinie, hat Segment)
+  let hostOf = new Map();   // Angeheiratete → id des Partner-Segments
+  let highlight = null;     // { fromId, toId } — Verwandtschaftspfad
   let rootId = null;
 
   // ═══════════════════════════════════════════════════════════
@@ -31,8 +34,12 @@ const Fan = (() => {
   function init(containerId) {
     container = document.getElementById(containerId);
     svg = el('svg', { class: 'fan-svg' });
-    layer = el('g');
-    svg.appendChild(layer);
+    segLayer = el('g', { class: 'fan-segs' });
+    hlLayer = el('g', { class: 'fan-hl' });
+    labelLayer = el('g', { class: 'fan-labels' });
+    svg.appendChild(segLayer);
+    svg.appendChild(hlLayer);
+    svg.appendChild(labelLayer);
     container.appendChild(svg);
     attachPanZoom();
     if (window.ResizeObserver) {
@@ -46,7 +53,8 @@ const Fan = (() => {
   function show() {
     active = true;
     container.classList.remove('hidden');
-    if (members.length) fit();
+    if (!members.length) return;
+    if (highlight && hlLayer.childElementCount) fitToHighlight(); else fit();
   }
 
   function hide() {
@@ -111,8 +119,8 @@ const Fan = (() => {
   function render(memberData, relationshipData) {
     members = memberData;
     relationships = relationshipData;
-    layer.innerHTML = '';
-    segments = [];
+    segLayer.innerHTML = ''; hlLayer.innerHTML = ''; labelLayer.innerHTML = '';
+    segById = new Map(); hostOf = new Map();
 
     const root = buildTree();
     if (!root) return;
@@ -143,12 +151,13 @@ const Fan = (() => {
     for (const it of items) {
       const isMe = it.node.m.id === currentUserId;
       const g = drawSegment(it, familyName, isMe);
-      if (isMe) deferred.push(g); else layer.appendChild(g);
+      if (isMe) deferred.push(g); else segLayer.appendChild(g);
     }
     drawCenter(root, familyName, root.m.id === currentUserId);
-    deferred.forEach(g => layer.appendChild(g));
+    deferred.forEach(g => segLayer.appendChild(g));
 
-    if (active) fit();
+    if (highlight) drawHighlight();
+    if (active) { highlight && hlLayer.childElementCount ? fitToHighlight() : fit(); }
   }
 
   function drawSegment({ node, a0, a1 }, familyName, isMe) {
@@ -162,10 +171,8 @@ const Fan = (() => {
     const fill = segColor(m.gender, node.depth, m.isDeceased);
     const stroke = isMe ? '#e63946' : (m.isPlaceholder ? 'none' : '#1a1a1a');
     const sw = isMe ? 3 : (m.isPlaceholder ? 0 : 1.6);
-    g.appendChild(el('path', {
-      d: arcPath(r0, r1, a0, a0 + span, SEG_GAP), fill, stroke, 'stroke-width': sw,
-      'stroke-linejoin': 'round',
-    }));
+    const d = arcPath(r0, r1, a0, a0 + span, SEG_GAP);
+    g.appendChild(el('path', { d, fill, stroke, 'stroke-width': sw, 'stroke-linejoin': 'round' }));
 
     // ── Label ──
     const rm = (r0 + r1) / 2;
@@ -216,10 +223,11 @@ const Fan = (() => {
         text.appendChild(t);
         cy += lh;
       }
-      g.appendChild(text);
+      labelLayer.appendChild(text);
     }
 
-    segments.push({ id: m.id, x: rm * Math.cos(theta), y: rm * Math.sin(theta) });
+    segById.set(m.id, { x: rm * Math.cos(theta), y: rm * Math.sin(theta), shape: { d } });
+    node.spouses.forEach(sp => hostOf.set(sp.id, m.id));
     return g;
   }
 
@@ -250,9 +258,97 @@ const Fan = (() => {
       text.appendChild(t);
       cy += lh;
     }
-    g.appendChild(text);
-    layer.appendChild(g);
-    segments.push({ id: m.id, x: 0, y: 0 });
+    labelLayer.appendChild(text);
+    segLayer.appendChild(g);
+    segById.set(m.id, { x: 0, y: 0, shape: { r: CENTER_R } });
+    root.spouses.forEach(sp => hostOf.set(sp.id, m.id));
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  VERWANDTSCHAFTSPFAD (rote Linie direkt im Fächer)
+  // ═══════════════════════════════════════════════════════════
+
+  function highlightConnection(fromId, toId) {
+    highlight = { fromId, toId };
+    if (!members.length) return;
+    drawHighlight();
+    if (active) fitToHighlight();
+  }
+
+  function clearHighlight() {
+    highlight = null;
+    if (hlLayer) hlLayer.innerHTML = '';
+  }
+
+  /** Pfadknoten → Ankerpunkt im Fächer. Angeheiratete liegen im Segment
+      ihres Partners; aufeinanderfolgende gleiche Anker werden verschmolzen. */
+  function pathAnchors(expandedPath) {
+    const anchors = [];
+    for (const step of expandedPath) {
+      const segId = segById.has(step.id) ? step.id : hostOf.get(step.id);
+      if (!segId) continue;
+      if (anchors.length && anchors[anchors.length - 1].id === segId) continue;
+      const seg = segById.get(segId);
+      anchors.push({ id: segId, x: seg.x, y: seg.y, shape: seg.shape });
+    }
+    return anchors;
+  }
+
+  function drawHighlight() {
+    hlLayer.innerHTML = '';
+    if (!highlight) return;
+    const { expandedPath } = Relationship.getPathData(highlight.fromId, highlight.toId, members, relationships);
+    if (!expandedPath || !expandedPath.length) return;
+    const anchors = pathAnchors(expandedPath);
+    if (!anchors.length) return;
+    const RED = '#e63946';
+
+    // Beteiligte Segmente rot umranden
+    for (const a of anchors) {
+      hlLayer.appendChild(a.shape.d
+        ? el('path', { d: a.shape.d, fill: 'none', stroke: RED, 'stroke-width': 3, 'stroke-linejoin': 'round' })
+        : el('circle', { r: a.shape.r, fill: 'none', stroke: RED, 'stroke-width': 3 }));
+    }
+    // Linie durch die Segmentmitten (unter den Beschriftungen)
+    if (anchors.length > 1) {
+      hlLayer.appendChild(el('polyline', {
+        points: anchors.map(a => `${a.x.toFixed(2)},${a.y.toFixed(2)}`).join(' '),
+        fill: 'none', stroke: RED, 'stroke-width': 3.5, 'stroke-opacity': 0.9,
+        'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+      }));
+    }
+    // Punkte: Zwischenstationen klein, Start/Ziel groß
+    anchors.forEach((a, i) => {
+      const end = i === 0 || i === anchors.length - 1;
+      hlLayer.appendChild(el('circle', {
+        cx: a.x.toFixed(2), cy: a.y.toFixed(2), r: end ? 7 : 4.5,
+        fill: RED, stroke: '#fff', 'stroke-width': end ? 2.5 : 1.5,
+      }));
+    });
+  }
+
+  /** Viewport auf den Pfad einpassen; lässt Platz für das Verbindungs-Panel
+      (rechts auf Desktop, unten auf Mobile) wie die Baumansicht. */
+  function fitToHighlight() {
+    const pts = [...hlLayer.querySelectorAll('circle[cx]')].map(c => ({ x: +c.getAttribute('cx'), y: +c.getAttribute('cy') }));
+    if (!pts.length) return;
+    const pad = RING * 0.8;
+    const minX = Math.min(...pts.map(p => p.x)) - pad, maxX = Math.max(...pts.map(p => p.x)) + pad;
+    const minY = Math.min(...pts.map(p => p.y)) - pad, maxY = Math.max(...pts.map(p => p.y)) + pad;
+    const cw = container.clientWidth || 1, ch = container.clientHeight || 1;
+    const isDesktop = window.innerWidth >= 600;
+    const panelW = isDesktop ? Math.min(320, cw * 0.5) : 0;
+    const panelH = isDesktop ? 0 : Math.min(window.innerHeight * 0.45, ch * 0.5);
+    const margin = 40;
+    const availW = Math.max(50, cw - panelW - 2 * margin);
+    const availH = Math.max(50, ch - panelH - 2 * margin);
+    // Einheiten pro Pixel; nicht näher ran als bei centerOn
+    const s = Math.max((maxX - minX) / availW, (maxY - minY) / availH, (RING * 5.5) / cw);
+    vb.w = cw * s; vb.h = ch * s;
+    const bcx = (minX + maxX) / 2, bcy = (minY + maxY) / 2;
+    vb.x = bcx - ((cw - panelW) / 2) * s;
+    vb.y = bcy - ((ch - panelH) / 2) * s;
+    apply();
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -357,7 +453,7 @@ const Fan = (() => {
   }
 
   function centerOn(memberId) {
-    const s = segments.find(x => x.id === memberId);
+    const s = segById.get(memberId) || segById.get(hostOf.get(memberId));
     if (!s) { fit(); return; }
     const cw = container.clientWidth || 1, ch = container.clientHeight || 1;
     const w = RING * 5.5, h = w * ch / cw;
@@ -418,5 +514,5 @@ const Fan = (() => {
     }, { passive: false });
   }
 
-  return { init, onTap, isActive, show, hide, toggle, render, fit, centerOn };
+  return { init, onTap, isActive, show, hide, toggle, render, fit, centerOn, highlightConnection, clearHighlight };
 })();

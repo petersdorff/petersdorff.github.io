@@ -73,8 +73,9 @@ const Connection = (() => {
     // Show overlay
     document.getElementById('connection-overlay').classList.remove('hidden');
 
-    // Highlight path in tree
+    // Highlight path in tree and (if shown) in the fan chart
     Tree.highlightConnection(fromId, toId);
+    Fan.highlightConnection(fromId, toId);
   }
 
   /**
@@ -143,6 +144,7 @@ const Connection = (() => {
   function closeOverlay() {
     document.getElementById('connection-overlay').classList.add('hidden');
     Tree.clearHighlight();
+    Fan.clearHighlight();
   }
 
   // ─── QR Scan Handler ───

@@ -1688,6 +1688,10 @@ a {
 .fan-seg { cursor: pointer; }
 .fan-seg:hover path, .fan-seg:hover circle { filter: brightness(0.94); }
 
+.fan-hl, .fan-hl * {
+  pointer-events: none;
+}
+
 .fan-label {
   pointer-events: none;
   user-select: none;

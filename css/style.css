@@ -543,9 +543,15 @@ a {
    TREE CONTAINER
    ═══════════════════════════════════════════════════════════ */
 
-#tree-container {
+#tree-area {
   flex: 1;
   position: relative;
+  overflow: hidden;
+}
+
+#tree-container {
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   background: var(--bg);
   /* Subtle grid pattern like PCB */

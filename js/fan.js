@@ -550,11 +550,24 @@ const Fan = (() => {
   function attachPanZoom() {
     const pts = new Map();
     let moved = 0, prevPinch = null;
+    // Ziel beim Drücken merken: nach setPointerCapture ist e.target beim
+    // pointerup das <svg>, nicht mehr das Segment unter dem Finger.
+    let downTarget = null;
 
     svg.addEventListener('pointerdown', e => {
+      if (e.button !== undefined && e.button !== 0) return;
+      // Primärer Kontakt (Maus / erster Finger): verwaiste Einträge räumen,
+      // falls ein pointerup verloren ging — sonst gälte der nächste Tap
+      // fälschlich als zweiter Finger (Pinch) und würde ignoriert.
+      if (e.isPrimary) pts.clear();
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      svg.setPointerCapture(e.pointerId);
-      if (pts.size === 1) moved = 0;
+      if (pts.size === 1) {
+        moved = 0;
+        downTarget = e.target.closest ? e.target.closest('[data-id]') : null;
+      } else {
+        downTarget = null;   // zweiter Finger → Pinch, kein Tap
+      }
+      try { svg.setPointerCapture(e.pointerId); } catch { /* synthetisch */ }
       prevPinch = null;
     });
 
@@ -586,10 +599,13 @@ const Fan = (() => {
     const up = e => {
       if (!pts.has(e.pointerId)) return;
       pts.delete(e.pointerId);
-      if (pts.size === 0 && moved < 10 && e.type === 'pointerup') {
-        const seg = e.target.closest && e.target.closest('[data-id]');
-        if (seg && onTapCallback) onTapCallback(seg.getAttribute('data-id'));
+      try { svg.releasePointerCapture(e.pointerId); } catch { /* egal */ }
+      if (pts.size === 0 && e.type === 'pointerup' && moved < 10 && downTarget) {
+        const id = downTarget.getAttribute('data-id');
+        downTarget = null;
+        if (id && onTapCallback) onTapCallback(id);
       }
+      if (pts.size === 0) downTarget = null;
     };
     svg.addEventListener('pointerup', up);
     svg.addEventListener('pointercancel', up);

@@ -135,6 +135,15 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   passt beim Sichtbarwerden ein.
 - Nicht über die Wurzel erreichbare Personen fehlen im Fächer und werden
   in der Konsole gelistet (`[Fan] … nicht erreichbar`).
+- **Zwei Fallen, die schon einmal zugeschlagen haben:** (1) `#fan-container`
+  muss ein *Geschwister* von `#tree-container` sein (Wrapper `#tree-area`),
+  nie ein Kind — Cytoscape bindet seine Maus-Listener an seinen Container
+  und würde jeden Fächer-Klick zusätzlich gegen die unsichtbaren
+  Baum-Knoten auswerten (falsches Profil / Profil schließt sofort).
+  (2) Nach `setPointerCapture` ist `e.target` beim `pointerup` das `<svg>`;
+  das getroffene Segment wird deshalb beim `pointerdown` gemerkt. Tests
+  dafür immer mit **echten** Klicks (Computer-Tool) machen — synthetische
+  Events bubbeln nicht durch die Capture und verdecken beide Fehler.
 
 ## Beziehungs-Automatik (`relations.js → propagateLogicalRelations`)
 

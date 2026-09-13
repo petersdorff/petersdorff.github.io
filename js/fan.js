@@ -668,6 +668,20 @@ const Fan = (() => {
     apply();
   }
 
+  /** ID des Partner-Links im Label von segId, der pt (Client-Koordinaten)
+      bis auf `pad` Pixel trifft — sonst null. */
+  function spouseLinkNear(segId, pt, pad) {
+    const label = labelLayer.querySelector(`.fan-label[data-id="${segId}"]`);
+    if (!label) return null;
+    for (const link of label.querySelectorAll('.fan-spouse-link')) {
+      const r = link.getBoundingClientRect();
+      if (pt.x >= r.left - pad && pt.x <= r.right + pad && pt.y >= r.top - pad && pt.y <= r.bottom + pad) {
+        return link.getAttribute('data-id');
+      }
+    }
+    return null;
+  }
+
   /** Person in die Bildmitte holen, ohne den Zoom zu ändern. */
   function panTo(memberId) {
     ensureFamilyFor(memberId);
@@ -683,7 +697,7 @@ const Fan = (() => {
     let moved = 0, prevPinch = null;
     // Ziel beim Drücken merken: nach setPointerCapture ist e.target beim
     // pointerup das <svg>, nicht mehr das Segment unter dem Finger.
-    let downTarget = null;
+    let downTarget = null, downPt = null;
 
     svg.addEventListener('pointerdown', e => {
       if (e.button !== undefined && e.button !== 0) return;
@@ -695,6 +709,7 @@ const Fan = (() => {
       if (pts.size === 1) {
         moved = 0;
         downTarget = e.target.closest ? e.target.closest('[data-id]') : null;
+        downPt = { x: e.clientX, y: e.clientY };
       } else {
         downTarget = null;   // zweiter Finger → Pinch, kein Tap
       }
@@ -732,8 +747,14 @@ const Fan = (() => {
       pts.delete(e.pointerId);
       try { svg.releasePointerCapture(e.pointerId); } catch { /* egal */ }
       if (pts.size === 0 && e.type === 'pointerup' && moved < 10 && downTarget) {
-        const id = downTarget.getAttribute('data-id');
+        let id = downTarget.getAttribute('data-id');
         const add = downTarget.getAttribute('data-add');
+        // Partner-Links sind klein: ein Tipp knapp daneben (±8px) im
+        // Segment der Person gilt trotzdem als Link-Tipp.
+        if (!add && !downTarget.classList.contains('fan-spouse-link') && downPt) {
+          const near = spouseLinkNear(id, downPt, 8);
+          if (near) id = near;
+        }
         downTarget = null;
         if (add) {
           if (onAddCallback) onAddCallback(add, id);

@@ -16,7 +16,7 @@ const Fan = (() => {
   // Semantic Zoom: Schwellen in Pixel pro SVG-Einheit.
   //   far  (< 0.55): nur Vorname, groß
   //   mid  (< 1.1):  Vorname + Partner-Vornamen
-  //   full:          Vorname + Partner mit Geburtsname + Lebensdaten
+  //   full:          Vor- und Nachname + Partner mit Geburtsname + Lebensdaten
   const LOD_MID = 0.55, LOD_FULL = 1.1;
   const NS = 'http://www.w3.org/2000/svg';
 
@@ -346,11 +346,23 @@ const Fan = (() => {
       lines.push({ ...fitText(txt, along, center ? 12 : 13, 6.5), weight: 600 });
       if (spouses.length) lines.push(spouseLine(spouses, along, 9.5, 6, sp => sp.firstName));
     } else {
-      const txt = center ? `${m.firstName} ${m.lastName}` : me + displayName(m, familyName);
-      lines.push({ ...fitText(txt, along, 11, 6.5), weight: 600 });
+      // nah: voller Name — Nachname als eigene Zeile, damit er in die
+      // Ringbreite passt; Geburtsname zuletzt (niedrigste Priorität)
+      if (center) {
+        lines.push({ ...fitText(`${m.firstName} ${m.lastName}`, along, 11, 6.5), weight: 600 });
+      } else {
+        lines.push({ ...fitText(me + m.firstName, along, 11, 6.5), weight: 600 });
+        // Nachname darf etwas dichter an den Rand und kleiner werden,
+        // damit „von Petersdorff-Campen" auch radial in die Ringbreite passt
+        if (m.lastName) lines.push({ ...fitText(m.lastName, along + 6, 8.5, 5.5), weight: 500 });
+      }
       if (spouses.length) lines.push(spouseLine(spouses, along, 8.5, 6, spouseName));
       const yr = yearLabel(m);
       if (yr) lines.push({ ...fitText(yr, along, 8, 6), weight: 400, dim: true });
+      if (m.birthName) {
+        const geb = /^geb\./i.test(m.birthName) ? m.birthName : `geb. ${m.birthName}`;
+        lines.push({ ...fitText(geb, along, 7.5, 6), weight: 400, dim: true });
+      }
     }
     return lines;
   }

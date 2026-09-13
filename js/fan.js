@@ -32,9 +32,8 @@ const Fan = (() => {
   let highlight = null;     // { fromId, toId } — Verwandtschaftspfad
   let labelSpecs = [];      // Geometrie je Segment, Labels werden je Zoomstufe neu gesetzt
   let ghostLayer = null;    // Plus-Chips „Kind / Geschwister anlegen"
-  let ringLayer = null;     // Dreh-Ring mit Griff (außen um den Fächer)
-  let phi = 0;              // Rotation des Fächers (rad), per Ring-Drag
-  let rotating = null;      // { startAngle, phi0 } während eines Ring-Drags
+  let phi = 0;              // Rotation des Fächers (rad), per Rändelrad
+  let wheel = null;         // Rändelrad (HTML-Overlay rechts, bildschirmfix)
   let ghostFor = null;      // Segment-ID, für die Chips gezeigt werden (Hover/Auswahl)
   let canEdit = false;      // nur online mit Schreibrecht
   let colorMode = 'gender'; // 'gender' | 'year' (Geburtsjahr-Skala)
@@ -73,8 +72,6 @@ const Fan = (() => {
     hlLayer = el('g', { class: 'fan-hl' });
     labelLayer = el('g', { class: 'fan-labels' });
     ghostLayer = el('g', { class: 'fan-ghosts' });
-    ringLayer = el('g', { class: 'fan-ring' });
-    svg.appendChild(ringLayer);
     svg.appendChild(segLayer);
     svg.appendChild(hlLayer);
     svg.appendChild(labelLayer);
@@ -88,6 +85,7 @@ const Fan = (() => {
     svg.addEventListener('pointerleave', () => { if (!selectedId) showGhosts(null); });
     container.appendChild(svg);
     attachPanZoom();
+    attachWheel();
     // Wird der Container erst sichtbar (0 → Breite), einpassen; sonst nur
     // das Seitenverhältnis nachziehen (z.B. Rotation des Handys).
     let lastW = 0;
@@ -297,7 +295,6 @@ const Fan = (() => {
     drawCenter(root, familyName, root.m.id === currentUserId);
     deferred.forEach(g => segLayer.appendChild(g));
 
-    drawRing();
     applyRotation();
     if (highlight) drawHighlight();
     if (active) { highlight && hlAnchors.length ? fitToHighlight() : fit(); }
@@ -602,7 +599,7 @@ const Fan = (() => {
   //  ROTATION (Ring außen, Griff-Knopf)
   // ═══════════════════════════════════════════════════════════
 
-  const RING_OFFSET = 26;   // Abstand des Dreh-Rings vom äußersten Ring (Einheiten)
+  const WHEEL_PX_PER_TURN = 720;   // Fingerweg (px) für eine volle Umdrehung
 
   /** Punkt (x,y) um phi gedreht. */
   function rotPt(x, y) {
@@ -629,49 +626,53 @@ const Fan = (() => {
       const spec = labelSpecs.find(x => x.m.id === t.getAttribute('data-id'));
       if (spec) t.setAttribute('transform', labelTransform(spec));
     }
-    updateRing();
     if (ghostFor) renderGhosts();
+    // Rillen des Rads laufen 1:1 mit dem Fingerweg
+    if (wheel) wheel.style.backgroundPositionY = `${(phi / (2 * Math.PI) * WHEEL_PX_PER_TURN).toFixed(1)}px`;
   }
 
-  function drawRing() {
-    ringLayer.innerHTML = '';
-    const R = chartRadius + RING_OFFSET;
-    ringLayer.appendChild(el('circle', { class: 'fan-rotor-track', r: R, fill: 'none', stroke: '#c4c4c4' }));
-    ringLayer.appendChild(el('circle', { class: 'fan-rotor fan-rotor-hit', r: R, fill: 'none', stroke: 'rgba(0,0,0,0)', 'pointer-events': 'stroke' }));
-    // Pfeilpaar oben auf dem Ring: ◀ linksherum, ▶ rechtsherum (Hinweis: hier drehen)
-    for (const dir of [-1, 1]) {
-      const g = el('g', { class: 'fan-rotor fan-rotor-arrow', 'data-dir': dir });
-      g.appendChild(el('path', { d: 'M-7,-6 L6,0 L-7,6 Z', fill: '#1a1a1a' }));
-      const tt = el('title'); tt.textContent = 'Ziehen zum Drehen'; g.appendChild(tt);
-      ringLayer.appendChild(g);
-    }
-    updateRing();
-  }
+  /**
+   * Rändelrad (wie die Krone einer Uhr von oben): HTML-Element rechts im
+   * Container, bildschirmfix. Vertikales Ziehen dreht den Fächer, Mausrad
+   * darüber ebenfalls.
+   */
+  function attachWheel() {
+    wheel = document.createElement('div');
+    wheel.className = 'fan-wheel';
+    wheel.setAttribute('title', 'Ziehen zum Drehen');
+    wheel.setAttribute('role', 'slider');
+    wheel.setAttribute('aria-label', 'Fächer drehen');
+    container.appendChild(wheel);
 
-  /** Ring-Strichstärken und Pfeile in Bildschirm-Pixeln konstant halten. */
-  function updateRing() {
-    if (!ringLayer.childElementCount) return;
-    const k = (svg.clientWidth || 1) / vb.w;
-    const R = chartRadius + RING_OFFSET;
-    ringLayer.querySelector('.fan-rotor-track').setAttribute('stroke-width', (3 / k).toFixed(3));
-    ringLayer.querySelector('.fan-rotor-hit').setAttribute('stroke-width', (30 / k).toFixed(3));
-    // Pfeile sitzen fest oben (der Ring dreht sich nicht mit), leicht links/rechts der Spitze
-    const gapRad = 14 / k / R;   // ~14 px Abstand von der Spitze
-    for (const g of ringLayer.querySelectorAll('.fan-rotor-arrow')) {
-      const dir = +g.getAttribute('data-dir');
-      const a = -Math.PI / 2 + dir * gapRad;
-      const x = R * Math.cos(a), y = R * Math.sin(a);
-      // Pfeilspitze tangential: rechtsherum = a + 90°, linksherum = a − 90°
-      const rot = (a + dir * Math.PI / 2) * 180 / Math.PI;
-      g.setAttribute('transform', `translate(${x.toFixed(2)},${y.toFixed(2)}) rotate(${rot.toFixed(2)}) scale(${(1 / k).toFixed(4)})`);
-    }
-  }
-
-  /** Winkel (rad) des Zeigers um den Fächer-Mittelpunkt, in Bildschirmkoordinaten. */
-  function pointerAngle(clientX, clientY) {
-    const ctm = svg.getScreenCTM();
-    const c = new DOMPoint(0, 0).matrixTransform(ctm);
-    return Math.atan2(clientY - c.y, clientX - c.x);
+    let drag = null;   // { y, phi0 }
+    wheel.addEventListener('pointerdown', e => {
+      if (e.button !== undefined && e.button !== 0) return;
+      drag = { y: e.clientY, phi0: phi };
+      try { wheel.setPointerCapture(e.pointerId); } catch { /* synthetisch */ }
+      wheel.classList.add('is-active');
+      e.preventDefault();
+    });
+    wheel.addEventListener('pointermove', e => {
+      if (!drag) return;
+      phi = drag.phi0 + (e.clientY - drag.y) / WHEEL_PX_PER_TURN * 2 * Math.PI;
+      applyRotation();
+    });
+    const end = e => {
+      if (!drag) return;
+      drag = null;
+      wheel.classList.remove('is-active');
+      try { wheel.releasePointerCapture(e.pointerId); } catch { /* egal */ }
+      if (highlight) drawHighlight();   // Anker für Einpassen neu berechnen
+    };
+    wheel.addEventListener('pointerup', end);
+    wheel.addEventListener('pointercancel', end);
+    wheel.addEventListener('wheel', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      phi += e.deltaY / WHEEL_PX_PER_TURN * 2 * Math.PI;
+      applyRotation();
+      if (highlight) drawHighlight();
+    }, { passive: false });
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -844,7 +845,6 @@ const Fan = (() => {
     svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
     renderLabels();
     if (ghostFor) renderGhosts();
-    updateRing();
   }
 
   function unitsPerPx() { return vb.w / (svg.clientWidth || 1); }
@@ -860,7 +860,7 @@ const Fan = (() => {
   function fit() {
     const cw = container.clientWidth || 1, ch = container.clientHeight || 1;
     // Mindestens Platz für zwei Ringe, sonst füllt eine Ein-Personen-Familie den Bildschirm
-    const R = Math.max(chartRadius, CENTER_R + 2 * RING) + RING_OFFSET + PAD;
+    const R = Math.max(chartRadius, CENTER_R + 2 * RING) + PAD;
     let w = 2 * R, h = 2 * R;
     if (cw >= ch) w = h * cw / ch; else h = w * ch / cw;
     vb = { x: -w / 2, y: -h / 2, w, h };
@@ -948,10 +948,6 @@ const Fan = (() => {
         moved = 0;
         downTarget = e.target.closest ? e.target.closest('[data-id]') : null;
         downPt = { x: e.clientX, y: e.clientY };
-        // Am Dreh-Ring angefasst → Rotation statt Verschieben
-        rotating = (e.target.closest && e.target.closest('.fan-rotor'))
-          ? { startAngle: pointerAngle(e.clientX, e.clientY), phi0: phi } : null;
-        svg.classList.toggle('is-rotating', !!rotating);
       } else {
         downTarget = null;   // zweiter Finger → Pinch, kein Tap
       }
@@ -966,10 +962,7 @@ const Fan = (() => {
       moved += Math.abs(dx) + Math.abs(dy);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-      if (pts.size === 1 && rotating) {
-        phi = rotating.phi0 + (pointerAngle(e.clientX, e.clientY) - rotating.startAngle);
-        applyRotation();
-      } else if (pts.size === 1) {
+      if (pts.size === 1) {
         const s = unitsPerPx();
         vb.x -= dx * s; vb.y -= dy * s;
         apply();
@@ -991,13 +984,6 @@ const Fan = (() => {
       if (!pts.has(e.pointerId)) return;
       pts.delete(e.pointerId);
       try { svg.releasePointerCapture(e.pointerId); } catch { /* egal */ }
-      if (pts.size === 0 && rotating) {
-        rotating = null;
-        svg.classList.remove('is-rotating');
-        if (highlight) drawHighlight();   // Anker für Einpassen neu berechnen
-        downTarget = null;
-        return;
-      }
       if (pts.size === 0 && e.type === 'pointerup' && moved < 10 && downTarget) {
         let id = downTarget.getAttribute('data-id');
         const add = downTarget.getAttribute('data-add');

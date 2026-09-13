@@ -630,6 +630,7 @@ a {
 #tree-container {
   position: absolute;
   inset: 0;
+  z-index: 10;   /* eigener Stacking-Kontext: Minimap/Generationslabels bleiben unter Fächer (20) und Gotha (25) */
   overflow: hidden;
   background: var(--bg);
   /* Subtle grid pattern like PCB */

@@ -983,6 +983,13 @@ a {
   z-index: 10;
 }
 
+/* Vollbild: Zurück-Pfeil links. Seitenpanel: Schließen-X rechts,
+   Bearbeiten-Stift rückt nach links. */
+#btn-profile-back .icon-close { display: none; }
+#view-profile.side-panel #btn-profile-back .icon-back { display: none; }
+#view-profile.side-panel #btn-profile-back .icon-close { display: block; }
+#view-profile.side-panel .profile-header { flex-direction: row-reverse; }
+
 .profile-photo-wrap {
   display: flex;
   justify-content: center;

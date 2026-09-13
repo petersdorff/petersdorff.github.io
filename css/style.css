@@ -1617,20 +1617,60 @@ a {
   background: var(--trace-faint);
 }
 
-.conn-step-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 2px solid var(--red);
-  background: var(--bg);
-  margin-top: 3px;
+/* Schritt-Icons: Endpunkte als Punkt, dazwischen Richtungspfeile,
+   gemeinsamer Vorfahre als blauer Stern */
+.conn-step-icon {
+  width: 14px;
+  height: 14px;
+  margin: 1px 0 0 -2px;      /* zentriert auf der Verbindungslinie (left 4px + 1px) */
   flex-shrink: 0;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--red);
 }
 
-.conn-step:first-child .conn-step-dot,
-.conn-step:last-child .conn-step-dot {
+.conn-step-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.conn-step-icon.endpoint {
+  width: 10px;
+  height: 10px;
+  margin: 3px 2px 0 0;
+  border: 2px solid var(--red);
   background: var(--red);
+}
+
+.conn-step-icon.ancestor {
+  width: 20px;
+  height: 20px;
+  margin: -2px 0 0 -5px;
+  color: var(--blue);
+  background: var(--blue-light);
+  border: 2px solid var(--blue);
+}
+
+.conn-step-icon.ancestor svg {
+  width: 11px;
+  height: 11px;
+}
+
+.conn-step-ancestor .conn-step-body {
+  background: var(--blue-light);
+  border-left: 3px solid var(--blue);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  margin-top: -3px;
+  flex: 1;
+}
+
+.conn-step-ancestor .conn-step-name {
+  color: var(--blue);
 }
 
 .conn-step-body {
@@ -1691,6 +1731,10 @@ a {
 .fan-hl, .fan-hl * {
   pointer-events: none;
 }
+
+/* Verwandtschaftspfad: Unbeteiligte ausgrauen, Beteiligte behalten Farbe + roten Rahmen */
+.fan-seg.fan-dim { opacity: 0.22; }
+.fan-label.fan-dim { opacity: 0.3; }
 
 .fan-label {
   pointer-events: none;

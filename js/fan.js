@@ -13,6 +13,11 @@ const Fan = (() => {
   const CENTER_R = 82;     // Radius des Zentrums (Stammeltern)
   const PAD = 30;
   const CHAR_W = 0.6;      // IBM Plex Mono: Zeichenbreite in em
+  // Semantic Zoom: Schwellen in Pixel pro SVG-Einheit.
+  //   far  (< 0.55): nur Vorname, groß
+  //   mid  (< 1.1):  Vorname + Partner-Vornamen
+  //   full:          Vorname + Partner mit Geburtsname + Lebensdaten
+  const LOD_MID = 0.55, LOD_FULL = 1.1;
   const NS = 'http://www.w3.org/2000/svg';
 
   let container = null, svg = null;
@@ -25,6 +30,10 @@ const Fan = (() => {
   let segById = new Map();  // id → { x, y, shape } (Blutlinie, hat Segment)
   let hostOf = new Map();   // Angeheiratete → id des Partner-Segments
   let highlight = null;     // { fromId, toId } — Verwandtschaftspfad
+  let labelSpecs = [];      // Geometrie je Segment, Labels werden je Zoomstufe neu gesetzt
+  let hlAnchors = [];       // Ankerpunkte des aktiven Pfads (für fitToHighlight)
+  let involved = null;      // Set der beteiligten Segment-IDs; alle anderen werden gedimmt
+  let lodTier = null;
   let rootId = null;
 
   // ═══════════════════════════════════════════════════════════
@@ -54,7 +63,7 @@ const Fan = (() => {
     active = true;
     container.classList.remove('hidden');
     if (!members.length) return;
-    if (highlight && hlLayer.childElementCount) fitToHighlight(); else fit();
+    if (highlight && hlAnchors.length) fitToHighlight(); else fit();
   }
 
   function hide() {
@@ -120,7 +129,7 @@ const Fan = (() => {
     members = memberData;
     relationships = relationshipData;
     segLayer.innerHTML = ''; hlLayer.innerHTML = ''; labelLayer.innerHTML = '';
-    segById = new Map(); hostOf = new Map();
+    segById = new Map(); hostOf = new Map(); labelSpecs = []; lodTier = null;
 
     const root = buildTree();
     if (!root) return;
@@ -157,7 +166,8 @@ const Fan = (() => {
     deferred.forEach(g => segLayer.appendChild(g));
 
     if (highlight) drawHighlight();
-    if (active) { highlight && hlLayer.childElementCount ? fitToHighlight() : fit(); }
+    if (active) { highlight && hlAnchors.length ? fitToHighlight() : fit(); }
+    renderLabels(true);
   }
 
   function drawSegment({ node, a0, a1 }, familyName, isMe) {
@@ -174,57 +184,21 @@ const Fan = (() => {
     const d = arcPath(r0, r1, a0, a0 + span, SEG_GAP);
     g.appendChild(el('path', { d, fill, stroke, 'stroke-width': sw, 'stroke-linejoin': 'round' }));
 
-    // ── Label ──
+    // ── Label-Geometrie (Text selbst kommt aus renderLabels, je Zoomstufe) ──
     const rm = (r0 + r1) / 2;
     const arcLen = span * rm - 2 * SEG_GAP;
     const tangential = arcLen > thick * 1.15;
-    const along = (tangential ? arcLen : thick) - 12;
-    const across = (tangential ? thick : arcLen) - 6;
     const theta = a0 + span / 2;
-
-    const lines = [];
-    const nameTxt = (isMe ? '➤ ' : '') + displayName(m, familyName);
-    const name = fitText(nameTxt, along, 11, 6.5);
-    lines.push({ ...name, weight: 600 });
-    if (node.spouses.length) {
-      const sp = fitText('∞ ' + node.spouses.map(spouseName).join(' · '), along, 8.5, 6);
-      lines.push({ ...sp, weight: 400, dim: true });
-    }
-    const yr = yearLabel(m);
-    if (yr) lines.push({ ...fitText(yr, along, 8, 6), weight: 400, dim: true });
-
-    // Zeilen greedy einpassen: Name zuerst, dann Partner, dann Jahre
-    const kept = [];
-    let h = 0;
-    for (const ln of lines) {
-      const lh = ln.fs * 1.25;
-      if (h + lh > across) break;
-      kept.push(ln); h += lh;
-    }
-    if (kept.length && across >= 7) {
-      let rot = (tangential ? theta + Math.PI / 2 : theta) * 180 / Math.PI;
-      rot = ((rot + 90) % 360 + 360) % 360 - 90;   // lesbar: (-90, 90]
-      if (rot > 90) rot -= 180;
-      const x = rm * Math.cos(theta), y = rm * Math.sin(theta);
-      const text = el('text', {
-        class: 'fan-label', 'text-anchor': 'middle',
-        transform: `translate(${x.toFixed(2)},${y.toFixed(2)}) rotate(${rot.toFixed(2)})`,
-        fill: m.isDeceased ? '#6b7280' : '#1a1a1a',
-      });
-      let cy = -h / 2;
-      for (const ln of kept) {
-        const lh = ln.fs * 1.25;
-        const t = el('tspan', {
-          x: 0, y: (cy + lh / 2).toFixed(2), 'font-size': ln.fs, 'font-weight': ln.weight,
-          'dominant-baseline': 'central',
-          ...(ln.dim ? { 'fill-opacity': 0.75 } : {}),
-        });
-        t.textContent = ln.text;
-        text.appendChild(t);
-        cy += lh;
-      }
-      labelLayer.appendChild(text);
-    }
+    let rot = (tangential ? theta + Math.PI / 2 : theta) * 180 / Math.PI;
+    rot = ((rot + 90) % 360 + 360) % 360 - 90;   // lesbar: (-90, 90]
+    if (rot > 90) rot -= 180;
+    labelSpecs.push({
+      m, spouses: node.spouses, familyName, isMe,
+      x: rm * Math.cos(theta), y: rm * Math.sin(theta), rot,
+      along: (tangential ? arcLen : thick) - 12,
+      across: (tangential ? thick : arcLen) - 6,
+      lineH: 1.25,
+    });
 
     segById.set(m.id, { x: rm * Math.cos(theta), y: rm * Math.sin(theta), shape: { d } });
     node.spouses.forEach(sp => hostOf.set(sp.id, m.id));
@@ -238,27 +212,10 @@ const Fan = (() => {
       r: CENTER_R, fill: segColor(m.gender, 0, m.isDeceased),
       stroke: isMe ? '#e63946' : '#1a1a1a', 'stroke-width': isMe ? 3 : 1.6,
     }));
-    const maxW = CENTER_R * 2 - 24;
-    const lines = [{ ...fitText(`${m.firstName} ${m.lastName}`, maxW, 11, 7), weight: 600 }];
-    if (root.spouses.length) {
-      lines.push({ ...fitText('∞ ' + root.spouses.map(spouseName).join(' · '), maxW, 8.5, 6), weight: 400, dim: true });
-    }
-    const yr = yearLabel(m);
-    if (yr) lines.push({ ...fitText(yr, maxW, 8, 6), weight: 400, dim: true });
-    const h = lines.reduce((s, l) => s + l.fs * 1.3, 0);
-    const text = el('text', { class: 'fan-label', 'text-anchor': 'middle', fill: '#1a1a1a' });
-    let cy = -h / 2;
-    for (const ln of lines) {
-      const lh = ln.fs * 1.3;
-      const t = el('tspan', {
-        x: 0, y: (cy + lh / 2).toFixed(2), 'font-size': ln.fs, 'font-weight': ln.weight,
-        'dominant-baseline': 'central', ...(ln.dim ? { 'fill-opacity': 0.75 } : {}),
-      });
-      t.textContent = ln.text;
-      text.appendChild(t);
-      cy += lh;
-    }
-    labelLayer.appendChild(text);
+    labelSpecs.push({
+      m, spouses: root.spouses, familyName, isMe, center: true,
+      x: 0, y: 0, rot: 0, along: CENTER_R * 2 - 24, across: CENTER_R * 2 - 24, lineH: 1.3,
+    });
     segLayer.appendChild(g);
     segById.set(m.id, { x: 0, y: 0, shape: { r: CENTER_R } });
     root.spouses.forEach(sp => hostOf.set(sp.id, m.id));
@@ -277,7 +234,9 @@ const Fan = (() => {
 
   function clearHighlight() {
     highlight = null;
+    hlAnchors = []; involved = null;
     if (hlLayer) hlLayer.innerHTML = '';
+    if (segLayer) applyDim();
   }
 
   /** Pfadknoten → Ankerpunkt im Fächer. Angeheiratete liegen im Segment
@@ -296,41 +255,39 @@ const Fan = (() => {
 
   function drawHighlight() {
     hlLayer.innerHTML = '';
-    if (!highlight) return;
+    hlAnchors = []; involved = null;
+    if (!highlight) { applyDim(); return; }
     const { expandedPath } = Relationship.getPathData(highlight.fromId, highlight.toId, members, relationships);
-    if (!expandedPath || !expandedPath.length) return;
+    if (!expandedPath || !expandedPath.length) { applyDim(); return; }
     const anchors = pathAnchors(expandedPath);
-    if (!anchors.length) return;
+    if (!anchors.length) { applyDim(); return; }
     const RED = '#e63946';
 
-    // Beteiligte Segmente rot umranden
+    // Beteiligte Segmente rot umranden, alle anderen ausgrauen
     for (const a of anchors) {
       hlLayer.appendChild(a.shape.d
         ? el('path', { d: a.shape.d, fill: 'none', stroke: RED, 'stroke-width': 3, 'stroke-linejoin': 'round' })
         : el('circle', { r: a.shape.r, fill: 'none', stroke: RED, 'stroke-width': 3 }));
     }
-    // Linie durch die Segmentmitten (unter den Beschriftungen)
-    if (anchors.length > 1) {
-      hlLayer.appendChild(el('polyline', {
-        points: anchors.map(a => `${a.x.toFixed(2)},${a.y.toFixed(2)}`).join(' '),
-        fill: 'none', stroke: RED, 'stroke-width': 3.5, 'stroke-opacity': 0.9,
-        'stroke-linejoin': 'round', 'stroke-linecap': 'round',
-      }));
+    hlAnchors = anchors;
+    involved = new Set(anchors.map(a => a.id));
+    applyDim();
+  }
+
+  /** Dimm-Klasse auf Segmente und Labels anwenden (oder entfernen). */
+  function applyDim() {
+    for (const g of segLayer.children) {
+      g.classList.toggle('fan-dim', !!involved && !involved.has(g.getAttribute('data-id')));
     }
-    // Punkte: Zwischenstationen klein, Start/Ziel groß
-    anchors.forEach((a, i) => {
-      const end = i === 0 || i === anchors.length - 1;
-      hlLayer.appendChild(el('circle', {
-        cx: a.x.toFixed(2), cy: a.y.toFixed(2), r: end ? 7 : 4.5,
-        fill: RED, stroke: '#fff', 'stroke-width': end ? 2.5 : 1.5,
-      }));
-    });
+    for (const t of labelLayer.children) {
+      t.classList.toggle('fan-dim', !!involved && !involved.has(t.getAttribute('data-id')));
+    }
   }
 
   /** Viewport auf den Pfad einpassen; lässt Platz für das Verbindungs-Panel
       (rechts auf Desktop, unten auf Mobile) wie die Baumansicht. */
   function fitToHighlight() {
-    const pts = [...hlLayer.querySelectorAll('circle[cx]')].map(c => ({ x: +c.getAttribute('cx'), y: +c.getAttribute('cy') }));
+    const pts = hlAnchors;
     if (!pts.length) return;
     const pad = RING * 0.8;
     const minX = Math.min(...pts.map(p => p.x)) - pad, maxX = Math.max(...pts.map(p => p.x)) + pad;
@@ -349,6 +306,83 @@ const Fan = (() => {
     vb.x = bcx - ((cw - panelW) / 2) * s;
     vb.y = bcy - ((ch - panelH) / 2) * s;
     apply();
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  LABELS / SEMANTIC ZOOM
+  // ═══════════════════════════════════════════════════════════
+
+  function currentTier() {
+    const k = (svg.clientWidth || 1) / vb.w;   // Pixel pro SVG-Einheit
+    return k < LOD_MID ? 'far' : (k < LOD_FULL ? 'mid' : 'full');
+  }
+
+  /** Zeilen für ein Segment je Zoomstufe. Partner werden mitgeführt:
+      fern gar nicht, mittel als Vornamen, nah mit Geburtsnamen. */
+  function labelLines(spec, tier) {
+    const { m, spouses, familyName, isMe, along, center } = spec;
+    const lines = [];
+    const me = isMe ? '➤ ' : '';
+    if (tier === 'far') {
+      const txt = center ? `${m.firstName} ${m.lastName}` : me + m.firstName;
+      lines.push({ ...fitText(txt, along, center ? 13 : 18, 6.5), weight: 600 });
+      if (center && spouses.length) {
+        lines.push({ ...fitText('∞ ' + spouses.map(s => s.firstName).join(' · '), along, 10, 6), weight: 400, dim: true });
+      }
+    } else if (tier === 'mid') {
+      const txt = center ? `${m.firstName} ${m.lastName}` : me + displayName(m, familyName);
+      lines.push({ ...fitText(txt, along, center ? 12 : 13, 6.5), weight: 600 });
+      if (spouses.length) {
+        lines.push({ ...fitText('∞ ' + spouses.map(s => s.firstName).join(' · '), along, 9.5, 6), weight: 400, dim: true });
+      }
+    } else {
+      const txt = center ? `${m.firstName} ${m.lastName}` : me + displayName(m, familyName);
+      lines.push({ ...fitText(txt, along, 11, 6.5), weight: 600 });
+      if (spouses.length) {
+        lines.push({ ...fitText('∞ ' + spouses.map(spouseName).join(' · '), along, 8.5, 6), weight: 400, dim: true });
+      }
+      const yr = yearLabel(m);
+      if (yr) lines.push({ ...fitText(yr, along, 8, 6), weight: 400, dim: true });
+    }
+    return lines;
+  }
+
+  function renderLabels(force = false) {
+    if (!svg) return;
+    const tier = currentTier();
+    if (!force && tier === lodTier) return;
+    lodTier = tier;
+    labelLayer.innerHTML = '';
+    for (const spec of labelSpecs) {
+      const lines = labelLines(spec, tier);
+      // Zeilen greedy einpassen: Name zuerst, dann Partner, dann Jahre
+      const kept = [];
+      let h = 0;
+      for (const ln of lines) {
+        const lh = ln.fs * spec.lineH;
+        if (h + lh > spec.across) break;
+        kept.push(ln); h += lh;
+      }
+      if (!kept.length || spec.across < 7) continue;
+      const dim = involved && !involved.has(spec.m.id);
+      const text = el('text', {
+        class: 'fan-label' + (dim ? ' fan-dim' : ''), 'data-id': spec.m.id, 'text-anchor': 'middle',
+        transform: `translate(${spec.x.toFixed(2)},${spec.y.toFixed(2)}) rotate(${spec.rot.toFixed(2)})`,
+        fill: spec.m.isDeceased ? '#6b7280' : '#1a1a1a',
+      });
+      let cy = -h / 2;
+      for (const ln of kept) {
+        const lh = ln.fs * spec.lineH;
+        const t = el('tspan', {
+          x: 0, y: (cy + lh / 2).toFixed(2), 'font-size': ln.fs, 'font-weight': ln.weight,
+          'dominant-baseline': 'central', ...(ln.dim ? { 'fill-opacity': 0.75 } : {}),
+        });
+        t.textContent = ln.text;
+        text.appendChild(t);
+        cy += lh;
+      }
+      labelLayer.appendChild(text);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -418,6 +452,7 @@ const Fan = (() => {
 
   function apply() {
     svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+    renderLabels();
   }
 
   function unitsPerPx() { return vb.w / (svg.clientWidth || 1); }
@@ -514,5 +549,6 @@ const Fan = (() => {
     }, { passive: false });
   }
 
-  return { init, onTap, isActive, show, hide, toggle, render, fit, centerOn, highlightConnection, clearHighlight };
+  return { init, onTap, isActive, show, hide, toggle, render, fit, centerOn, highlightConnection, clearHighlight,
+           getTier: () => lodTier };
 })();

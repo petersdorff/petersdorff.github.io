@@ -12,6 +12,7 @@ const App = (() => {
   let cachedRelationships = [];
   let isInitialized = false;
   let authHandled = false;
+  let viewApplied = false;
 
   // ─── Initialize ───
 
@@ -23,6 +24,11 @@ const App = (() => {
     DB.init(supabaseClient);
     Search.init();
     Tree.init('tree-container');
+    Fan.init('fan-container');
+    Fan.onTap((memberId) => {
+      Fan.panTo(memberId);
+      Profile.show(memberId);
+    });
     Admin.initEmailJS();
 
     // Register auth state listener BEFORE Auth.init()
@@ -73,7 +79,7 @@ const App = (() => {
           applyReadOnlyUI();
           Admin.updateAdminMenu(isAdmin && !DB.isOffline());
           // Auf mich zentrieren statt "Wand aus 113 Kästchen"
-          Tree.centerOn(member.id, 0.9, false);
+          if (Fan.isActive()) Fan.centerOn(member.id); else Tree.centerOn(member.id, 0.9, false);
           const resolved = await Connection.resolvePendingConnect();
           if (resolved) return;
         } else {
@@ -208,7 +214,8 @@ const App = (() => {
       const profileId = Profile.getCurrentProfileId();
       if (profileId) {
         showView('view-main');
-        setTimeout(() => Tree.centerOn(profileId), 300);
+        if (Fan.isActive()) Fan.centerOn(profileId);
+        else setTimeout(() => Tree.centerOn(profileId), 300);
       }
     });
 
@@ -340,7 +347,56 @@ const App = (() => {
   }
 
   function renderTree() {
+    if (!viewApplied) {
+      // Erster Render: gespeicherte Ansicht anwenden, Standard ist der Fächer.
+      viewApplied = true;
+      const name = getStoredView();
+      if (name !== 'fan') Tree.setViewMode(name);
+      Tree.render(cachedMembers, cachedRelationships);
+      setFanMode(name === 'fan');
+      updateToggleButton();
+      return;
+    }
     Tree.render(cachedMembers, cachedRelationships);
+    if (Fan.isActive()) Fan.render(cachedMembers, cachedRelationships);
+  }
+
+  // ─── Ansichten: fan | generational | temporal ───
+
+  const VIEW_ORDER = ['fan', 'generational', 'temporal'];
+
+  function getStoredView() {
+    let v = null;
+    try { v = localStorage.getItem('stammbaum_view'); } catch { /* privat/blockiert */ }
+    return VIEW_ORDER.includes(v) ? v : 'fan';
+  }
+
+  function getCurrentView() {
+    return Fan.isActive() ? 'fan' : Tree.getViewMode();
+  }
+
+  /** Ansicht umschalten und merken. */
+  function applyView(name) {
+    if (name === 'fan') {
+      setFanMode(true);
+    } else {
+      setFanMode(false);
+      Tree.setViewMode(name);
+    }
+    try { localStorage.setItem('stammbaum_view', name); } catch { /* privat/blockiert */ }
+    updateToggleButton();
+  }
+
+  /** Fächer-Overlay ein-/ausblenden inkl. passender Legende. */
+  function setFanMode(on) {
+    if (on) {
+      Fan.render(cachedMembers, cachedRelationships);
+      Fan.show();
+    } else {
+      Fan.hide();
+    }
+    document.getElementById('legend-tree').classList.toggle('hidden', on);
+    document.getElementById('legend-fan').classList.toggle('hidden', !on);
   }
 
   // ─── Offline banner & read-only UI ───
@@ -516,27 +572,30 @@ const App = (() => {
   // ─── View Toggle ───
 
   function handleViewToggle() {
-    const current = Tree.getViewMode();
-    const next = current === 'generational' ? 'temporal' : 'generational';
-    Tree.setViewMode(next);
-    updateToggleButton();
+    const current = getCurrentView();
+    const next = VIEW_ORDER[(VIEW_ORDER.indexOf(current) + 1) % VIEW_ORDER.length];
+    applyView(next);
   }
 
   function updateToggleButton() {
     const btn = document.getElementById('btn-view-toggle');
     if (!btn) return;
-    const mode = Tree.getViewMode();
-    if (mode === 'temporal') {
-      btn.classList.add('mode-temporal');
-      btn.title = 'Zeitliche Ansicht aktiv – klicken für Generationen-Ansicht';
-    } else {
-      btn.classList.remove('mode-temporal');
-      btn.title = 'Generationen-Ansicht aktiv – klicken für zeitliche Ansicht';
-    }
+    const mode = getCurrentView();
+    btn.classList.toggle('mode-fan', mode === 'fan');
+    btn.classList.toggle('mode-temporal', mode === 'temporal');
+    btn.title = {
+      fan: 'Fächer-Ansicht aktiv – klicken für Generationen-Ansicht',
+      generational: 'Generationen-Ansicht aktiv – klicken für zeitliche Ansicht',
+      temporal: 'Zeitliche Ansicht aktiv – klicken für Fächer-Ansicht',
+    }[mode];
   }
 
   function centerOnMe() {
     const member = Auth.getMember();
+    if (Fan.isActive()) {
+      member ? Fan.centerOn(member.id) : Fan.fit();
+      return;
+    }
     if (member) {
       Tree.centerOn(member.id);
     } else {
@@ -564,6 +623,7 @@ const App = (() => {
 
   return {
     showView,
+    applyView,
     toast,
     refreshTree,
     loadTree,

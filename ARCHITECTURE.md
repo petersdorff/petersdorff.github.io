@@ -86,7 +86,8 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
 | `app.js` | Init, Supabase-Client, Auth-Listener, Views, Toasts, FABs, Legende |
 | `auth.js` | Login/Registrierung/Passwort-Reset, Fehler-Mapping (`mapAuthError`) |
 | `db.js` | Alle Supabase-Zugriffe + Offline-Fallback auf `LocalSnapshot` |
-| `tree.js` | Cytoscape-Visualisierung (Layout, Semantic Zoom, Highlights) |
+| `tree.js` | Cytoscape-Baum (Layout, Semantic Zoom, Highlights) — Ansichten `generational`/`temporal` |
+| `fan.js` | **Fächer-Ansicht (Standard)**: radialer Nachkommen-Sunburst in reinem SVG, s.u. |
 | `relations.js` | Beziehungs-UI **und Auto-Vervollständigungs-Engine** (s.u.) |
 | `relationship.js` | Verwandtschaftsgrad-Berechnung (Pfadsuche, Begriffe) |
 | `profile.js` | Profile anzeigen/bearbeiten, Badges, Pflicht-Erstverbindung |
@@ -115,6 +116,48 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   dann Profil. Wichtig: nicht animieren, der View-Wechsel würde die
   Animation abbrechen.
 - Debug-Helfer: `Tree.getZoom()`, `Tree.getEffectiveLabel(id)`.
+
+## Fächer-Ansicht (`fan.js`) — Standardansicht
+
+- **Drei Ansichten** über den Umschalter oben rechts (`btn-view-toggle`,
+  Zyklus Fächer → Generationen → Zeit), gemerkt in `localStorage.stammbaum_view`;
+  ohne Eintrag ist der Fächer Standard. `App.applyView(name)` ist die
+  zentrale Stelle (Fan-Overlay ein/aus, Tree-Modus, Legende, Button-Icon).
+- **Layout:** Sunburst. Wurzel = ältester Elternlose mit Kindern (Hans
+  Leo), jede Generation ein Ring (`RING`), Winkelbreite ∝ Zahl der
+  Nachkommen-Blätter, Geschwister nach Geburtsjahr. Blutsverwandte
+  bekommen Segmente; **Angeheiratete stehen als „∞ Name" im Segment des
+  Partners** (`hostOf`-Map) und sind dort als blauer Link antippbar →
+  eigenes Profil. Lücken: `SEG_GAP` (konstante Breite, je Radius in Winkel
+  umgerechnet) und `RING_GAP`.
+- **Farben:** Männer hellblau, Frauen rosa, unbekannt grau, Verstorbene
+  entsättigt; registrierte Profile dunkler Rand, aktueller Nutzer rot.
+- **Semantic Zoom** nach Pixel pro SVG-Einheit (`LOD_MID`/`LOD_FULL`):
+  fern = Vorname groß, mittel = Vorname + Partner-Vornamen, nah = Name +
+  Partner mit Geburtsname + Jahre. Labels liegen in eigener Ebene über
+  Segmenten und Highlight und werden nur bei Stufenwechsel neu gebaut.
+- **Verwandtschaftspfad:** `Fan.highlightConnection` (wird von
+  `connection.js` parallel zu `Tree.highlightConnection` gerufen) umrandet
+  Beteiligte rot und dimmt alle anderen (`.fan-dim`) — keine Linie, kein
+  Umsortieren; Viewport lässt Platz fürs Panel (rechts Desktop / Bottom-
+  Sheet Mobile). Schritt-Liste im Panel zeigt ↑/↓/↔ je Hop, gemeinsamer
+  Vorfahre = Scheitel des Pfads, blau mit Stern.
+- **Interaktion:** Tippen zentriert die Person (Zoom bleibt) und öffnet das
+  Profil; Rad/Pinch zoomt, Ziehen verschiebt; „Auf mich zentrieren" und
+  „Im Stammbaum zeigen" respektieren die aktive Ansicht. Container
+  bekommt erst Größe, wenn `view-main` sichtbar ist — der ResizeObserver
+  passt beim Sichtbarwerden ein.
+- Nicht über die Wurzel erreichbare Personen fehlen im Fächer und werden
+  in der Konsole gelistet (`[Fan] … nicht erreichbar`).
+- **Zwei Fallen, die schon einmal zugeschlagen haben:** (1) `#fan-container`
+  muss ein *Geschwister* von `#tree-container` sein (Wrapper `#tree-area`),
+  nie ein Kind — Cytoscape bindet seine Maus-Listener an seinen Container
+  und würde jeden Fächer-Klick zusätzlich gegen die unsichtbaren
+  Baum-Knoten auswerten (falsches Profil / Profil schließt sofort).
+  (2) Nach `setPointerCapture` ist `e.target` beim `pointerup` das `<svg>`;
+  das getroffene Segment wird deshalb beim `pointerdown` gemerkt. Tests
+  dafür immer mit **echten** Klicks (Computer-Tool) machen — synthetische
+  Events bubbeln nicht durch die Capture und verdecken beide Fehler.
 
 ## Beziehungs-Automatik (`relations.js → propagateLogicalRelations`)
 

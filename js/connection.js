@@ -73,8 +73,9 @@ const Connection = (() => {
     // Show overlay
     document.getElementById('connection-overlay').classList.remove('hidden');
 
-    // Highlight path in tree
+    // Highlight path in tree and (if shown) in the fan chart
     Tree.highlightConnection(fromId, toId);
+    Fan.highlightConnection(fromId, toId);
   }
 
   /**
@@ -114,7 +115,18 @@ const Connection = (() => {
       }
     };
 
-    for (let i = 0; i < expandedPath.length; i++) {
+    // Gemeinsamer Vorfahre = Scheitel des Pfads: ab dem letzten Aufstieg
+    // ('parent') bis vor den ersten Abstieg ('child'). Bei einem Paar am
+    // Scheitel (Partner-Hop) sind es zwei Einträge.
+    const n = expandedPath.length;
+    let lastUp = -1, firstDown = n;
+    for (let i = 1; i < n; i++) {
+      if (expandedPath[i].edgeType === 'parent') lastUp = i;
+      if (expandedPath[i].edgeType === 'child' && firstDown === n) firstDown = i;
+    }
+    const isAncestor = (i) => lastUp >= 0 && i >= lastUp && i < firstDown && i !== 0 && i !== n - 1;
+
+    for (let i = 0; i < n; i++) {
       const step = expandedPath[i];
       const person = byId.get(step.id);
       if (!person) continue;
@@ -127,22 +139,45 @@ const Connection = (() => {
         sub = prev ? hopLabel(step.edgeType, person, prev) : '';
       }
 
+      let role;
+      if (i === 0 || i === n - 1) role = 'endpoint';
+      else if (isAncestor(i)) role = 'ancestor';
+      else if (step.edgeType === 'parent') role = 'up';
+      else if (step.edgeType === 'child') role = 'down';
+      else role = 'side';
+      if (role === 'ancestor') sub = `Gemeinsamer Vorfahre · ${sub}`;
+
       const nameEl = Utils.createEl('div', {
         className: 'conn-step-name',
         textContent: `${person.firstName} ${person.lastName}`,
       });
       const subEl = Utils.createEl('div', { className: 'conn-step-sub', textContent: sub });
-      const dot = Utils.createEl('div', { className: 'conn-step-dot' });
       const body = Utils.createEl('div', { className: 'conn-step-body' }, [nameEl, subEl]);
-      const item = Utils.createEl('div', { className: 'conn-step' }, [dot, body]);
+      const item = Utils.createEl('div', { className: `conn-step conn-step-${role}` }, [stepIcon(role), body]);
       item.addEventListener('click', () => Profile.show(person.id));
       stepsEl.appendChild(item);
     }
   }
 
+  /** Icon links neben einem Pfad-Schritt: Richtung des Hops bzw. Vorfahre. */
+  function stepIcon(role) {
+    const icon = Utils.createEl('div', { className: `conn-step-icon ${role}` });
+    const paths = {
+      up: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+      down: '<path d="M12 5v14M19 12l-7 7-7-7"/>',
+      side: '<path d="M4 12h16M14 6l6 6-6 6M10 6l-6 6 6 6"/>',
+      ancestor: '<path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.3l-6.1 3.3 1.4-6.8L2.2 9.1l6.9-.8z"/>',
+    };
+    if (paths[role]) {
+      icon.innerHTML = `<svg viewBox="0 0 24 24" fill="${role === 'ancestor' ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${paths[role]}</svg>`;
+    }
+    return icon;
+  }
+
   function closeOverlay() {
     document.getElementById('connection-overlay').classList.add('hidden');
     Tree.clearHighlight();
+    Fan.clearHighlight();
   }
 
   // ─── QR Scan Handler ───

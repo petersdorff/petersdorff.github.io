@@ -11,7 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=14">
 </head>
 <body>
 
@@ -237,7 +237,14 @@
         </svg>
         <input type="text" id="search-input" placeholder="Name suchen...">
       </div>
-      <button id="btn-view-toggle" class="icon-btn" aria-label="Ansicht wechseln" title="Generational / Temporal">
+      <button id="btn-view-toggle" class="icon-btn" aria-label="Ansicht wechseln" title="Fächer / Generationen / Zeit">
+        <!-- Fan icon (radial) -->
+        <svg class="icon-fan" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="2.5"/>
+          <path d="M12 3a9 9 0 0 1 9 9M12 3a9 9 0 0 0-9 9"/>
+          <path d="M12 7.5a4.5 4.5 0 0 1 4.5 4.5M12 7.5a4.5 4.5 0 0 0-4.5 4.5"/>
+          <path d="M12 12v9"/>
+        </svg>
         <!-- Generational icon (tree/hierarchy) -->
         <svg class="icon-gen" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="4" r="2"/><line x1="12" y1="6" x2="12" y2="10"/>
@@ -265,7 +272,13 @@
     </header>
 
     <!-- Tree Container -->
-    <div id="tree-container"></div>
+    <!-- Baum (Cytoscape) und Fächer (SVG) als Geschwister: der Fächer darf
+         NICHT im Cytoscape-Container liegen, sonst verarbeitet Cytoscape
+         jeden Klick auf den Fächer zusätzlich als Baum-Tap. -->
+    <div id="tree-area">
+      <div id="tree-container"></div>
+      <div id="fan-container" class="hidden"></div>
+    </div>
 
     <!-- Offline / read-only banner -->
     <div id="offline-banner" class="offline-banner hidden">
@@ -307,21 +320,52 @@
         <span>Zeichenerklärung</span>
         <button class="legend-close" id="legend-close" aria-label="Schließen">&times;</button>
       </div>
-      <div class="legend-item">
-        <span class="legend-swatch legend-swatch-solid"></span>
-        <span>Registriertes Mitglied</span>
+      <div id="legend-tree">
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-solid"></span>
+          <span>Registriertes Mitglied</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-dashed"></span>
+          <span>Platzhalter — noch nicht registriert</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-deceased"></span>
+          <span>Verstorben</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-current"></span>
+          <span>Du, Auswahl oder Verwandtschaftspfad</span>
+        </div>
       </div>
-      <div class="legend-item">
-        <span class="legend-swatch legend-swatch-dashed"></span>
-        <span>Platzhalter — noch nicht registriert</span>
-      </div>
-      <div class="legend-item">
-        <span class="legend-swatch legend-swatch-deceased"></span>
-        <span>Verstorben</span>
-      </div>
-      <div class="legend-item">
-        <span class="legend-swatch legend-swatch-current"></span>
-        <span>Du, Auswahl oder Verwandtschaftspfad</span>
+      <div id="legend-fan" class="hidden">
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-male"></span>
+          <span>Mann</span>
+          <span class="legend-swatch legend-swatch-female" style="margin-left:8px"></span>
+          <span>Frau</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-fan-deceased"></span>
+          <span>Verstorben (blass)</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-registered"></span>
+          <span>Registriertes Mitglied</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-fan-current"></span>
+          <span>Du oder Verwandtschaftspfad</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-dimmed"></span>
+          <span>Nicht am Pfad beteiligt</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch-text">∞ Name</span>
+          <span>Angeheirateter Partner — antippen öffnet dessen Profil</span>
+        </div>
+        <div class="legend-hint">Innen die Stammeltern, jeder Ring eine Generation. Tippen öffnet das Profil.</div>
       </div>
     </div>
 
@@ -643,15 +687,16 @@
   <script src="js/db.js?v=25"></script>
   <script src="js/auth.js?v=30"></script>
   <script src="js/relationship.js?v=28"></script>
-  <script src="js/tree.js?v=81"></script>
+  <script src="js/tree.js?v=82"></script>
+  <script src="js/fan.js?v=8"></script>
   <script src="js/qr.js?v=23"></script>
   <script src="js/search.js?v=22"></script>
   <script src="js/admin.js?v=4"></script>
   <script src="js/claim.js?v=5"></script>
-  <script src="js/guest.js?v=4"></script>
-  <script src="js/connection.js?v=4"></script>
+  <script src="js/guest.js?v=5"></script>
+  <script src="js/connection.js?v=6"></script>
   <script src="js/relations.js?v=12"></script>
   <script src="js/profile.js?v=31"></script>
-  <script src="js/app.js?v=42"></script>
+  <script src="js/app.js?v=45"></script>
 </body>
 </html>

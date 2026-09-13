@@ -50,7 +50,7 @@ const Guest = (() => {
       App.showView('view-main');
       App.applyReadOnlyUI();
       App.refreshTreeHighlight();
-      Tree.centerOn(member.id, 0.9, false);
+      if (Fan.isActive()) Fan.centerOn(member.id); else Tree.centerOn(member.id, 0.9, false);
       Connection.resolvePendingConnect();
     } else {
       showIdentityPicker();
@@ -122,7 +122,7 @@ const Guest = (() => {
     App.showView('view-main');
     App.applyReadOnlyUI();
     App.refreshTreeHighlight();
-    Tree.centerOn(member.id, 0.9, false);
+    if (Fan.isActive()) Fan.centerOn(member.id); else Tree.centerOn(member.id, 0.9, false);
     Connection.resolvePendingConnect();
   }
 
@@ -132,7 +132,8 @@ const Guest = (() => {
     Tree.setCurrentUser(null);
     App.showView('view-main');
     App.applyReadOnlyUI();
-    Tree.fitAll();
+    App.refreshTreeHighlight();
+    if (Fan.isActive()) Fan.fit(); else Tree.fitAll();
   }
 
   function exit() {

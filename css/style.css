@@ -543,9 +543,15 @@ a {
    TREE CONTAINER
    ═══════════════════════════════════════════════════════════ */
 
-#tree-container {
+#tree-area {
   flex: 1;
   position: relative;
+  overflow: hidden;
+}
+
+#tree-container {
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   background: var(--bg);
   /* Subtle grid pattern like PCB */
@@ -743,6 +749,29 @@ a {
 .legend-swatch-current {
   border: 3px solid var(--red);
   background: #fff5f5;
+}
+
+/* Fächer-Legende */
+.legend-swatch-male { background: hsl(207 72% 80%); }
+.legend-swatch-female { background: hsl(340 72% 80%); }
+.legend-swatch-fan-deceased { background: hsl(207 32% 84%); }
+.legend-swatch-registered { background: hsl(207 72% 80%); border: 2px solid var(--trace); }
+.legend-swatch-fan-current { background: hsl(207 72% 80%); border: 3px solid var(--red); }
+.legend-swatch-dimmed { background: hsl(207 72% 80%); opacity: 0.22; }
+.legend-swatch-text {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  opacity: 0.75;
+}
+.legend-hint {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--trace-faint);
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1499,7 +1528,8 @@ a {
 }
 
 #btn-view-toggle .icon-gen,
-#btn-view-toggle .icon-temp {
+#btn-view-toggle .icon-temp,
+#btn-view-toggle .icon-fan {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -1516,6 +1546,18 @@ a {
 }
 
 #btn-view-toggle.mode-temporal .icon-temp {
+  opacity: 1;
+}
+
+#btn-view-toggle .icon-fan {
+  opacity: 0;
+}
+
+#btn-view-toggle.mode-fan .icon-gen {
+  opacity: 0;
+}
+
+#btn-view-toggle.mode-fan .icon-fan {
   opacity: 1;
 }
 
@@ -1617,20 +1659,60 @@ a {
   background: var(--trace-faint);
 }
 
-.conn-step-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 2px solid var(--red);
-  background: var(--bg);
-  margin-top: 3px;
+/* Schritt-Icons: Endpunkte als Punkt, dazwischen Richtungspfeile,
+   gemeinsamer Vorfahre als blauer Stern */
+.conn-step-icon {
+  width: 14px;
+  height: 14px;
+  margin: 1px 0 0 -2px;      /* zentriert auf der Verbindungslinie (left 4px + 1px) */
   flex-shrink: 0;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--red);
 }
 
-.conn-step:first-child .conn-step-dot,
-.conn-step:last-child .conn-step-dot {
+.conn-step-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.conn-step-icon.endpoint {
+  width: 10px;
+  height: 10px;
+  margin: 3px 2px 0 0;
+  border: 2px solid var(--red);
   background: var(--red);
+}
+
+.conn-step-icon.ancestor {
+  width: 20px;
+  height: 20px;
+  margin: -2px 0 0 -5px;
+  color: var(--blue);
+  background: var(--blue-light);
+  border: 2px solid var(--blue);
+}
+
+.conn-step-icon.ancestor svg {
+  width: 11px;
+  height: 11px;
+}
+
+.conn-step-ancestor .conn-step-body {
+  background: var(--blue-light);
+  border-left: 3px solid var(--blue);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  margin-top: -3px;
+  flex: 1;
+}
+
+.conn-step-ancestor .conn-step-name {
+  color: var(--blue);
 }
 
 .conn-step-body {
@@ -1658,3 +1740,57 @@ a {
   color: var(--text-muted);
   padding: 6px 0;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   FAN CHART (radiale Ansicht) — Overlay über dem Cytoscape-Baum
+   ═══════════════════════════════════════════════════════════ */
+
+#fan-container {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: var(--bg);
+  background-image: radial-gradient(circle, var(--trace-faint) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+#fan-container.hidden { display: none; }
+
+.fan-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+  font-family: var(--font);
+}
+
+.fan-svg:active { cursor: grabbing; }
+
+.fan-seg { cursor: pointer; }
+.fan-seg:hover path, .fan-seg:hover circle { filter: brightness(0.94); }
+
+.fan-hl, .fan-hl * {
+  pointer-events: none;
+}
+
+/* Verwandtschaftspfad: Unbeteiligte ausgrauen, Beteiligte behalten Farbe + roten Rahmen */
+.fan-seg.fan-dim { opacity: 0.22; }
+.fan-label.fan-dim { opacity: 0.3; }
+
+.fan-label {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Partner-Namen im Segment: Hyperlink zum eigenen Profil */
+.fan-spouse-link {
+  pointer-events: auto;
+  cursor: pointer;
+  fill: var(--blue);
+  fill-opacity: 1;
+  text-decoration: underline;
+}
+.fan-spouse-link:hover { fill: var(--red); }
+

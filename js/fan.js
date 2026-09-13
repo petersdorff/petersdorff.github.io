@@ -7,7 +7,9 @@
    ═══════════════════════════════════════════════════════════ */
 
 const Fan = (() => {
-  const RING = 88;         // Ringdicke (SVG-Einheiten)
+  const RING = 88;         // Ringabstand (SVG-Einheiten), inkl. Lücke
+  const RING_GAP = 6;      // radiale Lücke zwischen Generationsringen
+  const SEG_GAP = 4;       // Lücke zwischen Tortenstücken (konstante Breite)
   const CENTER_R = 82;     // Radius des Zentrums (Stammeltern)
   const PAD = 30;
   const CHAR_W = 0.6;      // IBM Plex Mono: Zeichenbreite in em
@@ -150,26 +152,27 @@ const Fan = (() => {
   }
 
   function drawSegment({ node, a0, a1 }, familyName, isMe) {
-    const r0 = CENTER_R + (node.depth - 1) * RING;
-    const r1 = r0 + RING;
+    const r0 = CENTER_R + RING_GAP + (node.depth - 1) * RING;
+    const r1 = r0 + RING - RING_GAP;
+    const thick = r1 - r0;
     const m = node.m;
     const span = Math.min(a1 - a0, Math.PI * 2 - 1e-4);
 
     const g = el('g', { class: 'fan-seg', 'data-id': m.id });
     const fill = segColor(m.gender, node.depth, m.isDeceased);
-    const stroke = isMe ? '#e63946' : (m.isPlaceholder ? '#ffffff' : '#1a1a1a');
-    const sw = isMe ? 3 : (m.isPlaceholder ? 1.2 : 1.6);
+    const stroke = isMe ? '#e63946' : (m.isPlaceholder ? 'none' : '#1a1a1a');
+    const sw = isMe ? 3 : (m.isPlaceholder ? 0 : 1.6);
     g.appendChild(el('path', {
-      d: arcPath(r0, r1, a0, a0 + span), fill, stroke, 'stroke-width': sw,
+      d: arcPath(r0, r1, a0, a0 + span, SEG_GAP), fill, stroke, 'stroke-width': sw,
       'stroke-linejoin': 'round',
     }));
 
     // ── Label ──
     const rm = (r0 + r1) / 2;
-    const arcLen = span * rm;
-    const tangential = arcLen > RING * 1.15;
-    const along = (tangential ? arcLen : RING) - 12;
-    const across = (tangential ? RING : arcLen) - 6;
+    const arcLen = span * rm - 2 * SEG_GAP;
+    const tangential = arcLen > thick * 1.15;
+    const along = (tangential ? arcLen : thick) - 12;
+    const across = (tangential ? thick : arcLen) - 6;
     const theta = a0 + span / 2;
 
     const lines = [];
@@ -262,11 +265,18 @@ const Fan = (() => {
     return e;
   }
 
-  function arcPath(r0, r1, a0, a1) {
-    const large = (a1 - a0) > Math.PI ? 1 : 0;
+  /** Ringsegment; `gap` ist eine konstante lineare Lücke, die je Radius in
+      einen Winkel umgerechnet wird (innen und außen gleich breit). */
+  function arcPath(r0, r1, a0, a1, gap = 0) {
+    const span = a1 - a0;
+    const pi = Math.min(gap / 2 / r0, span * 0.25);
+    const po = Math.min(gap / 2 / r1, span * 0.25);
+    const i0 = a0 + pi, i1 = a1 - pi, o0 = a0 + po, o1 = a1 - po;
+    const largeO = (o1 - o0) > Math.PI ? 1 : 0;
+    const largeI = (i1 - i0) > Math.PI ? 1 : 0;
     const p = (r, a) => `${(r * Math.cos(a)).toFixed(2)},${(r * Math.sin(a)).toFixed(2)}`;
-    return `M${p(r1, a0)} A${r1},${r1} 0 ${large} 1 ${p(r1, a1)} ` +
-           `L${p(r0, a1)} A${r0},${r0} 0 ${large} 0 ${p(r0, a0)} Z`;
+    return `M${p(r1, o0)} A${r1},${r1} 0 ${largeO} 1 ${p(r1, o1)} ` +
+           `L${p(r0, i1)} A${r0},${r0} 0 ${largeI} 0 ${p(r0, i0)} Z`;
   }
 
   /** Männer hellblau, Frauen rosa, unbekannt neutral; Verstorbene entsättigt. */

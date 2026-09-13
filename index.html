@@ -11,7 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=30">
+  <link rel="stylesheet" href="css/style.css?v=32">
 </head>
 <body>
 
@@ -487,6 +487,11 @@
             <path d="M18 6L6 18M6 6l12 12"/>
           </svg>
         </button>
+        <button id="btn-profile-expand" class="icon-btn" aria-label="Als Seite öffnen" title="Als ganze Seite öffnen">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+          </svg>
+        </button>
         <button id="btn-profile-edit" class="icon-btn">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
@@ -541,6 +546,7 @@
       <div class="profile-section">
         <h3>Vita</h3>
         <p id="profile-notes" class="profile-notes">—</p>
+        <a href="#" id="profile-notes-more" class="profile-notes-more hidden">Ganzen Artikel lesen →</a>
       </div>
 
       <!-- Existing Relationships Section -->
@@ -553,6 +559,58 @@
         <button id="btn-show-qr" class="btn btn-secondary">QR-Code zeigen</button>
         <button id="btn-show-in-tree" class="btn btn-secondary">Im Stammbaum zeigen</button>
         <button id="btn-delete-member" class="btn btn-danger" style="display:none; margin-top:16px;">Platzhalter löschen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- ARTICLE VIEW (Vollseite mit Vita)        -->
+  <!-- ═══════════════════════════════════════ -->
+  <div id="view-article" class="view">
+    <div class="article-container">
+      <header class="article-header">
+        <button id="btn-article-back" class="icon-btn" aria-label="Zurück zum Profil">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </button>
+        <div id="article-read-actions" class="article-actions">
+          <button id="btn-article-profile-edit" class="btn btn-small btn-secondary">Eigenschaften bearbeiten</button>
+          <button id="btn-article-edit" class="btn btn-small btn-primary">Vita bearbeiten</button>
+        </div>
+        <div id="article-edit-actions" class="article-actions hidden">
+          <button id="btn-article-preview" class="btn btn-small btn-secondary">Vorschau</button>
+          <button id="btn-article-cancel" class="btn btn-small btn-secondary">Abbrechen</button>
+          <button id="btn-article-save" class="btn btn-small btn-primary">Speichern</button>
+        </div>
+      </header>
+
+      <div class="article-hero">
+        <div id="article-photo" class="article-photo"></div>
+        <div>
+          <h1 id="article-name" class="article-name"></h1>
+          <p id="article-birthname" class="article-birthname"></p>
+        </div>
+      </div>
+
+      <div id="article-props" class="article-props"></div>
+
+      <h2 class="article-section-title">Vita</h2>
+      <div id="article-body" class="article-body"></div>
+
+      <div id="article-editor" class="article-editor hidden">
+        <div id="article-toolbar" class="article-toolbar" role="toolbar" aria-label="Formatierung">
+          <button type="button" data-md="h1" title="Überschrift">H1</button>
+          <button type="button" data-md="h2" title="Zwischenüberschrift">H2</button>
+          <button type="button" data-md="bold" title="Fett"><b>B</b></button>
+          <button type="button" data-md="italic" title="Kursiv"><i>I</i></button>
+          <button type="button" data-md="ul" title="Aufzählung">• Liste</button>
+          <button type="button" data-md="ol" title="Nummerierung">1. Liste</button>
+          <button type="button" data-md="quote" title="Zitat">„ Zitat</button>
+          <button type="button" data-md="link" title="Link">Link</button>
+          <button type="button" data-md="hr" title="Trennlinie">—</button>
+        </div>
+        <textarea id="article-textarea" class="article-textarea" spellcheck="true" placeholder="# Kindheit&#10;Geboren 1953 in …&#10;&#10;## Beruf&#10;- …"></textarea>
+        <div id="article-preview" class="article-body article-preview hidden"></div>
+        <p class="article-hint">Markdown: <code># Überschrift</code>, <code>**fett**</code>, <code>*kursiv*</code>, <code>- Liste</code>, <code>1. Liste</code>, <code>&gt; Zitat</code>, <code>[Text](https://…)</code></p>
       </div>
     </div>
   </div>
@@ -762,8 +820,10 @@
   <script src="js/auth.js?v=30"></script>
   <script src="js/relationship.js?v=29"></script>
   <script src="js/tree.js?v=83"></script>
+  <script src="js/markdown.js?v=1"></script>
+  <script src="js/article.js?v=2"></script>
   <script src="js/gotha.js?v=2"></script>
-  <script src="js/fan.js?v=32"></script>
+  <script src="js/fan.js?v=33"></script>
   <script src="js/qr.js?v=23"></script>
   <script src="js/search.js?v=22"></script>
   <script src="js/admin.js?v=7"></script>
@@ -771,7 +831,7 @@
   <script src="js/guest.js?v=5"></script>
   <script src="js/connection.js?v=11"></script>
   <script src="js/relations.js?v=14"></script>
-  <script src="js/profile.js?v=32"></script>
-  <script src="js/app.js?v=55"></script>
+  <script src="js/profile.js?v=33"></script>
+  <script src="js/app.js?v=56"></script>
 </body>
 </html>

@@ -80,12 +80,16 @@ const Fan = (() => {
     svg.addEventListener('pointerover', e => {
       if (e.pointerType !== 'mouse') return;
       const seg = e.target.closest && e.target.closest('.fan-seg');
-      if (seg) {
+      if (seg && !seg.classList.contains('fan-hover')) {
         showGhosts(seg.getAttribute('data-id'));
-        // Hover-Pop: nach vorn holen, damit der nächste Ring das leicht
-        // gewachsene Segment nicht abdeckt
-        if (seg.parentNode === segLayer && seg !== segLayer.lastElementChild) segLayer.appendChild(seg);
+        showHoverHalo(seg);
       }
+    });
+    svg.addEventListener('pointerout', e => {
+      if (e.pointerType !== 'mouse') return;
+      const seg = e.target.closest && e.target.closest('.fan-seg');
+      const to = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('.fan-seg') : null;
+      if (seg && !to) clearHoverHalo();
     });
     svg.addEventListener('pointerleave', () => { if (!selectedId) showGhosts(null); });
     container.appendChild(svg);
@@ -307,7 +311,6 @@ const Fan = (() => {
     }
     drawCenter(root, familyName, root.m.id === currentUserId);
     deferred.forEach(g => segLayer.appendChild(g));
-    setSegmentTransformOrigins();
 
     applyRotation();
     if (highlight) drawHighlight();
@@ -422,6 +425,7 @@ const Fan = (() => {
 
   /** Dimm-Klasse auf Segmente und Labels anwenden (oder entfernen). */
   function applyDim() {
+    clearHoverHalo();
     for (const g of segLayer.children) {
       g.classList.toggle('fan-dim', !!involved && !involved.has(g.getAttribute('data-id')));
     }
@@ -455,18 +459,28 @@ const Fan = (() => {
   }
 
   /**
-   * CSS-Transform-Ursprung jedes Segments auf den Fächer-Mittelpunkt (0,0)
-   * legen: mit transform-box: fill-box liegt (0,0) des Nutzerraums bei
-   * (-bbox.x, -bbox.y) relativ zur eigenen Box. So skaliert der Hover-Pop
-   * radial nach außen statt um die Segmentmitte.
+   * Hover-Hervorhebung: Kopie des Segments zuoberst in segLayer — darunter
+   * ein dicker Rand in Segmentfarbe (pixelkonstant), darüber das Segment
+   * mit seinem eigenen Rand. Wirkt wie „größer", ohne etwas zu verschieben.
    */
-  function setSegmentTransformOrigins() {
-    for (const g of segLayer.children) {
-      try {
-        const b = g.getBBox();
-        g.style.transformOrigin = `${(-b.x).toFixed(2)}px ${(-b.y).toFixed(2)}px`;
-      } catch { /* nicht gerendert */ }
-    }
+  function showHoverHalo(seg) {
+    clearHoverHalo();
+    if (seg.classList.contains('fan-dim')) return;   // gedimmte bleiben ruhig
+    const shape = seg.querySelector('path, circle');
+    if (!shape) return;
+    const g = el('g', { class: 'fan-seg fan-hover', 'data-id': seg.getAttribute('data-id') });
+    const rim = shape.cloneNode(false);
+    rim.setAttribute('class', 'fan-hover-rim');
+    rim.setAttribute('stroke', shape.getAttribute('fill'));
+    rim.setAttribute('stroke-width', '12');   // px, dank vector-effect
+    rim.removeAttribute('fill');
+    const top = shape.cloneNode(false);
+    g.append(rim, top);
+    segLayer.appendChild(g);
+  }
+
+  function clearHoverHalo() {
+    for (const h of segLayer.querySelectorAll('.fan-hover')) h.remove();
   }
 
   // ═══════════════════════════════════════════════════════════

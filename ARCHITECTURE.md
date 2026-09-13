@@ -120,6 +120,8 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
 | `tree.js` | Cytoscape-Baum (Layout, Semantic Zoom, Highlights) — Ansichten `generational`/`temporal` |
 | `fan.js` | **Fächer-Ansicht (Standard)**: radialer Nachkommen-Sunburst in reinem SVG, s.u. |
 | `gotha.js` | **Gotha-Verzeichnis**: eingerücktes, klappbares Textverzeichnis je Generation (`#gotha-container`), nutzt `Fan.buildFamiliesFrom` |
+| `article.js` | **Artikelseite** (`view-article`): Properties wie Notion + ausführliche Vita als Markdown; Editiermodus mit Toolbar. Quelle: `members.notes` |
+| `markdown.js` | Minimaler, XSS-sicherer Markdown-Renderer (`render`, `toPlain`, `excerpt`) — keine Bibliothek, offline |
 | `relations.js` | Beziehungs-UI **und Auto-Vervollständigungs-Engine** (s.u.) |
 | `relationship.js` | Verwandtschaftsgrad-Berechnung (Pfadsuche, Begriffe) |
 | `profile.js` | Profile anzeigen/bearbeiten, Badges, Pflicht-Erstverbindung |
@@ -220,6 +222,9 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   Lesbarkeitsregel für den absoluten Winkel gilt; Chips, `centerOn`/
   `panTo` und Highlight-Anker rechnen mit `rotPt()`. Rotation wird nicht
   gespeichert. Nur in den Fächer-Ansichten sichtbar.
+- **Hover:** Kopie des Segments zuoberst mit 12-px-Rand in Segmentfarbe
+  (`showHoverHalo`, `vector-effect: non-scaling-stroke`) — wirkt größer,
+  verschiebt nichts; gedimmte Segmente bleiben ruhig.
 - **Interaktion:** Tippen zentriert die Person (Zoom bleibt) und öffnet das
   Profil; Rad/Pinch zoomt, Ziehen verschiebt; „Auf mich zentrieren" und
   „Im Stammbaum zeigen" respektieren die aktive Ansicht. Container
@@ -265,6 +270,20 @@ Zeile (genutzt von „Auf mich zentrieren" und „Im Stammbaum zeigen");
 `highlightConnection` markiert Pfad-Zeilen und dämpft den Rest. Nicht
 zugeordnete Personen zeigt die Waisen-Ablage (wie in allen Ansichten);
 der Familien-Umschalter oben wählt den gezeigten Zweig.
+
+## Artikelseite & Vita (`article.js`, `markdown.js`)
+
+`members.notes` ist die Markdown-Quelle der ausführlichen Vita (TEXT-
+Spalte, keine Migration). Profil-Seitenpanel zeigt nur den Auszug
+(`Markdown.excerpt`, erste Sätze ohne Überschriften) plus „Ganzen Artikel
+lesen"; das ⤢-Icon im Profil-Header öffnet `Article.show(id)`: Kopf mit
+Foto/Name, Property-Zeilen (Daten, Beruf, Wohnort, Kontakt, Status-Badges
+und Beziehungen mit **denselben `.rel-item`/`.rel-type-badge`-Styles wie im
+Profil**), darunter der gerenderte Artikel. „Vita bearbeiten" (gleiche
+Rechte wie Kernfelder) öffnet Textarea + Toolbar (H1/H2/B/I/Listen/Zitat/
+Link/Trennlinie fügen Markdown am Cursor ein), „Vorschau", Speichern via
+`DB.updateMember`. Renderer unterstützt `#`–`###`, Absätze, `-`/`1.`-Listen,
+`>`, `---`, `**`, `*`, `[Text](https://…)`; alles andere wird escaped.
 
 ## Beziehungs-Automatik (`relations.js → propagateLogicalRelations`)
 

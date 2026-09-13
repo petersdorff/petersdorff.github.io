@@ -434,6 +434,20 @@ a {
 .admin-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .admin-actions .btn { margin-bottom: 0; }
 
+/* Profil verknüpfen: Suchfeld klappt unter dem Button auf, nimmt volle Breite */
+.admin-link { flex: 1 0 100%; }
+.admin-link-box { margin-top: 8px; }
+.admin-link-box input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 2px solid var(--trace-light);
+  border-radius: var(--radius);
+  font-size: 13px;
+  outline: none;
+}
+.admin-link-box input:focus { border-color: var(--trace); }
+.mini-result-item.is-taken { color: var(--text-muted); cursor: default; }
+
 .admin-container h2 {
   font-size: 22px;
   font-weight: 600;

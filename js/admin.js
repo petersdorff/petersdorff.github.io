@@ -84,14 +84,80 @@ const Admin = (() => {
     const meta = Utils.createEl('div', { className: 'user-meta' });
     meta.append('Administrator (fest hinterlegt) · ');
     if (myMember) meta.appendChild(profileLink(myMember)); else meta.append('kein Profil verknüpft');
-    return Utils.createEl('div', { className: 'admin-user-card is-admin' }, [
+    const children = [
       Utils.createEl('div', { className: 'user-name' }, [
         document.createTextNode(myMember ? `${myMember.firstName} ${myMember.lastName}` : 'Admin'),
         Utils.createEl('span', { className: 'status-badge approved', textContent: 'Admin' }),
       ]),
       Utils.createEl('div', { className: 'user-email', textContent: me?.email || ADMIN_EMAIL }),
       meta,
-    ]);
+    ];
+    if (!myMember && me) children.push(Utils.createEl('div', { className: 'admin-actions' }, [linkWidget(me.id, 'Admin')]));
+    return Utils.createEl('div', { className: 'admin-user-card is-admin' }, children);
+  }
+
+  /**
+   * „Profil verknüpfen": Namenssuche über die geladenen Mitglieder, nur
+   * noch nicht beanspruchte Profile. Auswahl → claimMember (Profil wird
+   * „registriert" und hängt am Konto).
+   */
+  function linkWidget(uid, displayName) {
+    const wrap = Utils.createEl('div', { className: 'admin-link' });
+    const btn = Utils.createEl('button', { className: 'btn btn-small btn-secondary', textContent: 'Profil verknüpfen' });
+    const box = Utils.createEl('div', { className: 'admin-link-box hidden' });
+    const input = Utils.createEl('input', { type: 'text', placeholder: 'Name im Stammbaum suchen…', autocomplete: 'off' });
+    const results = Utils.createEl('div', { className: 'mini-results' });
+    box.append(input, results);
+    wrap.append(btn, box);
+
+    btn.addEventListener('click', () => {
+      box.classList.toggle('hidden');
+      if (!box.classList.contains('hidden')) input.focus();
+    });
+
+    input.addEventListener('input', () => {
+      const q = input.value.trim().toLowerCase();
+      results.innerHTML = '';
+      if (q.length < 2) return;
+      const hits = App.getCachedMembers()
+        .filter(m => `${m.firstName} ${m.lastName} ${m.birthName || ''}`.toLowerCase().includes(q))
+        .sort((a, b) => (a.birthDate || '9999').localeCompare(b.birthDate || '9999'))
+        .slice(0, 8);
+      if (!hits.length) {
+        results.appendChild(Utils.createEl('div', { className: 'mini-result-item', textContent: 'Keine Treffer' }));
+        return;
+      }
+      for (const m of hits) {
+        const year = m.birthDate ? ` (* ${m.birthDate.substring(0, 4)})` : '';
+        const taken = !!m.claimedByUid;
+        const item = Utils.createEl('div', {
+          className: 'mini-result-item' + (taken ? ' is-taken' : ''),
+          textContent: `${m.firstName} ${m.lastName}${year}` + (taken ? ' — bereits verknüpft' : ''),
+        });
+        if (!taken) {
+          item.addEventListener('click', async () => {
+            if (!confirm(`„${m.firstName} ${m.lastName}“ mit dem Konto von ${displayName} verknüpfen? Das Profil gilt danach als registriert.`)) return;
+            try {
+              await DB.claimMember(m.id, uid);
+              // Ist es das eigene Konto (Admin ohne Profil): Sitzung nachziehen
+              if (Auth.getUser()?.id === uid) {
+                const fresh = await DB.getMember(m.id);
+                Auth.setMember(fresh);
+                Tree.setCurrentUser(m.id);
+              }
+              App.toast(`Profil verknüpft: ${m.firstName} ${m.lastName}`, 'success');
+              await App.refreshTree();
+              showAdminPanel();
+            } catch (err) {
+              console.error('Link error:', err);
+              App.toast('Verknüpfen fehlgeschlagen', 'error');
+            }
+          });
+        }
+        results.appendChild(item);
+      }
+    });
+    return wrap;
   }
 
   function profileLink(member) {
@@ -131,6 +197,9 @@ const Admin = (() => {
       actions.append(act('Sperren', 'btn-danger', 'revoked', `${displayName} sperren? Der Zugriff endet sofort, das Konto bleibt bestehen.`));
     } else {
       actions.append(act('Freigeben', 'btn-primary', 'approved'));
+    }
+    if (!member && req.status !== 'rejected' && req.status !== 'revoked') {
+      actions.appendChild(linkWidget(req.user_uid, displayName));
     }
     if (member) {
       const unlink = Utils.createEl('button', { className: 'btn btn-small btn-secondary', textContent: 'Profil-Verknüpfung lösen' });

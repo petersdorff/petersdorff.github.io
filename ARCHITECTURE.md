@@ -119,6 +119,7 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
 | `db.js` | Alle Supabase-Zugriffe + Offline-Fallback auf `LocalSnapshot` |
 | `tree.js` | Cytoscape-Baum (Layout, Semantic Zoom, Highlights) — Ansichten `generational`/`temporal` |
 | `fan.js` | **Fächer-Ansicht (Standard)**: radialer Nachkommen-Sunburst in reinem SVG, s.u. |
+| `gotha.js` | **Gotha-Verzeichnis**: eingerücktes, klappbares Textverzeichnis je Generation (`#gotha-container`), nutzt `Fan.buildFamiliesFrom` |
 | `relations.js` | Beziehungs-UI **und Auto-Vervollständigungs-Engine** (s.u.) |
 | `relationship.js` | Verwandtschaftsgrad-Berechnung (Pfadsuche, Begriffe) |
 | `profile.js` | Profile anzeigen/bearbeiten, Badges, Pflicht-Erstverbindung |
@@ -150,9 +151,10 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
 
 ## Fächer-Ansicht (`fan.js`) — Standardansicht
 
-- **Vier Ansichten** über den Umschalter oben rechts (`btn-view-toggle`,
-  Zyklus Fächer (Geschlecht) → Fächer nach Geburtsjahr → Generationen →
-  Zeit), gemerkt in `localStorage.stammbaum_view` (`fan`, `fan-years`, …);
+- **Fünf Ansichten** über den Umschalter oben rechts (`btn-view-toggle`,
+  Zyklus Fächer (Geschlecht) → Fächer nach Geburtsjahr → **Gotha-
+  Verzeichnis** → Generationen → Zeit), gemerkt in
+  `localStorage.stammbaum_view` (`fan`, `fan-years`, `gotha`, …);
   `Fan.setColorMode('gender'|'year')` tauscht nur Füllfarben (Skala je
   Familienzweig vom ältesten bis jüngsten Geburtsjahr, Blau → Orange;
   Legende mit Farbbalken, wird beim Zweigwechsel nachgezogen);
@@ -240,6 +242,21 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   das getroffene Segment wird deshalb beim `pointerdown` gemerkt. Tests
   dafür immer mit **echten** Klicks (Computer-Tool) machen — synthetische
   Events bubbeln nicht durch die Capture und verdecken beide Fehler.
+
+## Gotha-Verzeichnis (`gotha.js`)
+
+Textansicht im Stil des Gothaischen Taschenbuchs: je Familie (alle
+untereinander, kein Umschalter) ein verschachteltes `<ul>` mit einer
+Zeile pro Person — römische Generationsziffer (I = Stammvater), Name,
+Lebensdaten, Partner als `; ∞ Name (* Jahr)` bzw. `⚮` für ehemalige;
+Geschwister nach Geburtsjahr. Zeilen mit Kindern sind klappbar (▾/▸,
+Zustand pro Sitzung in `collapsed`), Werkzeuge „Alle ausklappen" / „Bis
+Gen. III einklappen". Namen öffnen das Profil; Du = roter Balken,
+registriert = fett. `scrollTo(id)` klappt Vorfahren auf und blinkt die
+Zeile (genutzt von „Auf mich zentrieren" und „Im Stammbaum zeigen");
+`highlightConnection` markiert Pfad-Zeilen und dämpft den Rest. Nicht
+zugeordnete Personen stehen am Ende in „Nicht zugeordnet" (Waisen-Ablage
+und Familien-Umschalter sind in dieser Ansicht ausgeblendet).
 
 ## Beziehungs-Automatik (`relations.js → propagateLogicalRelations`)
 

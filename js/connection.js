@@ -81,6 +81,7 @@ const Connection = (() => {
     // Highlight path in tree and (if shown) in the fan chart
     Tree.highlightConnection(fromId, toId);
     Fan.highlightConnection(fromId, toId);
+    if (Gotha.isActive()) Gotha.highlightConnection(fromId, toId);
   }
 
   /**
@@ -188,6 +189,7 @@ const Connection = (() => {
     document.getElementById('connection-overlay').classList.add('hidden');
     Tree.clearHighlight();
     Fan.clearHighlight();
+    Gotha.clearHighlight();
   }
 
   // ─── QR Scan Handler ───

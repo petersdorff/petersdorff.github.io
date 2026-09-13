@@ -1622,7 +1622,8 @@ a {
 #btn-view-toggle .icon-gen,
 #btn-view-toggle .icon-temp,
 #btn-view-toggle .icon-fan,
-#btn-view-toggle .icon-fan-years {
+#btn-view-toggle .icon-fan-years,
+#btn-view-toggle .icon-gotha {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -1654,9 +1655,13 @@ a {
   opacity: 1;
 }
 
-#btn-view-toggle .icon-fan-years {
+#btn-view-toggle .icon-fan-years,
+#btn-view-toggle .icon-gotha {
   opacity: 0;
 }
+
+#btn-view-toggle.mode-gotha .icon-gen { opacity: 0; }
+#btn-view-toggle.mode-gotha .icon-gotha { opacity: 1; }
 
 #btn-view-toggle.mode-fan-years .icon-gen {
   opacity: 0;
@@ -2076,3 +2081,136 @@ a {
 }
 .fan-spouse-link:hover { fill: var(--red); }
 
+
+/* ═══════════════════════════════════════════════════════════
+   GOTHA-ANSICHT (Textverzeichnis mit Einrückung je Generation)
+   ═══════════════════════════════════════════════════════════ */
+
+#gotha-container {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  overflow: auto;
+  background: var(--bg);
+  -webkit-overflow-scrolling: touch;
+}
+
+#gotha-container.hidden { display: none; }
+
+.gotha-doc {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px 16px 120px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.gotha-tools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.gotha-tools .btn { margin-bottom: 0; }
+
+.gotha-family { margin-top: 20px; }
+
+.gotha-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  margin: 0;
+}
+
+.gotha-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 2px 0 10px;
+}
+
+.gotha-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Einrückung je Generation mit feiner Führungslinie */
+.gotha-children {
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--trace-faint);
+}
+
+.gotha-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 6px 3px 2px;
+  border-radius: var(--radius);
+  border-left: 3px solid transparent;
+}
+
+.gotha-row:hover { background: var(--bg-secondary); }
+
+.gotha-toggle {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+  padding: 0;
+  align-self: center;
+}
+.gotha-toggle.is-leaf { cursor: default; }
+
+.gotha-gen {
+  flex: none;
+  min-width: 26px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--blue);
+  text-align: right;
+  padding-right: 4px;
+}
+
+.gotha-body { min-width: 0; }
+
+.gotha-name {
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--trace-light);
+}
+.gotha-name:hover { color: var(--red); border-bottom-color: var(--red); }
+
+.is-registered > .gotha-body > .gotha-name { font-weight: 600; }
+.is-deceased > .gotha-body { color: var(--text-secondary); }
+.gotha-surname { color: var(--text-secondary); }
+.gotha-muted, .gotha-dates { color: var(--text-muted); }
+.gotha-spouse { color: var(--text-secondary); }
+.gotha-spouse-name { color: var(--blue); }
+
+.gotha-row.is-me {
+  border-left-color: var(--red);
+  background: var(--red-light);
+}
+
+.gotha-row.is-flash { animation: gothaFlash 1.6s ease-out; }
+@keyframes gothaFlash {
+  0% { background: var(--red-light); }
+  100% { background: transparent; }
+}
+
+/* Verwandtschaftspfad: Beteiligte markieren, Rest abschwächen */
+.gotha-row.is-path { border-left-color: var(--red); background: #fff5f5; }
+.gotha-row.is-off-path { opacity: 0.45; }
+
+@media (max-width: 480px) {
+  .gotha-doc { padding: 12px 8px 120px; font-size: 12px; }
+  .gotha-children { margin-left: 6px; padding-left: 8px; }
+  .gotha-gen { min-width: 22px; }
+}

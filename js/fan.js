@@ -138,7 +138,7 @@ const Fan = (() => {
    * ein Stammelternpaar (beide ohne Eltern) bildet EINE Familie mit dem
    * älteren Partner als Wurzel. Jede Familie bekommt ihren eigenen Baum.
    */
-  function buildFamilies() {
+  function buildFamiliesFrom(members, relationships) {
     const byId = new Map(members.map(m => [m.id, m]));
     const parentsOf = new Map(), childrenOf = new Map(), spousesOf = new Map();
     const push = (mp, k, v) => { if (!mp.has(k)) mp.set(k, []); mp.get(k).push(v); };
@@ -192,26 +192,34 @@ const Fan = (() => {
       return node;
     }
 
-    families = roots.map(rootMember => {
+    const fams = roots.map(rootMember => {
       const assigned = new Set([rootMember.id]);
       const root = makeNode(rootMember, 0, 0, assigned);
       return { rootId: rootMember.id, ...familyLabel(rootMember), root, assigned, size: assigned.size };
     }).sort((a, b) => b.size - a.size);
     // Zwei Wurzeln mit demselben Familiennamen (noch nicht verbunden):
     // im Umschalter per Vorname der Wurzel unterscheiden.
-    for (const f of families) {
-      if (families.filter(x => x.short === f.short).length > 1) {
+    for (const f of fams) {
+      if (fams.filter(x => x.short === f.short).length > 1) {
         f.short = `${f.short} · ${f.root.m.firstName}`;
       }
     }
 
     const union = new Set();
-    families.forEach(f => f.assigned.forEach(id => union.add(id)));
+    fams.forEach(f => f.assigned.forEach(id => union.add(id)));
     const unassigned = members.filter(m => !union.has(m.id));
-    unreachable = unassigned.map(m => m.id);
-    if (unassigned.length) {
-      console.info(`[Fan] ${unassigned.length} Personen in keiner Familie erreichbar:`,
-        unassigned.map(m => `${m.firstName} ${m.lastName}`).join(', '));
+    return { families: fams, unreachable: unassigned.map(m => m.id) };
+  }
+
+  /** Modulzustand aus der reinen Berechnung setzen (auch von Gotha genutzt). */
+  function buildFamilies() {
+    const res = buildFamiliesFrom(members, relationships);
+    families = res.families;
+    unreachable = res.unreachable;
+    if (unreachable.length) {
+      const byId = new Map(members.map(m => [m.id, m]));
+      console.info(`[Fan] ${unreachable.length} Personen in keiner Familie erreichbar:`,
+        unreachable.map(id => { const m = byId.get(id); return `${m.firstName} ${m.lastName}`; }).join(', '));
     }
   }
 
@@ -1037,7 +1045,7 @@ const Fan = (() => {
   }
 
   return { init, onTap, onAddRelative, onConnect, setCanEdit, isActive, show, hide, toggle, render, fit, centerOn, panTo, highlightConnection, clearHighlight,
-           getFamilies, setFamily, familyOf,
+           getFamilies, setFamily, familyOf, buildFamiliesFrom,
            setColorMode, getColorMode: () => colorMode, getYearScale,
            setPreferredFamily: (id) => { preferredFamilyId = id; },
            onFamilyChange: (cb) => { onFamilyChangeCallback = cb; },

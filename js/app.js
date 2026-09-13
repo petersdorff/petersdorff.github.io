@@ -24,6 +24,8 @@ const App = (() => {
     DB.init(supabaseClient);
     Search.init();
     Tree.init('tree-container');
+    Gotha.init('gotha-container');
+    Gotha.onTap((memberId) => Profile.show(memberId));
     Fan.init('fan-container');
     Fan.onTap((memberId) => {
       Fan.panTo(memberId);
@@ -235,7 +237,8 @@ const App = (() => {
       const profileId = Profile.getCurrentProfileId();
       if (profileId) {
         showView('view-main');
-        if (Fan.isActive()) Fan.centerOn(profileId);
+        if (Gotha.isActive()) Gotha.scrollTo(profileId);
+        else if (Fan.isActive()) Fan.centerOn(profileId);
         else setTimeout(() => Tree.centerOn(profileId), 300);
       }
     });
@@ -373,10 +376,12 @@ const App = (() => {
       viewApplied = true;
       const name = getStoredView();
       const isFan = name === 'fan' || name === 'fan-years';
-      if (!isFan) Tree.setViewMode(name);
+      if (!isFan && name !== 'gotha') Tree.setViewMode(name);
       Tree.render(cachedMembers, cachedRelationships);
       Fan.setColorMode(name === 'fan-years' ? 'year' : 'gender');
       setFanMode(isFan);
+      Gotha.render(cachedMembers, cachedRelationships);
+      if (name === 'gotha') Gotha.show();
       updateToggleButton();
       updateLegendBlocks();
       updateFamilySwitch();
@@ -385,6 +390,7 @@ const App = (() => {
     }
     Tree.render(cachedMembers, cachedRelationships);
     if (Fan.isActive()) Fan.render(cachedMembers, cachedRelationships);
+    Gotha.render(cachedMembers, cachedRelationships);
     updateFamilySwitch();
     updateOrphanTray();
   }
@@ -394,7 +400,7 @@ const App = (() => {
   function updateFamilySwitch() {
     const sw = document.getElementById('family-switch');
     if (!sw) return;
-    const fams = Fan.isActive() ? Fan.getFamilies() : [];
+    const fams = Fan.isActive() && !Gotha.isActive() ? Fan.getFamilies() : [];
     sw.classList.toggle('hidden', fams.length < 2);
     sw.innerHTML = '';
     for (const f of fams) {
@@ -418,6 +424,7 @@ const App = (() => {
   function updateOrphanTray() {
     const tray = document.getElementById('orphan-tray');
     if (!tray) return;
+    if (Gotha.isActive()) { tray.classList.add('hidden'); return; }   // Gotha listet sie selbst
     let ids;
     if (Fan.isActive()) {
       ids = Fan.getUnreachable();
@@ -479,7 +486,7 @@ const App = (() => {
 
   // ─── Ansichten: fan | generational | temporal ───
 
-  const VIEW_ORDER = ['fan', 'fan-years', 'generational', 'temporal'];
+  const VIEW_ORDER = ['fan', 'fan-years', 'gotha', 'generational', 'temporal'];
 
   function getStoredView() {
     let v = null;
@@ -488,16 +495,22 @@ const App = (() => {
   }
 
   function getCurrentView() {
+    if (Gotha.isActive()) return 'gotha';
     if (!Fan.isActive()) return Tree.getViewMode();
     return Fan.getColorMode() === 'year' ? 'fan-years' : 'fan';
   }
 
   /** Ansicht umschalten und merken. */
   function applyView(name) {
-    if (name === 'fan' || name === 'fan-years') {
+    if (name === 'gotha') {
+      setFanMode(false);
+      Gotha.show();
+    } else if (name === 'fan' || name === 'fan-years') {
+      Gotha.hide();
       Fan.setColorMode(name === 'fan-years' ? 'year' : 'gender');
       setFanMode(true);
     } else {
+      Gotha.hide();
       setFanMode(false);
       Tree.setViewMode(name);
     }
@@ -508,8 +521,9 @@ const App = (() => {
 
   /** Legende passend zur Ansicht: Baum / Fächer (Geschlecht) / Fächer (Geburtsjahr). */
   function updateLegendBlocks() {
-    const fan = Fan.isActive(), year = fan && Fan.getColorMode() === 'year';
-    document.getElementById('legend-tree').classList.toggle('hidden', fan);
+    const fan = Fan.isActive(), year = fan && Fan.getColorMode() === 'year', gotha = Gotha.isActive();
+    document.getElementById('legend-gotha').classList.toggle('hidden', !gotha);
+    document.getElementById('legend-tree').classList.toggle('hidden', fan || gotha);
     document.getElementById('legend-fan').classList.toggle('hidden', !fan || year);
     const yl = document.getElementById('legend-fan-year');
     yl.classList.toggle('hidden', !year);
@@ -720,10 +734,12 @@ const App = (() => {
     const mode = getCurrentView();
     btn.classList.toggle('mode-fan', mode === 'fan');
     btn.classList.toggle('mode-fan-years', mode === 'fan-years');
+    btn.classList.toggle('mode-gotha', mode === 'gotha');
     btn.classList.toggle('mode-temporal', mode === 'temporal');
     btn.title = {
       fan: 'Fächer (Geschlecht) aktiv – klicken für Fächer nach Geburtsjahr',
-      'fan-years': 'Fächer nach Geburtsjahr aktiv – klicken für Generationen-Ansicht',
+      'fan-years': 'Fächer nach Geburtsjahr aktiv – klicken für Gotha-Verzeichnis',
+      gotha: 'Gotha-Verzeichnis aktiv – klicken für Generationen-Ansicht',
       generational: 'Generationen-Ansicht aktiv – klicken für zeitliche Ansicht',
       temporal: 'Zeitliche Ansicht aktiv – klicken für Fächer-Ansicht',
     }[mode];
@@ -731,6 +747,10 @@ const App = (() => {
 
   function centerOnMe() {
     const member = Auth.getMember();
+    if (Gotha.isActive()) {
+      if (!member || !Gotha.scrollTo(member.id)) toast('Wähle zuerst, wer du bist', 'info');
+      return;
+    }
     if (Fan.isActive()) {
       member ? Fan.centerOn(member.id) : Fan.fit();
       return;

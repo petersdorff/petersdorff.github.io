@@ -280,7 +280,8 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   Bereich beginnt ein Jahr **vor** der ältesten Geburt.
 - **Abspielen (Spaßfunktion):** Play/Pause-Taste links am Streifen
   (`startPlayback`/`stopPlayback`, rAF-Schleife, `TL_YEARS_PER_SEC` = 4;
-  Play startet **immer von vorn**, Pause hält an; Ziehen, Mausrad,
+  Play läuft ab der aktuellen Stelle weiter (am Ende von vorn), Pause
+  hält an; Ziehen, Mausrad,
   Ansichts-/Familienwechsel und `Fan.hide()` stoppen). Jede echte Geburt
   (`tlBirths`: nur Blutsverwandte mit Datum, keine Angeheirateten) in
   (vorheriges, neues Stichjahr] löst `BabyCry.play(id, n·0.12 s)` aus.

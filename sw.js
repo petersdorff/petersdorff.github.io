@@ -15,6 +15,7 @@ const STATIC_ASSETS = [
   '/js/relationship.js',
   '/js/tree.js',
   '/js/babycry.js',
+  '/assets/sounds/baby-cry.mp3',
   '/js/fan.js',
   '/js/gotha.js',
   '/js/markdown.js',

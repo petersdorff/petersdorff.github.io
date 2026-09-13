@@ -4,9 +4,10 @@
    Für die Abspiel-Funktion des Zeitstrahls: je Geburt ein kurzes
    Schreien (1–2 s). Jeder Ruf ist eine eigene Stimme, Überlagerungen
    werden nicht abgebrochen — es wird einfach lauter und wilder.
-   Liegt `assets/sounds/baby-cry.mp3` im Repo, wird die Aufnahme
-   benutzt (mit leicht zufälliger Tonhöhe), sonst ein synthetisches
-   „wäh-wäh" aus Oszillatoren + Formantfilter. Alles offline-fähig.
+   Standard ist die Aufnahme `assets/sounds/baby-cry.mp3` (~1 s, mono,
+   96 kbit/s; ein- oder zweimal abgespielt, Tonhöhe leicht zufällig).
+   Fehlt sie oder lässt sie sich nicht laden, springt ein synthetisches
+   „wäh-wäh" aus Oszillatoren + Formantfilter ein. Alles offline-fähig.
    ═══════════════════════════════════════════════════════════ */
 
 const BabyCry = (() => {
@@ -37,10 +38,13 @@ const BabyCry = (() => {
     if (sampleTried) return;
     sampleTried = true;
     try {
-      const res = await fetch('assets/sounds/baby-cry.mp3', { cache: 'force-cache' });
-      if (!res.ok) return;
+      const res = await fetch('assets/sounds/baby-cry.mp3');
+      if (!res.ok) throw new Error(res.status);
       sample = await ctx.decodeAudioData(await res.arrayBuffer());
-    } catch { sample = null; }
+    } catch {
+      sample = null;
+      sampleTried = false;   // beim nächsten Abspielen erneut versuchen (z.B. kurz offline)
+    }
   }
 
   /** Deterministischer Zufall je Baby (gleiches Kind → gleiche Stimme). */
@@ -54,6 +58,7 @@ const BabyCry = (() => {
   function play(seed = Math.random(), delay = 0) {
     const c = ensureContext();
     if (!c) return;
+    if (!sample) loadSample();
     const t0 = c.currentTime + Math.max(0, delay);
     const rand = rng(seed);
     voices++;
@@ -61,18 +66,26 @@ const BabyCry = (() => {
     if (sample) playSample(c, t0, rand, done); else playSynth(c, t0, rand, done);
   }
 
+  /** Aufnahme (~1 s): einmal oder zweimal hintereinander (→ 1–2 s),
+      Tonhöhe je Baby leicht anders. */
   function playSample(c, t0, rand, done) {
-    const src = c.createBufferSource();
-    src.buffer = sample;
-    src.playbackRate.value = 0.9 + rand() * 0.25;   // jedes Baby klingt etwas anders
-    const g = c.createGain();
-    g.gain.value = 0.9;
-    src.connect(g); g.connect(master);
-    const dur = Math.min(sample.duration / src.playbackRate.value, 2.0);
-    g.gain.setValueAtTime(0.9, t0 + dur - 0.15);
-    g.gain.linearRampToValueAtTime(0, t0 + dur);
-    src.start(t0); src.stop(t0 + dur);
-    src.onended = done;
+    const rate = 0.9 + rand() * 0.25;   // jedes Baby klingt etwas anders
+    const one = Math.min(sample.duration / rate, 2.0);
+    const reps = rand() < 0.5 ? 2 : 1;
+    let t = t0;
+    for (let i = 0; i < reps; i++) {
+      const src = c.createBufferSource();
+      src.buffer = sample;
+      src.playbackRate.value = rate * (i ? 0.97 + rand() * 0.06 : 1);
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.9, t);
+      g.gain.setValueAtTime(0.9, t + one - 0.12);
+      g.gain.linearRampToValueAtTime(0.0001, t + one);
+      src.connect(g); g.connect(master);
+      src.start(t); src.stop(t + one);
+      if (i === reps - 1) src.onended = done;
+      t += one * 0.92;
+    }
   }
 
   /** Synthetisches Babygeschrei: 2–3 Silben „wäh", Tonhöhe steigt und

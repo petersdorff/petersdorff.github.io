@@ -286,11 +286,13 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   `js/babycry.js` (Web Audio, Kontext erst bei der Nutzergeste): jede
   Geburt ist eine eigene Stimme, Überlagerungen werden nie abgebrochen —
   es wird lauter und wilder (nur ein milder Kompressor gegen Clipping).
-  Standard ist ein synthetisches „wäh-wäh" (Sägezahn + Rechteck,
-  Tonhöhenbogen, Vibrato, Formant-/Peaking-Filter, Atemrauschen, 2–3
-  Silben, Stimmlage deterministisch aus der Personen-ID); liegt
-  `assets/sounds/baby-cry.mp3` im Repo, wird stattdessen die Aufnahme mit
-  leicht zufälliger Tonhöhe genutzt. iOS: Stummschalter dämpft Web Audio.
+  Standard ist die Aufnahme `assets/sounds/baby-cry.mp3` (Kais WAV
+  „baby cries at birth #4", auf 1 s mono 96 kbit/s ≈ 13 KB gewandelt;
+  ein- oder zweimal hintereinander → 1–2 s, Tonhöhe je Person
+  deterministisch leicht anders, im SW-Precache). Fällt das Laden aus,
+  springt ein synthetisches „wäh-wäh" ein (Sägezahn + Rechteck,
+  Tonhöhenbogen, Vibrato, Formant-/Peaking-Filter, Atemrauschen).
+  iOS: Stummschalter dämpft Web Audio.
 - **Hover:** Kopie des Segments zuoberst mit 12-px-Rand in Segmentfarbe
   plus 1,5-px weißem Saum außen (`showHoverHalo`, `vector-effect:
   non-scaling-stroke`) — wirkt größer, verschiebt nichts; gedimmte

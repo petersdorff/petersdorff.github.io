@@ -32,9 +32,17 @@ Gotha-Datenbasis). Vanilla HTML/CSS/JS ohne Build-Schritt, PCB-Ästhetik
 ## Backend (Supabase)
 
 - Projekt-Ref `ixdcyoivtapglllmwvut` (eu-central-1), URL + anon key oben in
-  `js/app.js`. **Achtung:** Supabase pausiert/löscht Free-Tier-Projekte bei
-  Inaktivität — Wiederherstellung/Neuaufbau ist in `RESTORE.md` beschrieben
-  (Schema-Dateien, Migrationsreihenfolge, Datenimport, Snapshot-Refresh).
+  `js/app.js`. Supabase pausiert Free-Tier-Projekte nach 7 Tagen ohne
+  API-Aufruf (Juli und September 2026 passiert). Dagegen läuft
+  **`.github/workflows/supabase-keepalive.yml`**: täglicher REST-Ping, der
+  bei Fehler den Lauf rot macht → GitHub mailt den Owner (= Health-Monitor).
+  Caveat: GitHub schaltet Cron-Workflows nach 60 Tagen ohne Commit ab —
+  dann manuell auslösen oder pushen. Falls das Projekt doch pausiert:
+  Dashboard → Restore, dauert ~5 Min (DNS kommt vor der REST-API, die
+  antwortet zwischenzeitlich 502/404). Neuaufbau nach Löschung: `RESTORE.md`.
+- **Nach jedem Restore** prüfen: offene Freigaben im Admin-Panel (Mails
+  gingen während der Pause ggf. unter) und ob die DB neuer ist als der
+  Snapshot (`updated_at` vs. `snapshot_date`) → ggf. Snapshot neu erzeugen.
 - Tabellen: `members`, `relationships`, `user_approvals`; Storage-Bucket
   `photos`. Schema: `supabase-schema.sql`, dann
   `supabase-migration-approvals.sql`, `migrations/002…`, `migrations/003…`.
@@ -42,13 +50,19 @@ Gotha-Datenbasis). Vanilla HTML/CSS/JS ohne Build-Schritt, PCB-Ästhetik
   (`user_approvals`, Admin ist hart codiert `kaivonpetersdorff@me.com` in
   `js/admin.js` und Migration 003). Nur Kai, Tabea, Stephan haben Konten
   (Stand Juli 2026); geclaimte Profile sind an `claimed_by_uid` erkennbar.
-- **Offener Sicherheitspunkt (Stand Juli 2026):** Migration
-  `003_enforce_approvals_rls.sql` muss nach der Projekt-Reaktivierung noch
-  im SQL-Editor eingespielt werden — bis dahin ist die Freigabe nur ein
-  Client-Check. Außerdem: Repo ist öffentlich inkl. Familiendaten; der alte
-  service_role-Key stand bis Juli 2026 in der Git-Historie (folgenlos für
-  das alte Projekt, aber: Keys nie committen; `fetch-db.sh`/`update-db.sh`
-  sind lokal + gitignored und enthalten den service_role-Key).
+- **Serverseitige Freigabe-Prüfung** (Migration 003) ist eingespielt —
+  verifiziert September 2026: RLS-Policies laufen über `public.is_approved()`,
+  nicht freigegebene Konten lesen nichts. Prüfen per
+  `POST /rest/v1/rpc/is_approved` (200 = Funktion existiert; 404 = fehlt).
+  Nach einem Neuaufbau des Projekts muss sie wieder eingespielt werden.
+- **Offener Sicherheitspunkt:** Repo ist öffentlich inkl. Familiendaten
+  (Namen, Geburts-/Sterbedaten); der Login schützt faktisch nur
+  Kontaktdaten und den Schreibzugriff. Der alte service_role-Key stand bis
+  Juli 2026 in der Git-Historie — Keys nie committen; `fetch-db.sh`/
+  `update-db.sh` sind lokal + gitignored und enthalten den service_role-Key.
+- Die Supabase-CLI auf dem MacBook ist mit einem *anderen* Konto eingeloggt
+  (sieht nur Projekt `ktgchgljmybnzmzkmyfi`) — Migrationen für dieses
+  Projekt daher über den SQL-Editor im Dashboard, nicht per CLI.
 
 ## Datenmodell & Konventionen
 

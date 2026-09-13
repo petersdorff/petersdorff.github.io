@@ -1,0 +1,48 @@
+# Hält das Supabase-Free-Tier-Projekt wach.
+#
+# Supabase pausiert kostenlose Projekte nach 7 Tagen ohne API-Aufruf
+# (Juli und September 2026 zweimal passiert). Ein täglicher Request
+# durch das API-Gateway verhindert das. Schlägt der Ping fehl, schlägt
+# der Lauf fehl und GitHub benachrichtigt den Repo-Owner per Mail —
+# der Workflow ist damit zugleich ein kostenloser Health-Monitor.
+#
+# Achtung: GitHub deaktiviert geplante Workflows in Repos ohne Commit
+# seit 60 Tagen. Bei längerer Funkstille also einmal manuell auslösen
+# (Actions → Supabase keep-alive → Run workflow) oder etwas pushen.
+#
+# Der anon-Key ist öffentlich (steht auch in js/app.js) — kein Secret.
+
+name: Supabase keep-alive
+
+on:
+  schedule:
+    # täglich 06:17 UTC — krumme Minute, weil GitHub Läufe zur vollen
+    # Stunde bei hoher Last gern verwirft
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+env:
+  SUPABASE_URL: https://ixdcyoivtapglllmwvut.supabase.co
+  SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4ZGN5b2l2dGFwZ2xsbG13dnV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExNDQwMzcsImV4cCI6MjA4NjcyMDAzN30.9bwk1HrmsWz6Hk5RxqnpZiqt7-0YhNjzyev_tpIwLqU
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: REST-Ping (zählt als Projekt-Aktivität)
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+            "$SUPABASE_URL/rest/v1/members?select=id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+          echo "REST: HTTP $code"
+          # 200 = ok; RLS liefert für anon leere Liste, ist aber Aktivität.
+          [ "$code" = "200" ] || { echo "::error::Supabase REST antwortet mit $code — Projekt pausiert oder gestört?"; exit 1; }
+
+      - name: Auth-Health
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+            "$SUPABASE_URL/auth/v1/health" -H "apikey: $SUPABASE_ANON_KEY")
+          echo "Auth: HTTP $code"
+          [ "$code" = "200" ] || { echo "::error::Supabase Auth antwortet mit $code"; exit 1; }

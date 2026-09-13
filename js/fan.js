@@ -335,27 +335,26 @@ const Fan = (() => {
     const { m, spouses, familyName, isMe, along, center } = spec;
     const lines = [];
     const me = isMe ? '➤ ' : '';
+    // Zentrum (Stammvater) folgt demselben Muster wie die Segmente:
+    // Vorname groß, Nachname eigene Zeile — nur nie ganz ohne Nachname.
+    const first = center ? m.firstName : me + (tier === 'far' ? m.firstName : displayName(m, familyName));
     if (tier === 'far') {
-      const txt = center ? `${m.firstName} ${m.lastName}` : me + m.firstName;
-      lines.push({ ...fitText(txt, along, center ? 13 : 18, 6.5), weight: 600 });
-      if (center && spouses.length) {
-        lines.push({ ...fitText('∞ ' + spouses.map(s => s.firstName).join(' · '), along, 10, 6), weight: 400, dim: true });
+      lines.push({ ...fitText(me + m.firstName, along, 18, 6.5), weight: 600 });
+      if (center) {
+        lines.push({ ...fitText(m.lastName, along, 9, 6), weight: 500 });
+        if (spouses.length) lines.push(spouseLine(spouses, along, 9, 6, sp => sp.firstName));
       }
     } else if (tier === 'mid') {
-      const txt = center ? `${m.firstName} ${m.lastName}` : me + displayName(m, familyName);
-      lines.push({ ...fitText(txt, along, center ? 12 : 13, 6.5), weight: 600 });
+      lines.push({ ...fitText(first, along, 13, 6.5), weight: 600 });
+      if (center) lines.push({ ...fitText(m.lastName, along, 8.5, 6), weight: 500 });
       if (spouses.length) lines.push(spouseLine(spouses, along, 9.5, 6, sp => sp.firstName));
     } else {
       // nah: voller Name — Nachname als eigene Zeile, damit er in die
       // Ringbreite passt; Geburtsname zuletzt (niedrigste Priorität)
-      if (center) {
-        lines.push({ ...fitText(`${m.firstName} ${m.lastName}`, along, 11, 6.5), weight: 600 });
-      } else {
-        lines.push({ ...fitText(me + m.firstName, along, 11, 6.5), weight: 600 });
-        // Nachname darf etwas dichter an den Rand und kleiner werden,
-        // damit „von Petersdorff-Campen" auch radial in die Ringbreite passt
-        if (m.lastName) lines.push({ ...fitText(m.lastName, along + 6, 8.5, 5.5), weight: 500 });
-      }
+      lines.push({ ...fitText(me + m.firstName, along, 11, 6.5), weight: 600 });
+      // Nachname darf etwas dichter an den Rand und kleiner werden,
+      // damit „von Petersdorff-Campen" auch radial in die Ringbreite passt
+      if (m.lastName) lines.push({ ...fitText(m.lastName, along + 6, 8.5, 5.5), weight: 500 });
       if (spouses.length) lines.push(spouseLine(spouses, along, 8.5, 6, spouseName));
       const yr = yearLabel(m);
       if (yr) lines.push({ ...fitText(yr, along, 8, 6), weight: 400, dim: true });

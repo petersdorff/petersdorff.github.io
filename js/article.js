@@ -65,10 +65,6 @@ const Article = (() => {
     grid.innerHTML = '';
     const fmt = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('de-DE') : '';
     const gender = { m: 'Männlich', f: 'Weiblich', d: 'Divers' }[m.gender] || '';
-    const status = [
-      m.isDeceased ? '† Verstorben' : null,
-      m.isPlaceholder ? '◌ Platzhalter' : '✓ Registriert',
-    ].filter(Boolean).join(' · ');
     const rows = [
       ['Geboren', fmt(m.birthDate)],
       ['Gestorben', m.isDeceased ? fmt(m.deathDate) : ''],
@@ -76,7 +72,6 @@ const Article = (() => {
       ['Beruf', m.occupation],
       ['Wohnort', m.location],
       ['Kontakt', m.contact || m.email],
-      ['Status', status],
     ];
     for (const [k, v] of rows) {
       if (!v) continue;
@@ -85,6 +80,13 @@ const Article = (() => {
         Utils.createEl('div', { className: 'article-prop-val', textContent: v }),
       );
     }
+    // Status-Badges exakt wie im Profil-Seitenpanel
+    const badges = Utils.createEl('div', { className: 'article-prop-val profile-badges article-badges' });
+    if (m.isDeceased) badges.appendChild(Utils.createEl('span', { className: 'badge badge-deceased', textContent: '\u2020 Verstorben' }));
+    badges.appendChild(m.isPlaceholder
+      ? Utils.createEl('span', { className: 'badge badge-placeholder', textContent: '\u25cc Platzhalter' })
+      : Utils.createEl('span', { className: 'badge', textContent: '\u2713 Registriert' }));
+    grid.append(Utils.createEl('div', { className: 'article-prop-key', textContent: 'Status' }), badges);
   }
 
   async function renderRelations(memberId) {
@@ -101,13 +103,19 @@ const Article = (() => {
       if (!groups.has(label)) groups.set(label, []);
       groups.get(label).push(other);
     }
+    // Gleiche Darstellung wie „Verbindungen" im Profil: farbiges Typ-Badge
+    // (geschlechtsspezifisch) + Name, gruppiert nach Beziehungsart
+    const typeOf = { 'Eltern': 'parent', 'Partner': 'spouse', 'Ehemalige Partner': 'ex_spouse', 'Kinder': 'child', 'Geschwister': 'sibling' };
     for (const label of ['Eltern', 'Partner', 'Ehemalige Partner', 'Kinder', 'Geschwister']) {
       const list = groups.get(label); if (!list) continue;
-      const val = Utils.createEl('div', { className: 'article-prop-val article-chips' });
+      const val = Utils.createEl('div', { className: 'article-prop-val article-rels' });
       for (const p of list.sort((a, b) => (a.birthDate || '').localeCompare(b.birthDate || ''))) {
-        const chip = Utils.createEl('button', { className: 'article-chip', textContent: `${p.firstName} ${p.lastName}` });
-        chip.addEventListener('click', () => show(p.id));
-        val.appendChild(chip);
+        const t = typeOf[label];
+        const badge = Utils.createEl('span', { className: `rel-type-badge ${t}`, textContent: Utils.genderedRelLabel(t, p.gender) });
+        const name = Utils.createEl('span', { className: 'rel-name', textContent: `${p.firstName} ${p.lastName}` });
+        const item = Utils.createEl('div', { className: 'rel-item' }, [badge, name]);
+        item.addEventListener('click', () => show(p.id));
+        val.appendChild(item);
       }
       grid.append(Utils.createEl('div', { className: 'article-prop-key', textContent: label }), val);
     }

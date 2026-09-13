@@ -1295,6 +1295,7 @@ a {
 .rel-item .rel-type-badge.child  { background: #e8f5e8; color: #2d7a4f; }
 .rel-item .rel-type-badge.spouse { background: var(--red-light); color: var(--red); }
 .rel-item .rel-type-badge.sibling { background: #f0e8f5; color: #7b4d9d; }
+.rel-item .rel-type-badge.ex_spouse { background: #f3f4f6; color: var(--text-secondary); }
 
 .rel-item .rel-name {
   flex: 1;
@@ -2011,14 +2012,10 @@ a {
 
 .fan-svg:active { cursor: grabbing; }
 
-.fan-seg {
-  cursor: pointer;
-  transform-box: fill-box;          /* transform-origin wird je Segment per JS auf den Mittelpunkt gelegt */
-  transition: transform 140ms ease-out;
-}
-.fan-seg:hover { transform: scale(1.035); }   /* leichter Pop radial nach außen */
-.fan-seg:hover path, .fan-seg:hover circle { filter: brightness(0.92); }
-.fan-seg.fan-dim:hover { transform: none; }   /* gedimmte (nicht am Pfad) bleiben ruhig */
+.fan-seg { cursor: pointer; }
+/* Hover-Halo: dicker Rand in Segmentfarbe (per JS als Kopie über den Nachbarn gelegt) */
+.fan-hover { pointer-events: none; }
+.fan-hover .fan-hover-rim { vector-effect: non-scaling-stroke; stroke-linejoin: round; fill: none; }
 
 .fan-hl, .fan-hl * {
   pointer-events: none;
@@ -2284,18 +2281,9 @@ a {
 }
 .article-prop-key { color: var(--text-muted); font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; padding-top: 3px; }
 .article-prop-val { color: var(--text); min-width: 0; overflow-wrap: anywhere; }
-.article-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.article-chip {
-  border: 1.5px solid var(--trace-light);
-  background: var(--bg);
-  border-radius: 12px;
-  padding: 2px 10px;
-  font-size: 12px;
-  font-family: var(--font);
-  color: var(--text);
-  cursor: pointer;
-}
-.article-chip:hover { border-color: var(--red); color: var(--red); }
+/* Beziehungen: identische .rel-item/.rel-type-badge-Styles wie im Profil, nur kompakter */
+.article-rels .rel-item { padding: 6px 10px; margin-bottom: 4px; }
+.article-badges { display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 0; }
 
 .article-section-title {
   font-size: 11px;

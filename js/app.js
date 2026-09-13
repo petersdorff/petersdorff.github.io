@@ -34,6 +34,7 @@ const App = (() => {
       try { localStorage.setItem('stammbaum_family', rootId); } catch { /* privat/blockiert */ }
       updateFamilySwitch();
       updateOrphanTray();
+      updateLegendBlocks();   // Jahres-Skala ist je Zweig
     });
     try { Fan.setPreferredFamily(localStorage.getItem('stammbaum_family')); } catch { /* egal */ }
     Admin.initEmailJS();

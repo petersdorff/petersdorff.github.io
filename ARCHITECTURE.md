@@ -129,9 +129,9 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
 - **Vier Ansichten** über den Umschalter oben rechts (`btn-view-toggle`,
   Zyklus Fächer (Geschlecht) → Fächer nach Geburtsjahr → Generationen →
   Zeit), gemerkt in `localStorage.stammbaum_view` (`fan`, `fan-years`, …);
-  `Fan.setColorMode('gender'|'year')` tauscht nur Füllfarben (Skala über
-  alle Personen, Blau = ältestes Geburtsjahr → Orange = jüngstes; Legende
-  mit Farbbalken);
+  `Fan.setColorMode('gender'|'year')` tauscht nur Füllfarben (Skala je
+  Familienzweig vom ältesten bis jüngsten Geburtsjahr, Blau → Orange;
+  Legende mit Farbbalken, wird beim Zweigwechsel nachgezogen);
   ohne Eintrag ist der Fächer Standard. `App.applyView(name)` ist die
   zentrale Stelle (Fan-Overlay ein/aus, Tree-Modus, Legende, Button-Icon).
 - **Familienzweige:** `buildFamilies()` erkennt Wurzeln automatisch:

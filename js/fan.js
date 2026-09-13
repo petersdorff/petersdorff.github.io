@@ -248,11 +248,12 @@ const Fan = (() => {
     segById = new Map(); hostOf = new Map(); labelSpecs = []; lodTier = null;
     ghostLayer.innerHTML = ''; ghostFor = null;
 
-    computeYearRange();
     buildFamilies();
     if (!families.length) return;
     activeFamilyId = pickFamily();
-    const root = families.find(f => f.rootId === activeFamilyId).root;
+    const fam = families.find(f => f.rootId === activeFamilyId);
+    computeYearRange(fam);
+    const root = fam.root;
     rootId = root.m.id;
 
     let maxDepth = 0;
@@ -629,9 +630,12 @@ const Fan = (() => {
     return `hsl(${Math.round(h)} 66% 80%)`;
   }
 
-  /** Jahresbereich über ALLE Personen (alle Familien), damit die Skala vergleichbar bleibt. */
-  function computeYearRange() {
-    const years = members.map(m => m.birthDate ? parseInt(m.birthDate.substring(0, 4), 10) : NaN).filter(isFinite);
+  /** Jahresbereich je Familienzweig: vom ältesten bis zum jüngsten Geburtsjahr
+      der aktiven Familie (Märkisch: ab Hans Leo 1830), damit die Skala den
+      Zweig ausfüllt und nicht von einem anderen Zweig gestaucht wird. */
+  function computeYearRange(fam) {
+    const pool = fam ? members.filter(m => fam.assigned.has(m.id)) : members;
+    const years = pool.map(m => m.birthDate ? parseInt(m.birthDate.substring(0, 4), 10) : NaN).filter(isFinite);
     if (!years.length) return;
     yearRange = { min: Math.min(...years), max: Math.max(...years) };
   }

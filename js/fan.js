@@ -148,6 +148,18 @@ const Fan = (() => {
       roots.push(h);
     }
 
+    // Bekannte Familie ohne Wurzel (z.B. frisch angelegter Platzhalter-
+    // Stammvater ohne Kinder): ältester elternloser Namensträger, der nicht
+    // in eine dokumentierte Linie eingeheiratet ist, wird ihre Wurzel.
+    for (const fam of FAMILY_NAMES) {
+      if (roots.some(r => familyLabel(r).name === fam.name)) continue;
+      const seed = members
+        .filter(m => familyLabel(m).name === fam.name && !parentsOf.has(m.id) && !used.has(m.id)
+                  && !(spousesOf.get(m.id) || []).some(id => parentsOf.has(id)))
+        .sort((a, b) => (childrenOf.has(b.id) - childrenOf.has(a.id)) || byBirth(a, b))[0];
+      if (seed) { used.add(seed.id); roots.push(seed); }
+    }
+
     // Jede Person genau einmal je Familie: Blutsverwandte als Segment,
     // deren Partner als Untertitel. Kinder hängen am ersten erreichten Elternteil.
     function makeNode(m, depth, branch, assigned) {
@@ -170,6 +182,13 @@ const Fan = (() => {
       const root = makeNode(rootMember, 0, 0, assigned);
       return { rootId: rootMember.id, ...familyLabel(rootMember), root, assigned, size: assigned.size };
     }).sort((a, b) => b.size - a.size);
+    // Zwei Wurzeln mit demselben Familiennamen (noch nicht verbunden):
+    // im Umschalter per Vorname der Wurzel unterscheiden.
+    for (const f of families) {
+      if (families.filter(x => x.short === f.short).length > 1) {
+        f.short = `${f.short} · ${f.root.m.firstName}`;
+      }
+    }
 
     const union = new Set();
     families.forEach(f => f.assigned.forEach(id => union.add(id)));
@@ -638,7 +657,8 @@ const Fan = (() => {
 
   function fit() {
     const cw = container.clientWidth || 1, ch = container.clientHeight || 1;
-    const R = chartRadius + PAD;
+    // Mindestens Platz für zwei Ringe, sonst füllt eine Ein-Personen-Familie den Bildschirm
+    const R = Math.max(chartRadius, CENTER_R + 2 * RING) + PAD;
     let w = 2 * R, h = 2 * R;
     if (cw >= ch) w = h * cw / ch; else h = w * ch / cw;
     vb = { x: -w / 2, y: -h / 2, w, h };

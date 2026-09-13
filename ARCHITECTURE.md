@@ -137,7 +137,12 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   eigenen Fächer; Umschalter `#family-switch` oben (nur bei ≥2), Auswahl
   in `localStorage.stammbaum_family`. Namen per `FAMILY_NAMES` nach
   Nachname der Wurzel („…-Campen" → Märkische, „Petersdorff" → Pommersche,
-  sonst „Familie <Nachname>"). `centerOn`/`panTo`/`highlightConnection`
+  sonst „Familie <Nachname>"). Eine bekannte Familie ohne Wurzel bekommt
+  als Wurzel den ältesten elternlosen, nicht eingeheirateten Namensträger —
+  so reicht ein Platzhalter-Stammvater ohne Kinder, um den Zweig zu
+  starten (Pommersche Linie: Platzhalter „Stammvater von Petersdorff",
+  angelegt 13.09.2026). Kein Zweig-Feld in der DB — Zweige sind aus den
+  Beziehungen abgeleitet. `centerOn`/`panTo`/`highlightConnection`
   wechseln bei Bedarf automatisch in die Familie der Person. Heiraten
   zwischen Zweigen erscheinen in beiden Fächern als „∞"-Partner.
   Waisen-Ablage = in keiner Familie erreichbar.

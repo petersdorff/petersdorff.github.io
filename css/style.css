@@ -2137,8 +2137,36 @@ a {
   white-space: nowrap;
   box-shadow: var(--shadow);
 }
+/* Abspielen-Taste links neben dem Streifen */
+.fan-timeline-play {
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  margin-right: 10px;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1.5px solid var(--trace);
+  background: var(--bg);
+  color: var(--trace);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-shadow: var(--shadow);
+}
+.fan-timeline-play svg { width: 18px; height: 18px; fill: currentColor; }
+.fan-timeline-play .ico-pause { display: none; }
+.fan-timeline.is-playing .fan-timeline-play { background: var(--red); border-color: var(--red); color: #fff; }
+.fan-timeline.is-playing .fan-timeline-play .ico-play { display: none; }
+.fan-timeline.is-playing .fan-timeline-play .ico-pause { display: block; }
+.fan-timeline.is-playing .fan-timeline-year { animation: tl-pulse 1s ease-in-out infinite; }
+@keyframes tl-pulse { 50% { transform: translateX(-50%) scale(1.08); } }
 @media (pointer: coarse) {
   .fan-timeline { height: 40px; }
+  .fan-timeline-play { width: 40px; height: 40px; }
 }
 @media (max-width: 600px) {
   /* über Waisen-Ablage (links unten) und Gast-Hinweis, neben dem FAB-Stapel */

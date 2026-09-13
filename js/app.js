@@ -388,7 +388,6 @@ const App = (() => {
       viewApplied = true;
       const name = getStoredView();
       const isFan = name === 'fan' || name === 'fan-years';
-      if (!isFan && name !== 'gotha') Tree.setViewMode(name);
       Tree.render(sub.members, sub.relationships);
       Fan.setColorMode(name === 'fan-years' ? 'year' : 'gender');
       setFanMode(isFan);
@@ -543,19 +542,20 @@ const App = (() => {
     document.getElementById('edit-firstname').focus();
   }
 
-  // ─── Ansichten: fan | generational | temporal ───
+  // ─── Ansichten: fan | fan-years | gotha | tree (Stammtafel) ───
 
-  const VIEW_ORDER = ['fan', 'fan-years', 'gotha', 'generational', 'temporal'];
+  const VIEW_ORDER = ['fan', 'fan-years', 'gotha', 'tree'];
 
   function getStoredView() {
     let v = null;
     try { v = localStorage.getItem('stammbaum_view'); } catch { /* privat/blockiert */ }
+    if (v === 'generational' || v === 'temporal') v = 'tree';   // alte Namen
     return VIEW_ORDER.includes(v) ? v : 'fan';
   }
 
   function getCurrentView() {
     if (Gotha.isActive()) return 'gotha';
-    if (!Fan.isActive()) return Tree.getViewMode();
+    if (!Fan.isActive()) return 'tree';
     return Fan.getColorMode() === 'year' ? 'fan-years' : 'fan';
   }
 
@@ -571,7 +571,6 @@ const App = (() => {
     } else {
       Gotha.hide();
       setFanMode(false);
-      Tree.setViewMode(name);
     }
     try { localStorage.setItem('stammbaum_view', name); } catch { /* privat/blockiert */ }
     updateToggleButton();
@@ -794,13 +793,11 @@ const App = (() => {
     btn.classList.toggle('mode-fan', mode === 'fan');
     btn.classList.toggle('mode-fan-years', mode === 'fan-years');
     btn.classList.toggle('mode-gotha', mode === 'gotha');
-    btn.classList.toggle('mode-temporal', mode === 'temporal');
     btn.title = {
       fan: 'Fächer (Geschlecht) aktiv – klicken für Fächer nach Geburtsjahr',
       'fan-years': 'Fächer nach Geburtsjahr aktiv – klicken für Gotha-Verzeichnis',
-      gotha: 'Gotha-Verzeichnis aktiv – klicken für Generationen-Ansicht',
-      generational: 'Generationen-Ansicht aktiv – klicken für zeitliche Ansicht',
-      temporal: 'Zeitliche Ansicht aktiv – klicken für Fächer-Ansicht',
+      gotha: 'Gotha-Verzeichnis aktiv – klicken für Stammtafel',
+      tree: 'Stammtafel aktiv – klicken für Fächer-Ansicht',
     }[mode];
   }
 

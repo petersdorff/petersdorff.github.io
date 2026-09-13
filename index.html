@@ -11,7 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=36">
+  <link rel="stylesheet" href="css/style.css?v=37">
 </head>
 <body>
 
@@ -250,7 +250,7 @@
         </svg>
         <input type="text" id="search-input" placeholder="Name suchen...">
       </div>
-      <button id="btn-view-toggle" class="icon-btn" aria-label="Ansicht wechseln" title="Fächer / Generationen / Zeit">
+      <button id="btn-view-toggle" class="icon-btn" aria-label="Ansicht wechseln" title="Fächer / Gotha / Stammtafel">
         <!-- Fan icon (radial) -->
         <svg class="icon-fan" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <circle cx="12" cy="12" r="2.5"/>
@@ -274,16 +274,6 @@
           <line x1="6" y1="10" x2="18" y2="10"/>
           <line x1="6" y1="10" x2="6" y2="14"/><circle cx="6" cy="16" r="2"/>
           <line x1="18" y1="10" x2="18" y2="14"/><circle cx="18" cy="16" r="2"/>
-        </svg>
-        <!-- Temporal icon (timeline) -->
-        <svg class="icon-temp" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="12" y1="2" x2="12" y2="22"/>
-          <line x1="8" y1="6" x2="16" y2="6"/>
-          <line x1="8" y1="12" x2="16" y2="12"/>
-          <line x1="8" y1="18" x2="16" y2="18"/>
-          <circle cx="16" cy="6" r="1.5" fill="currentColor"/>
-          <circle cx="8" cy="12" r="1.5" fill="currentColor"/>
-          <circle cx="16" cy="18" r="1.5" fill="currentColor"/>
         </svg>
       </button>
       <button id="btn-scan" class="icon-btn" aria-label="QR scannen">
@@ -357,20 +347,34 @@
       </div>
       <div id="legend-tree">
         <div class="legend-item">
-          <span class="legend-swatch legend-swatch-solid"></span>
-          <span>Registriertes Mitglied</span>
+          <span class="legend-swatch legend-swatch-male"></span>
+          <span>Mann</span>
+          <span class="legend-swatch legend-swatch-female" style="margin-left:8px"></span>
+          <span>Frau</span>
         </div>
         <div class="legend-item">
-          <span class="legend-swatch legend-swatch-dashed"></span>
-          <span>Platzhalter — noch nicht registriert</span>
+          <span class="legend-swatch legend-swatch-tree-spouse"></span>
+          <span>∞ Partner/in, direkt unter der Person (⚮ ehemalig)</span>
         </div>
         <div class="legend-item">
-          <span class="legend-swatch legend-swatch-deceased"></span>
-          <span>Verstorben</span>
+          <span class="legend-swatch legend-swatch-fan-deceased"></span>
+          <span>Verstorben (blass)</span>
         </div>
         <div class="legend-item">
-          <span class="legend-swatch legend-swatch-current"></span>
-          <span>Du, Auswahl oder Verwandtschaftspfad</span>
+          <span class="legend-swatch legend-swatch-registered"></span>
+          <span>Registriertes Mitglied · ohne Rahmen = Platzhalter</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-fan-current"></span>
+          <span>Du oder Verwandtschaftspfad</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-tree-toggle">−</span>
+          <span>Nachkommen ein-/ausklappen · Minimap oben rechts zum Springen</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-tree-stack"></span>
+          <span>Kinderlose Geschwister stehen gestapelt an einer Sammel-Linie</span>
         </div>
       </div>
       <div id="legend-fan" class="hidden">
@@ -809,7 +813,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <!-- Cytoscape.js -->
-  <script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
 
   <!-- EmailJS (for admin notification emails) — deferred, not needed at startup -->
   <script defer src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
@@ -824,7 +827,7 @@
   <script src="js/db.js?v=29"></script>
   <script src="js/auth.js?v=30"></script>
   <script src="js/relationship.js?v=29"></script>
-  <script src="js/tree.js?v=83"></script>
+  <script src="js/tree.js?v=84"></script>
   <script src="js/markdown.js?v=1"></script>
   <script src="js/article.js?v=3"></script>
   <script src="js/gotha.js?v=2"></script>
@@ -837,6 +840,6 @@
   <script src="js/connection.js?v=11"></script>
   <script src="js/relations.js?v=15"></script>
   <script src="js/profile.js?v=34"></script>
-  <script src="js/app.js?v=57"></script>
+  <script src="js/app.js?v=58"></script>
 </body>
 </html>

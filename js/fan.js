@@ -44,6 +44,8 @@ const Fan = (() => {
   let tlYear = null;        // aktuelles Jahr (kontinuierlich), null = noch nicht initialisiert
   let tlRange = { min: 1800, max: 2030 };
   let yearOf = new Map();   // id → Geburtsjahr (bei fehlendem Datum geschätzt)
+  let tlBirths = [];        // [{ id, year }] echte Geburten des Zweigs, sortiert (Abspielen)
+  let playing = null;       // { raf, last } während der Zeitstrahl automatisch läuft
   let onAddCallback = null;
   let onConnectCallback = null;   // „Wie sind wir verwandt?"-Chip
   let selectedId = null;    // zuletzt angetippte Person (Chips bleiben bis zur nächsten Auswahl)
@@ -153,6 +155,7 @@ const Fan = (() => {
 
   function hide() {
     active = false;
+    stopPlayback();
     container.classList.add('hidden');
   }
 
@@ -955,8 +958,15 @@ const Fan = (() => {
     const years = pool.map(m => yearOf.get(m.id)).filter(y => y != null);
     const now = new Date().getFullYear();
     const wasAtEnd = tlYear == null || tlYear >= tlRange.max - 0.5;
-    tlRange = years.length ? { min: Math.min(...years), max: Math.max(now, ...years) } : { min: now - 100, max: now };
+    // ein Jahr vor der ältesten Geburt beginnen: beim Abspielen „kommt" auch der Stammvater
+    tlRange = years.length ? { min: Math.min(...years) - 1, max: Math.max(now, ...years) } : { min: now - 100, max: now };
     tlYear = wasAtEnd ? tlRange.max : Math.max(tlRange.min, Math.min(tlRange.max, tlYear));
+    // echte Geburten (mit Datum) für das Babygeschrei beim Abspielen
+    tlBirths = pool
+      .map(m => ({ id: m.id, year: m.birthDate ? parseInt(m.birthDate.substring(0, 4), 10) : NaN }))
+      .filter(b => isFinite(b.year))
+      .sort((a, b) => a.year - b.year);
+    stopPlayback();
     buildTimelineStrip();
   }
 
@@ -975,11 +985,23 @@ const Fan = (() => {
     marker.appendChild(year);
     root.append(win, marker);
     container.appendChild(root);
-    timeline = { root, strip, year };
+    // Abspielen: Zeitstrahl läuft von selbst, jede Geburt schreit
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.className = 'fan-timeline-play';
+    play.setAttribute('aria-label', 'Zeitstrahl abspielen');
+    play.title = 'Abspielen: die Familie wächst, jede Geburt schreit';
+    play.innerHTML = '<svg viewBox="0 0 24 24" class="ico-play"><path d="M7 4.5v15l13-7.5z"/></svg>'
+      + '<svg viewBox="0 0 24 24" class="ico-pause"><path d="M6 4.5h4.5v15H6zM13.5 4.5H18v15h-4.5z"/></svg>';
+    play.addEventListener('pointerdown', e => e.stopPropagation());
+    play.addEventListener('click', e => { e.stopPropagation(); playing ? stopPlayback() : startPlayback(); });
+    root.appendChild(play);
+    timeline = { root, strip, year, play };
 
     let drag = null;   // { x, year0, moved }
     root.addEventListener('pointerdown', e => {
       if (e.button !== undefined && e.button !== 0) return;
+      stopPlayback();   // manueller Eingriff beendet das Abspielen
       drag = { x: e.clientX, year0: tlYear, moved: false };
       try { root.setPointerCapture(e.pointerId); } catch { /* synthetisch */ }
       root.classList.add('is-active');
@@ -1007,9 +1029,55 @@ const Fan = (() => {
     root.addEventListener('pointercancel', end);
     root.addEventListener('wheel', e => {
       e.preventDefault(); e.stopPropagation();
+      stopPlayback();
       const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
       setTimelineYear(tlYear + delta * 0.03);
     }, { passive: false });
+  }
+
+  // ─── Abspielen (Spaßfunktion): 4 Jahre je Sekunde, Babygeschrei je Geburt ───
+
+  const TL_YEARS_PER_SEC = 4;
+
+  function startPlayback() {
+    if (!timeline || colorMode !== 'year' || tlYear == null) return;
+    if (typeof BabyCry !== 'undefined') BabyCry.ensureContext();   // Nutzergeste → Audio freischalten
+    if (tlYear >= tlRange.max - 0.5) setTimelineYear(tlRange.min);   // am Ende: von vorn
+    playing = { raf: 0, last: performance.now() };
+    timeline.root.classList.add('is-playing');
+    const step = now => {
+      if (!playing) return;
+      const dt = Math.min(0.1, (now - playing.last) / 1000);   // Tab-Wechsel: kein Riesensprung
+      playing.last = now;
+      const prev = Math.round(tlYear);
+      const next = Math.min(tlRange.max, tlYear + dt * TL_YEARS_PER_SEC);
+      setTimelineYear(next);
+      cryFor(prev, Math.round(next));
+      if (next >= tlRange.max) { stopPlayback(); return; }
+      playing.raf = requestAnimationFrame(step);
+    };
+    playing.raf = requestAnimationFrame(step);
+  }
+
+  function stopPlayback() {
+    if (!playing) return;
+    cancelAnimationFrame(playing.raf);
+    playing = null;
+    if (timeline) timeline.root.classList.remove('is-playing');
+  }
+
+  /** Alle Geburten in (prevYear, nextYear] schreien lassen — jede als eigene
+      Stimme, Mehrlinge desselben Jahres leicht versetzt. Nichts wird
+      abgebrochen: bei Überlagerung wird es lauter und durcheinander. */
+  function cryFor(prevYear, nextYear) {
+    if (nextYear <= prevYear || typeof BabyCry === 'undefined') return;
+    let n = 0;
+    for (const b of tlBirths) {
+      if (b.year <= prevYear) continue;
+      if (b.year > nextYear) break;
+      BabyCry.play(b.id, n * 0.12);
+      n++;
+    }
   }
 
   /** Streifen neu bauen: ein Strich je Jahr, Dekaden höher + beschriftet. */
@@ -1043,6 +1111,7 @@ const Fan = (() => {
 
   function updateTimelineVisibility() {
     if (timeline) timeline.root.hidden = colorMode !== 'year';
+    if (colorMode !== 'year') stopPlayback();
   }
 
   function setTimelineYear(y) {
@@ -1290,7 +1359,7 @@ const Fan = (() => {
   return { init, onTap, onAddRelative, onConnect, setCanEdit, isActive, show, hide, toggle, render, fit, centerOn, panTo, highlightConnection, clearHighlight,
            getFamilies, setFamily, familyOf, buildFamiliesFrom,
            setColorMode, getColorMode: () => colorMode, getYearScale,
-           getTimeline, setTimelineYear,
+           getTimeline, setTimelineYear, startPlayback, stopPlayback, isPlaying: () => !!playing,
            setPreferredFamily: (id) => { preferredFamilyId = id; },
            onFamilyChange: (cb) => { onFamilyChangeCallback = cb; },
            getUnreachable: () => unreachable.slice(),

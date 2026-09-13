@@ -277,6 +277,22 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   Start = heute (alles sichtbar), Stichjahr bleibt beim Wechsel der
   Ansicht/Familie erhalten (geklemmt). Unter 600 px sitzt der Streifen
   höher (über Waisen-Ablage/Gast-Hinweis, neben dem FAB-Stapel).
+  Bereich beginnt ein Jahr **vor** der ältesten Geburt.
+- **Abspielen (Spaßfunktion):** Play/Pause-Taste links am Streifen
+  (`startPlayback`/`stopPlayback`, rAF-Schleife, `TL_YEARS_PER_SEC` = 4,
+  am Ende von vorn; Ziehen, Mausrad, Ansichts-/Familienwechsel und
+  `Fan.hide()` stoppen). Jede echte Geburt (`tlBirths`, nur mit Datum) in
+  (vorheriges, neues Stichjahr] löst `BabyCry.play(id, n·0.12 s)` aus.
+  `js/babycry.js` (Web Audio, Kontext erst bei der Nutzergeste): jede
+  Geburt ist eine eigene Stimme, Überlagerungen werden nie abgebrochen —
+  es wird lauter und wilder (nur ein milder Kompressor gegen Clipping).
+  Standard ist die Aufnahme `assets/sounds/baby-cry.mp3` (Kais WAV
+  „baby cries at birth #4", auf 1 s mono 96 kbit/s ≈ 13 KB gewandelt;
+  **genau einmal je Geburt** (~1 s), Tonhöhe je Person deterministisch
+  leicht anders, im SW-Precache). Fällt das Laden aus,
+  springt ein synthetisches „wäh-wäh" ein (Sägezahn + Rechteck,
+  Tonhöhenbogen, Vibrato, Formant-/Peaking-Filter, Atemrauschen).
+  iOS: Stummschalter dämpft Web Audio.
 - **Hover:** Kopie des Segments zuoberst mit 12-px-Rand in Segmentfarbe
   plus 1,5-px weißem Saum außen (`showHoverHalo`, `vector-effect:
   non-scaling-stroke`) — wirkt größer, verschiebt nichts; gedimmte

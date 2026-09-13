@@ -989,8 +989,8 @@ const Fan = (() => {
     const play = document.createElement('button');
     play.type = 'button';
     play.className = 'fan-timeline-play';
-    play.setAttribute('aria-label', 'Zeitstrahl abspielen');
-    play.title = 'Abspielen: die Familie wächst, jede Geburt schreit';
+    play.setAttribute('aria-label', 'Zeitstrahl von Anfang an abspielen');
+    play.title = 'Abspielen (von Anfang an): die Familie wächst, jede Geburt schreit';
     play.innerHTML = '<svg viewBox="0 0 24 24" class="ico-play"><path d="M7 4.5v15l13-7.5z"/></svg>'
       + '<svg viewBox="0 0 24 24" class="ico-pause"><path d="M6 4.5h4.5v15H6zM13.5 4.5H18v15h-4.5z"/></svg>';
     play.addEventListener('pointerdown', e => e.stopPropagation());
@@ -1042,7 +1042,7 @@ const Fan = (() => {
   function startPlayback() {
     if (!timeline || colorMode !== 'year' || tlYear == null) return;
     if (typeof BabyCry !== 'undefined') BabyCry.ensureContext();   // Nutzergeste → Audio freischalten
-    if (tlYear >= tlRange.max - 0.5) setTimelineYear(tlRange.min);   // am Ende: von vorn
+    setTimelineYear(tlRange.min);   // Play startet immer von vorn (Pause bleibt stehen)
     playing = { raf: 0, last: performance.now() };
     timeline.root.classList.add('is-playing');
     const step = now => {

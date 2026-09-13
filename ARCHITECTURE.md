@@ -202,6 +202,14 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   Umsortieren; Viewport lässt Platz fürs Panel (rechts Desktop / Bottom-
   Sheet Mobile). Schritt-Liste im Panel zeigt ↑/↓/↔ je Hop, gemeinsamer
   Vorfahre = Scheitel des Pfads, blau mit Stern.
+- **Rotation:** Rändelrad (`.fan-wheel`, HTML-Overlay rechts im
+  Container, bildschirmfix): vertikal ziehen oder Mausrad darüber dreht
+  den Fächer (`phi`, 720 px = eine Umdrehung). Segmente/Highlight drehen
+  per Gruppen-Transform, Labels werden über `labelTransform(spec)` aus
+  ihrer Pose (`theta`, `rm`, `tangential`) neu ausgerichtet, damit die
+  Lesbarkeitsregel für den absoluten Winkel gilt; Chips, `centerOn`/
+  `panTo` und Highlight-Anker rechnen mit `rotPt()`. Rotation wird nicht
+  gespeichert. Nur in den Fächer-Ansichten sichtbar.
 - **Interaktion:** Tippen zentriert die Person (Zoom bleibt) und öffnet das
   Profil; Rad/Pinch zoomt, Ziehen verschiebt; „Auf mich zentrieren" und
   „Im Stammbaum zeigen" respektieren die aktive Ansicht. Container

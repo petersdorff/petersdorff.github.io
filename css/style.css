@@ -2021,6 +2021,39 @@ a {
   -webkit-user-select: none;
 }
 
+/* Rändelrad: rechts, bildschirmfix; vertikal ziehen dreht den Fächer.
+   Bewusst minimal: schmal, lang, keine Kontur — nur feine Rillen. */
+.fan-wheel {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: min(300px, 48vh);
+  border-radius: 7px;
+  background-color: transparent;
+  background-image: repeating-linear-gradient(to bottom, var(--trace-light) 0 1px, transparent 1px 7px);
+  background-position-y: 0;
+  /* Rillen laufen oben/unten weich aus */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+  opacity: 0.85;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 60;
+  transition: opacity var(--transition);
+}
+
+.fan-wheel:hover,
+.fan-wheel.is-active {
+  opacity: 1;
+  background-image: repeating-linear-gradient(to bottom, var(--trace) 0 1px, transparent 1px 7px);
+}
+
+.fan-wheel.is-active { cursor: grabbing; }
+
 /* Plus-Chips (Kind/Geschwister anlegen) */
 .fan-ghost { cursor: pointer; }
 .fan-ghost:hover circle { fill: var(--red); stroke: var(--red); }

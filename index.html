@@ -11,7 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=15">
+  <link rel="stylesheet" href="css/style.css?v=17">
 </head>
 <body>
 
@@ -280,6 +280,14 @@
       <div id="fan-container" class="hidden"></div>
     </div>
 
+    <!-- Waisen-Ablage: Profile ohne Verbindung zum Stammbaum -->
+    <div id="orphan-tray" class="orphan-tray hidden">
+      <button id="orphan-toggle" class="orphan-toggle" aria-expanded="false">
+        <span class="orphan-dot"></span><span id="orphan-count">0</span>&nbsp;unverbunden
+      </button>
+      <div id="orphan-list" class="orphan-list hidden"></div>
+    </div>
+
     <!-- Offline / read-only banner -->
     <div id="offline-banner" class="offline-banner hidden">
       <span class="offline-dot"></span>
@@ -497,9 +505,12 @@
   <div id="view-edit" class="view">
     <div class="edit-container">
       <header class="edit-header">
-        <button id="btn-edit-cancel" class="icon-btn">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button id="btn-edit-cancel" class="icon-btn" aria-label="Abbrechen">
+          <svg class="icon-back" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+          <svg class="icon-close" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M18 6L6 18M6 6l12 12"/>
           </svg>
         </button>
         <h2>Profil bearbeiten</h2>
@@ -688,19 +699,19 @@
   <!-- App modules -->
   <script src="js/utils.js?v=7"></script>
   <script src="js/data-snapshot.js?v=4"></script>
-  <script src="js/db.js?v=25"></script>
+  <script src="js/db.js?v=26"></script>
   <script src="js/auth.js?v=30"></script>
   <script src="js/relationship.js?v=28"></script>
   <script src="js/tree.js?v=82"></script>
-  <script src="js/fan.js?v=11"></script>
+  <script src="js/fan.js?v=13"></script>
   <script src="js/qr.js?v=23"></script>
   <script src="js/search.js?v=22"></script>
   <script src="js/admin.js?v=4"></script>
   <script src="js/claim.js?v=5"></script>
   <script src="js/guest.js?v=5"></script>
   <script src="js/connection.js?v=6"></script>
-  <script src="js/relations.js?v=12"></script>
+  <script src="js/relations.js?v=13"></script>
   <script src="js/profile.js?v=31"></script>
-  <script src="js/app.js?v=45"></script>
+  <script src="js/app.js?v=46"></script>
 </body>
 </html>

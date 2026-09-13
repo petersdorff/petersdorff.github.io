@@ -15,7 +15,7 @@ const Fan = (() => {
   const CHAR_W = 0.6;      // IBM Plex Mono: Zeichenbreite in em
   // Semantic Zoom: Schwellen in Pixel pro SVG-Einheit.
   //   far  (< 0.55): nur Vorname, groß
-  //   mid  (< 1.1):  Vorname + Partner-Vornamen
+  //   mid  (< 1.1):  Vorname + Partner-Vornamen (kein Nachname)
   //   full:          Vor- und Nachname + Partner mit Geburtsname + Lebensdaten
   const LOD_MID = 0.55, LOD_FULL = 1.1;
   const NS = 'http://www.w3.org/2000/svg';
@@ -31,6 +31,12 @@ const Fan = (() => {
   let hostOf = new Map();   // Angeheiratete → id des Partner-Segments
   let highlight = null;     // { fromId, toId } — Verwandtschaftspfad
   let labelSpecs = [];      // Geometrie je Segment, Labels werden je Zoomstufe neu gesetzt
+  let ghostLayer = null;    // Plus-Chips „Kind / Geschwister anlegen"
+  let ghostFor = null;      // Segment-ID, für die Chips gezeigt werden (Hover/Auswahl)
+  let canEdit = false;      // nur online mit Schreibrecht
+  let onAddCallback = null;
+  let selectedId = null;    // zuletzt angetippte Person (Chips bleiben bis zur nächsten Auswahl)
+  let unreachable = [];     // IDs, die nicht über die Wurzel erreichbar sind (Waisen-Ablage)
   let hlAnchors = [];       // Ankerpunkte des aktiven Pfads (für fitToHighlight)
   let involved = null;      // Set der beteiligten Segment-IDs; alle anderen werden gedimmt
   let lodTier = null;
@@ -46,9 +52,18 @@ const Fan = (() => {
     segLayer = el('g', { class: 'fan-segs' });
     hlLayer = el('g', { class: 'fan-hl' });
     labelLayer = el('g', { class: 'fan-labels' });
+    ghostLayer = el('g', { class: 'fan-ghosts' });
     svg.appendChild(segLayer);
     svg.appendChild(hlLayer);
     svg.appendChild(labelLayer);
+    svg.appendChild(ghostLayer);
+    // Hover (Maus): Plus-Chips für das Segment unter dem Zeiger
+    svg.addEventListener('pointerover', e => {
+      if (e.pointerType !== 'mouse' || !canEdit) return;
+      const seg = e.target.closest && e.target.closest('.fan-seg');
+      if (seg) showGhosts(seg.getAttribute('data-id'));
+    });
+    svg.addEventListener('pointerleave', () => { if (!selectedId) showGhosts(null); });
     container.appendChild(svg);
     attachPanZoom();
     // Wird der Container erst sichtbar (0 → Breite), einpassen; sonst nur
@@ -69,6 +84,8 @@ const Fan = (() => {
   }
 
   function onTap(cb) { onTapCallback = cb; }
+  function onAddRelative(cb) { onAddCallback = cb; }
+  function setCanEdit(v) { canEdit = !!v; if (!canEdit) showGhosts(null); }
   function isActive() { return active; }
 
   function show() {
@@ -126,6 +143,7 @@ const Fan = (() => {
     const root = makeNode(rootMember, 0, 0);
 
     const unassigned = members.filter(m => !assigned.has(m.id));
+    unreachable = unassigned.map(m => m.id);
     if (unassigned.length) {
       console.info(`[Fan] ${unassigned.length} Personen nicht über ${rootMember.firstName} erreichbar:`,
         unassigned.map(m => `${m.firstName} ${m.lastName}`).join(', '));
@@ -142,6 +160,7 @@ const Fan = (() => {
     relationships = relationshipData;
     segLayer.innerHTML = ''; hlLayer.innerHTML = ''; labelLayer.innerHTML = '';
     segById = new Map(); hostOf = new Map(); labelSpecs = []; lodTier = null;
+    ghostLayer.innerHTML = ''; ghostFor = null;
 
     const root = buildTree();
     if (!root) return;
@@ -212,7 +231,7 @@ const Fan = (() => {
       lineH: 1.25,
     });
 
-    segById.set(m.id, { x: rm * Math.cos(theta), y: rm * Math.sin(theta), shape: { d } });
+    segById.set(m.id, { x: rm * Math.cos(theta), y: rm * Math.sin(theta), shape: { d }, r0, r1, a0, a1: a0 + span, theta });
     node.spouses.forEach(sp => hostOf.set(sp.id, m.id));
     return g;
   }
@@ -222,14 +241,15 @@ const Fan = (() => {
     const g = el('g', { class: 'fan-seg fan-center', 'data-id': m.id });
     g.appendChild(el('circle', {
       r: CENTER_R, fill: segColor(m.gender, 0, m.isDeceased),
-      stroke: isMe ? '#e63946' : '#1a1a1a', 'stroke-width': isMe ? 3 : 1.6,
+      stroke: isMe ? '#e63946' : (m.isPlaceholder ? 'none' : '#1a1a1a'),
+      'stroke-width': isMe ? 3 : (m.isPlaceholder ? 0 : 1.6),
     }));
     labelSpecs.push({
       m, spouses: root.spouses, familyName, isMe, center: true,
       x: 0, y: 0, rot: 0, along: CENTER_R * 2 - 24, across: CENTER_R * 2 - 24, lineH: 1.3,
     });
     segLayer.appendChild(g);
-    segById.set(m.id, { x: 0, y: 0, shape: { r: CENTER_R } });
+    segById.set(m.id, { x: 0, y: 0, shape: { r: CENTER_R }, r0: 0, r1: CENTER_R, a0: -Math.PI / 2, a1: Math.PI * 1.5, theta: -Math.PI / 2, center: true });
     root.spouses.forEach(sp => hostOf.set(sp.id, m.id));
   }
 
@@ -337,16 +357,13 @@ const Fan = (() => {
     const me = isMe ? '➤ ' : '';
     // Zentrum (Stammvater) folgt demselben Muster wie die Segmente:
     // Vorname groß, Nachname eigene Zeile — nur nie ganz ohne Nachname.
-    const first = center ? m.firstName : me + (tier === 'far' ? m.firstName : displayName(m, familyName));
+    // Übersicht (fern/mittel): nur Vorname — Nachnamen erst auf der nahen Stufe
+    const first = center ? m.firstName : me + m.firstName;
     if (tier === 'far') {
+      // fern: überall nur der Vorname, auch im Zentrum
       lines.push({ ...fitText(me + m.firstName, along, 18, 6.5), weight: 600 });
-      if (center) {
-        lines.push({ ...fitText(m.lastName, along, 9, 6), weight: 500 });
-        if (spouses.length) lines.push(spouseLine(spouses, along, 9, 6, sp => sp.firstName));
-      }
     } else if (tier === 'mid') {
       lines.push({ ...fitText(first, along, 13, 6.5), weight: 600 });
-      if (center) lines.push({ ...fitText(m.lastName, along, 8.5, 6), weight: 500 });
       if (spouses.length) lines.push(spouseLine(spouses, along, 9.5, 6, sp => sp.firstName));
     } else {
       // nah: voller Name — Nachname als eigene Zeile, damit er in die
@@ -439,6 +456,44 @@ const Fan = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════
+  //  PLUS-CHIPS: Kind / Geschwister anlegen
+  // ═══════════════════════════════════════════════════════════
+
+  /** Chips für ein Segment zeigen (null = ausblenden). */
+  function showGhosts(id) {
+    ghostFor = id;
+    renderGhosts();
+  }
+
+  function renderGhosts() {
+    ghostLayer.innerHTML = '';
+    if (!canEdit || !ghostFor) return;
+    const seg = segById.get(ghostFor);
+    if (!seg) return;
+    // Chips in Bildschirm-Pixeln konstant halten (unabhängig vom Zoom)
+    const k = (svg.clientWidth || 1) / vb.w;   // px pro Einheit
+    const r = 12 / k, off = 15 / k;
+    const chip = (x, y, kind, title) => {
+      const g = el('g', { class: 'fan-ghost', 'data-id': ghostFor, 'data-add': kind, transform: `translate(${x.toFixed(2)},${y.toFixed(2)})` });
+      g.appendChild(el('circle', { r, fill: '#ffffff', stroke: '#1a1a1a', 'stroke-width': 1.6 / k }));
+      const t = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': (16 / k).toFixed(2), 'font-weight': 600, fill: '#1a1a1a' });
+      t.textContent = '+';
+      g.appendChild(t);
+      const tt = el('title'); tt.textContent = title; g.appendChild(tt);
+      ghostLayer.appendChild(g);
+    };
+    // Kind: außen an der Segmentmitte
+    const rc = seg.r1 + off;
+    chip(rc * Math.cos(seg.theta), rc * Math.sin(seg.theta), 'child', 'Kind anlegen');
+    // Geschwister: seitlich am Ende des Segments (nicht für die Wurzel)
+    if (!seg.center) {
+      const rm = (seg.r0 + seg.r1) / 2;
+      const a = seg.a1 + off / rm;
+      chip(rm * Math.cos(a), rm * Math.sin(a), 'sibling', 'Geschwister anlegen');
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
   //  HELFER
   // ═══════════════════════════════════════════════════════════
 
@@ -470,13 +525,6 @@ const Fan = (() => {
     return `hsl(${h} ${sat}% ${l}%)`;
   }
 
-  /** Vorname; Nachname nur, wenn er vom Familiennamen abweicht (Ausgeheiratete). */
-  function displayName(m, familyName) {
-    return m.lastName && m.lastName !== familyName
-      ? `${m.firstName} ${m.lastName}`
-      : m.firstName;
-  }
-
   /** Angeheiratete: Vorname + Geburtsname (falls vorhanden), sonst Nachname. */
   function spouseName(s) {
     const maiden = (s.birthName || '').replace(/^geb\.\s*/i, '').trim();
@@ -506,6 +554,7 @@ const Fan = (() => {
   function apply() {
     svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
     renderLabels();
+    if (ghostFor) renderGhosts();
   }
 
   function unitsPerPx() { return vb.w / (svg.clientWidth || 1); }
@@ -613,8 +662,15 @@ const Fan = (() => {
       try { svg.releasePointerCapture(e.pointerId); } catch { /* egal */ }
       if (pts.size === 0 && e.type === 'pointerup' && moved < 10 && downTarget) {
         const id = downTarget.getAttribute('data-id');
+        const add = downTarget.getAttribute('data-add');
         downTarget = null;
-        if (id && onTapCallback) onTapCallback(id);
+        if (add) {
+          if (onAddCallback) onAddCallback(add, id);
+        } else if (id && onTapCallback) {
+          selectedId = id;
+          showGhosts(id);          // Chips bleiben an der gewählten Person (Touch)
+          onTapCallback(id);
+        }
       }
       if (pts.size === 0) downTarget = null;
     };
@@ -627,6 +683,7 @@ const Fan = (() => {
     }, { passive: false });
   }
 
-  return { init, onTap, isActive, show, hide, toggle, render, fit, centerOn, panTo, highlightConnection, clearHighlight,
+  return { init, onTap, onAddRelative, setCanEdit, isActive, show, hide, toggle, render, fit, centerOn, panTo, highlightConnection, clearHighlight,
+           getUnreachable: () => unreachable.slice(),
            getTier: () => lodTier };
 })();

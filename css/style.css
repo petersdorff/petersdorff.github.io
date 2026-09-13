@@ -951,9 +951,9 @@ a {
   width: 100%;
 }
 
-/* Desktop: profile as side panel */
+/* Desktop: profile and edit form as side panel */
 @media (min-width: 600px) {
-  #view-profile.side-panel {
+  .view.side-panel {
     position: absolute;
     top: 0;
     right: 0;
@@ -989,6 +989,13 @@ a {
 #view-profile.side-panel #btn-profile-back .icon-back { display: none; }
 #view-profile.side-panel #btn-profile-back .icon-close { display: block; }
 #view-profile.side-panel .profile-header { flex-direction: row-reverse; }
+#btn-edit-cancel .icon-close { display: none; }
+#view-edit.side-panel #btn-edit-cancel .icon-back { display: none; }
+#view-edit.side-panel #btn-edit-cancel .icon-close { display: block; }
+#view-edit.side-panel #btn-edit-cancel { order: 3; }
+#view-edit.side-panel .edit-header h2 { order: 1; flex: 1; }
+#view-edit.side-panel #btn-edit-save { order: 2; }
+#view-edit.side-panel .edit-container { max-width: none; }
 
 .profile-photo-wrap {
   display: flex;
@@ -1574,6 +1581,80 @@ a {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   WAISEN-ABLAGE (unverbundene Profile)
+   ═══════════════════════════════════════════════════════════ */
+
+.orphan-tray {
+  position: absolute;
+  top: 70px;
+  left: 12px;
+  z-index: 90;
+  max-width: min(280px, calc(100vw - 24px));
+}
+
+.orphan-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 2px solid var(--trace-faint);
+  border-radius: 20px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+
+.orphan-toggle:hover { border-color: var(--trace); color: var(--text); }
+
+.orphan-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e0a100;
+  flex-shrink: 0;
+}
+
+.orphan-list {
+  margin-top: 6px;
+  background: var(--bg);
+  border: 2px solid var(--trace);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.orphan-hint {
+  padding: 6px 12px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--trace-faint);
+  margin-bottom: 4px;
+}
+
+.orphan-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 12px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.orphan-item:hover { background: var(--bg-secondary); color: var(--red); }
+.orphan-item small { color: var(--text-muted); margin-left: 6px; }
+
+@supports (padding: env(safe-area-inset-top)) {
+  .orphan-tray { top: max(70px, calc(env(safe-area-inset-top) + 62px)); }
+}
+
+/* ═══════════════════════════════════════════════════════════
    OFFLINE / FAMILIENTAG BANNER
    ═══════════════════════════════════════════════════════════ */
 
@@ -1790,6 +1871,12 @@ a {
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* Plus-Chips (Kind/Geschwister anlegen) */
+.fan-ghost { cursor: pointer; }
+.fan-ghost:hover circle { fill: var(--red); stroke: var(--red); }
+.fan-ghost:hover text { fill: #fff; }
+.fan-ghost text { pointer-events: none; }
 
 /* Partner-Namen im Segment: Hyperlink zum eigenen Profil */
 .fan-spouse-link {

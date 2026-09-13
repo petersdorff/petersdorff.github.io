@@ -46,6 +46,13 @@ Gotha-Datenbasis). Vanilla HTML/CSS/JS ohne Build-Schritt, PCB-Ästhetik
 - Tabellen: `members`, `relationships`, `user_approvals`; Storage-Bucket
   `photos`. Schema: `supabase-schema.sql`, dann
   `supabase-migration-approvals.sql`, `migrations/002…`, `migrations/003…`.
+- **Migration 002 fehlt im laufenden Projekt (Stand Sept. 2026):** die
+  Spalte `members.occupation` existiert nicht (und vermutlich die
+  Storage-Policies für Fotos auch nicht). `db.js` lässt beim Speichern
+  genau die fehlende Spalte weg (`writeWithColumnFallback`, Warnung in
+  der Konsole) — „Beruf" geht dadurch verloren, bis 002 im SQL-Editor
+  eingespielt ist. Früher flog dabei auch `gender` mit raus (stiller
+  Datenverlust) — nie wieder pauschal Spalten verwerfen.
 - **Zugriffsmodell:** Registrierung per E-Mail → Admin-Freigabe
   (`user_approvals`, Admin ist hart codiert `kaivonpetersdorff@me.com` in
   `js/admin.js` und Migration 003). Nur Kai, Tabea, Stephan haben Konten
@@ -147,6 +154,17 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   „Im Stammbaum zeigen" respektieren die aktive Ansicht. Container
   bekommt erst Größe, wenn `view-main` sichtbar ist — der ResizeObserver
   passt beim Sichtbarwerden ein.
+- **Plus-Chips (nur mit Schreibrecht, `Fan.setCanEdit`):** bei Maus-Hover
+  bzw. an der zuletzt angetippten Person erscheinen „+ Kind" (außen) und
+  „+ Geschwister" (seitlich). Klick → `App.addRelative(relType, id)` öffnet
+  „Neue Person anlegen" als Seitenpanel mit vorbelegter Beziehung
+  (`Relations.presetRelation`) und Nachname; die Regel-Engine ergänzt
+  beim Speichern zweites Elternteil/Geschwister.
+- **Waisen-Ablage** (`#orphan-tray`, `App.updateOrphanTray`): Pill oben
+  links mit allen Profilen, die im Fächer nicht über die Wurzel erreichbar
+  sind (im Baum: ohne jede Verbindung); Klick öffnet das Profil.
+- Desktop: Profil UND Bearbeiten-Formular öffnen als Seitenpanel
+  (`SIDE_PANEL_VIEWS` in app.js), mit ×-Schließen rechts.
 - Nicht über die Wurzel erreichbare Personen fehlen im Fächer und werden
   in der Konsole gelistet (`[Fan] … nicht erreichbar`).
 - **Zwei Fallen, die schon einmal zugeschlagen haben:** (1) `#fan-container`
@@ -167,6 +185,11 @@ geprüft, bis nichts sicher Ableitbares mehr übrig ist. Wird bei jedem
 manuellen Hinzufügen aufgerufen (drei Pfade: Beziehung zwischen
 Bestehenden, neue Person im Bearbeiten-Dialog, neue Person mit
 Pflicht-Erstverbindung). Ergebnis-Toast: „n Verbindungen automatisch ergänzt".
+
+Seit Sept. 2026 läuft jeder Lauf über den **gesamten** Graphen (Seed =
+neue Kante + alle bestehenden), damit auch rückwirkend alles Ableitbare
+entsteht (Kind zuerst erfasst, Ehefrau später → Mutter-Kind-Kante).
+Einmaliger Volllauf gegen die Live-DB am 13.09.2026: 79 Geschwister-Kanten.
 
 Regeln (nur eindeutig sichere Ergänzungen):
 1. `parent_child(P→C)`: (a) hat P genau EINEN erfassten Partner, wird der

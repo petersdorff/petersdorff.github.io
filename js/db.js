@@ -107,25 +107,37 @@ const DB = (() => {
     return mapMember(data);
   }
 
+  /**
+   * Fehlt eine Spalte in der DB (Migration noch nicht eingespielt), nennt
+   * PostgREST sie in der Fehlermeldung. Gibt den Spaltennamen zurück oder null.
+   */
+  function missingColumn(error) {
+    const msg = (error && error.message) || '';
+    const m = msg.match(/column members\.(\w+) does not exist/i)
+           || msg.match(/Could not find the '(\w+)' column/i);
+    return m ? m[1] : null;
+  }
+
+  /** Schreibt row; lässt bei „Spalte fehlt" GENAU diese Spalte weg und
+      versucht es erneut — nie mehr als nötig (früher flogen gender UND
+      occupation zusammen raus, wodurch das Geschlecht still verloren ging). */
+  async function writeWithColumnFallback(row, exec) {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const { data, error } = await exec(row);
+      if (!error) return data;
+      const col = missingColumn(error);
+      if (!col || !(col in row)) throw error;
+      console.warn(`[DB] Spalte "${col}" fehlt in der Datenbank – Wert wird nicht gespeichert. Migration nachziehen (siehe RESTORE.md).`);
+      delete row[col];
+    }
+    throw new Error('Speichern fehlgeschlagen: zu viele fehlende Spalten');
+  }
+
   async function createMember(memberData) {
     assertWritable();
     const row = unmapMember(memberData);
-    const { data, error } = await supabase
-      .from('members')
-      .insert(row)
-      .select()
-      .single();
-    if (error) {
-      // Retry without unknown columns (e.g. new columns before migration)
-      if (error.message && (error.message.includes('gender') || error.message.includes('occupation'))) {
-        delete row.gender;
-        delete row.occupation;
-        const { data: d2, error: e2 } = await supabase.from('members').insert(row).select().single();
-        if (e2) throw e2;
-        return d2.id;
-      }
-      throw error;
-    }
+    const data = await writeWithColumnFallback(row, r =>
+      supabase.from('members').insert(r).select().single());
     return data.id;
   }
 
@@ -134,21 +146,8 @@ const DB = (() => {
     const row = unmapMember(memberData);
     delete row.id;
     delete row.created_at;
-    const { error } = await supabase
-      .from('members')
-      .update(row)
-      .eq('id', id);
-    if (error) {
-      // Retry without unknown columns (e.g. new columns before migration)
-      if (error.message && (error.message.includes('gender') || error.message.includes('occupation'))) {
-        delete row.gender;
-        delete row.occupation;
-        const { error: retryErr } = await supabase.from('members').update(row).eq('id', id);
-        if (retryErr) throw retryErr;
-        return;
-      }
-      throw error;
-    }
+    await writeWithColumnFallback(row, r =>
+      supabase.from('members').update(r).eq('id', id));
   }
 
   async function claimMember(memberId, uid) {

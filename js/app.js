@@ -29,6 +29,7 @@ const App = (() => {
       Fan.panTo(memberId);
       Profile.show(memberId);
     });
+    Fan.onAddRelative(addRelative);
     Admin.initEmailJS();
 
     // Register auth state listener BEFORE Auth.init()
@@ -187,6 +188,11 @@ const App = (() => {
     });
     document.getElementById('legend-close').addEventListener('click', () => {
       document.getElementById('legend-panel').classList.add('hidden');
+    });
+    document.getElementById('orphan-toggle').addEventListener('click', () => {
+      const list = document.getElementById('orphan-list');
+      const open = list.classList.toggle('hidden') === false;
+      document.getElementById('orphan-toggle').setAttribute('aria-expanded', String(open));
     });
 
     // Profile view
@@ -355,10 +361,77 @@ const App = (() => {
       Tree.render(cachedMembers, cachedRelationships);
       setFanMode(name === 'fan');
       updateToggleButton();
+      updateOrphanTray();
       return;
     }
     Tree.render(cachedMembers, cachedRelationships);
     if (Fan.isActive()) Fan.render(cachedMembers, cachedRelationships);
+    updateOrphanTray();
+  }
+
+  // ─── Waisen-Ablage: Profile ohne Anbindung an den Stammbaum ───
+
+  /**
+   * Im Fächer: alle, die nicht über die Wurzel erreichbar sind. Im Baum:
+   * alle ohne jede Verbindung (nur die fehlen dort in der Darstellung).
+   */
+  function updateOrphanTray() {
+    const tray = document.getElementById('orphan-tray');
+    if (!tray) return;
+    let ids;
+    if (Fan.isActive()) {
+      ids = Fan.getUnreachable();
+    } else {
+      const linked = new Set();
+      for (const r of cachedRelationships) { linked.add(r.fromId); linked.add(r.toId); }
+      ids = cachedMembers.filter(m => !linked.has(m.id)).map(m => m.id);
+    }
+    const byId = new Map(cachedMembers.map(m => [m.id, m]));
+    const orphans = ids.map(id => byId.get(id)).filter(Boolean)
+      .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`));
+    document.getElementById('orphan-count').textContent = orphans.length;
+    tray.classList.toggle('hidden', orphans.length === 0);
+    const list = document.getElementById('orphan-list');
+    list.innerHTML = '';
+    if (!orphans.length) return;
+    const hint = document.createElement('div');
+    hint.className = 'orphan-hint';
+    hint.textContent = 'Noch nicht mit dem Stammbaum verbunden. Antippen → Profil → Bearbeiten → Verbindung hinzufügen.';
+    list.appendChild(hint);
+    for (const m of orphans) {
+      const b = document.createElement('button');
+      b.className = 'orphan-item';
+      b.innerHTML = `${Utils.escapeHtml(m.firstName)} ${Utils.escapeHtml(m.lastName)}` +
+        (m.birthDate ? `<small>* ${m.birthDate.substring(0, 4)}</small>` : '');
+      b.addEventListener('click', () => Profile.show(m.id));
+      list.appendChild(b);
+    }
+  }
+
+  // ─── Neue Person mit vorbelegter Beziehung (Hover-Plus im Fächer) ───
+
+  /**
+   * Öffnet „Neue Person anlegen" mit der Beziehung zur Ausgangsperson
+   * bereits gesetzt: relType 'child' = neue Person ist Kind von target,
+   * 'sibling' = Geschwister von target. Nachname wird vorbelegt; die
+   * Regel-Engine ergänzt beim Speichern zweites Elternteil / Geschwister.
+   */
+  async function addRelative(relType, targetId) {
+    if (DB.isOffline()) { toast('Offline-Modus: Anlegen nicht möglich', 'error'); return; }
+    const target = cachedMembers.find(m => m.id === targetId);
+    if (!target) return;
+    await Profile.edit(null);
+    const year = target.birthDate ? ` (* ${target.birthDate.substring(0, 4)})` : '';
+    Relations.presetRelation(relType, targetId, `${target.firstName} ${target.lastName}${year}`);
+    const ln = document.getElementById('edit-lastname');
+    if (!ln.value) ln.value = target.lastName || '';
+    const title = document.querySelector('.edit-header h2');
+    if (title) {
+      title.textContent = relType === 'child'
+        ? `Kind von ${target.firstName} anlegen`
+        : `Geschwister von ${target.firstName} anlegen`;
+    }
+    document.getElementById('edit-firstname').focus();
   }
 
   // ─── Ansichten: fan | generational | temporal ───
@@ -397,6 +470,7 @@ const App = (() => {
     }
     document.getElementById('legend-tree').classList.toggle('hidden', on);
     document.getElementById('legend-fan').classList.toggle('hidden', !on);
+    if (cachedMembers.length) updateOrphanTray();
   }
 
   // ─── Offline banner & read-only UI ───
@@ -423,6 +497,7 @@ const App = (() => {
   function applyReadOnlyUI() {
     const readOnly = DB.isOffline();
     document.getElementById('fab-add').style.display = readOnly ? 'none' : '';
+    Fan.setCanEdit(!readOnly);
     const whoamiItem = document.getElementById('menu-whoami-item');
     if (whoamiItem) whoamiItem.style.display = Guest.isActive() ? '' : 'none';
     updateOfflineBanner();
@@ -442,28 +517,29 @@ const App = (() => {
 
   // ─── View Management ───
 
+  // Auf dem Desktop öffnen Profil und Bearbeiten-Formular als Seitenpanel
+  // über dem Baum/Fächer statt als Vollbild.
+  const SIDE_PANEL_VIEWS = ['view-profile', 'view-edit'];
+
   function showView(viewId) {
     // Always close the connection overlay when switching views
     Connection.closeOverlay();
 
     const isDesktop = window.innerWidth >= 600;
-    const profileView = document.getElementById('view-profile');
-
-    if (viewId === 'view-profile' && isDesktop) {
-      document.querySelectorAll('.view').forEach(v => {
-        if (v.id !== 'view-main' && v.id !== 'view-profile') {
-          v.classList.remove('active');
-        }
-      });
-      profileView.classList.add('side-panel', 'active');
-      profileView.style.display = 'flex';
-      document.getElementById('view-main').classList.add('active');
-      return;
+    for (const id of SIDE_PANEL_VIEWS) {
+      const v = document.getElementById(id);
+      if (v) { v.classList.remove('side-panel'); v.style.display = ''; }
     }
 
-    if (profileView) {
-      profileView.classList.remove('side-panel');
-      profileView.style.display = '';
+    if (SIDE_PANEL_VIEWS.includes(viewId) && isDesktop) {
+      document.querySelectorAll('.view').forEach(v => {
+        if (v.id !== 'view-main' && v.id !== viewId) v.classList.remove('active');
+      });
+      const panel = document.getElementById(viewId);
+      panel.classList.add('side-panel', 'active');
+      panel.style.display = 'flex';
+      document.getElementById('view-main').classList.add('active');
+      return;
     }
 
     document.querySelectorAll('.view').forEach(v => {
@@ -474,6 +550,7 @@ const App = (() => {
       view.classList.add('active');
     }
   }
+
 
   // ─── Menu ───
 
@@ -624,6 +701,7 @@ const App = (() => {
   return {
     showView,
     applyView,
+    addRelative,
     toast,
     refreshTree,
     loadTree,

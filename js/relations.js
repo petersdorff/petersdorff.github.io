@@ -316,7 +316,9 @@ const Relations = (() => {
    * Kaskadierende Regel-Engine: Jede automatisch ergänzte Beziehung wird
    * selbst wieder geprüft (Kind→Mutter ⇒ Vater ⇒ Geschwister ⇒ …), bis
    * nichts sicher Ableitbares mehr übrig ist. Der Beziehungsgraph wird
-   * dafür EINMAL geladen und in-memory fortgeschrieben.
+   * dafür EINMAL geladen und in-memory fortgeschrieben. Der Lauf umfasst
+   * immer den ganzen Graphen (rückwirkende Vervollständigung), nicht nur
+   * die neue Kante.
    *
    * Nur eindeutig sichere Ergänzungen:
    *  parent_child(P→C):
@@ -353,12 +355,16 @@ const Relations = (() => {
     };
     for (const r of all) index(r.fromId, r.toId, r.type);
 
-    // Die soeben manuell angelegte Beziehung ist der Ausgangspunkt der Kaskade
+    // Ausgangspunkt der Kaskade: die neue Beziehung zuerst — und danach ALLE
+    // bestehenden Kanten, damit auch rückwirkend alles Ableitbare entsteht
+    // (z.B. Kind zuerst erfasst, Ehefrau erst später → Mutter-Kind-Kante).
+    // Idempotent: schon vorhandene Kanten werden per Schlüssel übersprungen.
     const queue = [];
     if (relType === 'parent') queue.push({ f: fromId, t: toId, type: PC });
     else if (relType === 'child') queue.push({ f: toId, t: fromId, type: PC });
     else if (relType === 'spouse') queue.push({ f: fromId, t: toId, type: SP });
     else if (relType === 'sibling') queue.push({ f: fromId, t: toId, type: SIB });
+    for (const r of all) queue.push({ f: r.fromId, t: r.toId, type: r.type });
 
     let added = 0;
     const addRel = async (f, t, type) => {
@@ -502,6 +508,19 @@ const Relations = (() => {
   }
 
   /**
+   * Beziehung im Anlege-Formular vorbelegen (z.B. aus dem Hover-Plus im
+   * Fächer): Typ, Zielperson und Anzeige-Chip werden gesetzt, als hätte
+   * der Nutzer die Person gesucht und ausgewählt.
+   */
+  function presetRelation(relType, targetId, label) {
+    selectedRelTarget = targetId;
+    document.getElementById('edit-rel-type').value = relType;
+    document.getElementById('edit-rel-search').value = label;
+    document.getElementById('edit-rel-results').innerHTML = '';
+    updatePendingRelDisplay();
+  }
+
+  /**
    * Add a relationship between the editing member and selected target.
    */
   async function addRelation() {
@@ -564,6 +583,7 @@ const Relations = (() => {
     renderEditRelations,
     searchForRelation,
     addRelation,
+    presetRelation,
     updatePendingRelDisplay,
     cleanConflictingRelations,
     inheritParentsForSibling,

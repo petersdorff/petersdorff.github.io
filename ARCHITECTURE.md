@@ -46,14 +46,14 @@ Gotha-Datenbasis). Vanilla HTML/CSS/JS ohne Build-Schritt, PCB-Ästhetik
 - Tabellen: `members`, `relationships`, `user_approvals`; Storage-Bucket
   `photos`. Schema: `supabase-schema.sql`, dann
   `supabase-migration-approvals.sql`, `migrations/002…`, `migrations/003…`.
-- **Migrationen 002 + 004 eingespielt (13.09.2026, verifiziert):**
+- **Migrationen 002, 004, 005, 006 eingespielt (13.09.2026, verifiziert):**
   `members.occupation` existiert, Foto-Policies gesetzt, `is_admin()`
   vorhanden, Status-Constraint aktiv, anonymes Lesen von `user_approvals`
   liefert `[]`. `db.js` behält den Fallback `writeWithColumnFallback`
   (lässt bei „Spalte fehlt" GENAU diese Spalte weg, Warnung in der
   Konsole) — nie wieder pauschal Spalten verwerfen, das hatte `gender`
   still verschluckt. Nach einem Neuaufbau des Projekts alle Migrationen
-  in Reihenfolge 002 → 003 → 004 erneut ausführen.
+  in Reihenfolge 002 → 003 → 004 → 005 → 006 erneut ausführen.
 - **Zugriffsmodell (4 Stufen):** Gast/Familientag (Snapshot, nur lesen) ·
   registriert-wartend (nichts, Warteseite) · Mitglied `approved` (alles
   lesen, Personen/Beziehungen anlegen und ändern, Kernfelder beanspruchter

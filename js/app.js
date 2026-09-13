@@ -65,6 +65,11 @@ const App = (() => {
               showView('view-pending');
               return;
             }
+            if (approval.status === 'revoked') {
+              toast('Dein Zugang wurde gesperrt. Bitte kontaktiere den Administrator.', 'error');
+              showView('view-pending');
+              return;
+            }
           } catch (err) {
             // Backend nicht erreichbar (z.B. Projekt pausiert): statt den Nutzer
             // auf dem Warte-Screen zu stranden, lesend in den Offline-Modus gehen.

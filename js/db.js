@@ -399,6 +399,35 @@ const DB = (() => {
     return data || [];
   }
 
+  /** Alle Freigabe-Zeilen (Admin). Liest der Admin, sonst per RLS nur die eigene. */
+  async function getAllApprovals() {
+    const { data, error } = await supabase
+      .from('user_approvals')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  /** Status setzen: 'approved' | 'rejected' | 'revoked' | 'pending'. */
+  async function setApprovalStatus(approvalId, status, adminUid) {
+    const { error } = await supabase
+      .from('user_approvals')
+      .update({ status, reviewed_at: new Date().toISOString(), reviewed_by: adminUid })
+      .eq('id', approvalId);
+    if (error) throw error;
+  }
+
+  /** Profil-Verknüpfung eines Kontos lösen: Profil wird wieder Platzhalter. */
+  async function unclaimMember(memberId) {
+    assertWritable();
+    const { error } = await supabase
+      .from('members')
+      .update({ claimed_by_uid: null, is_placeholder: true })
+      .eq('id', memberId);
+    if (error) throw error;
+  }
+
   async function approveUser(approvalId, adminUid) {
     const { error } = await supabase
       .from('user_approvals')
@@ -511,6 +540,9 @@ const DB = (() => {
     getPendingApprovals,
     uploadPhoto,
     approveUser,
+    getAllApprovals,
+    setApprovalStatus,
+    unclaimMember,
     rejectUser,
   };
 })();

@@ -53,10 +53,25 @@ Gotha-Datenbasis). Vanilla HTML/CSS/JS ohne Build-Schritt, PCB-Ästhetik
   der Konsole) — „Beruf" geht dadurch verloren, bis 002 im SQL-Editor
   eingespielt ist. Früher flog dabei auch `gender` mit raus (stiller
   Datenverlust) — nie wieder pauschal Spalten verwerfen.
-- **Zugriffsmodell:** Registrierung per E-Mail → Admin-Freigabe
-  (`user_approvals`, Admin ist hart codiert `kaivonpetersdorff@me.com` in
-  `js/admin.js` und Migration 003). Nur Kai, Tabea, Stephan haben Konten
-  (Stand Juli 2026); geclaimte Profile sind an `claimed_by_uid` erkennbar.
+- **Zugriffsmodell (4 Stufen):** Gast/Familientag (Snapshot, nur lesen) ·
+  registriert-wartend (nichts, Warteseite) · Mitglied `approved` (alles
+  lesen, Personen/Beziehungen anlegen und ändern, Kernfelder beanspruchter
+  Profile nur Inhaber/Admin) · Admin (fest `kaivonpetersdorff@me.com` in
+  `js/admin.js`, `is_approved()`, `is_admin()`). Status in `user_approvals`:
+  `pending | approved | rejected | revoked` (revoked = gesperrt, Konto
+  bleibt). Profil ↔ Konto über `members.claimed_by_uid`.
+- **Nutzerverwaltung** (Menü → Admin, `Admin.showAdminPanel`): alle Konten
+  gruppiert nach Status mit verknüpftem Profil; Aktionen Freigeben /
+  Ablehnen / Sperren / Entsperren / Profil-Verknüpfung lösen
+  (`DB.setApprovalStatus`, `DB.unclaimMember`). Konten löschen nur im
+  Supabase-Dashboard (Service-Rolle).
+- **Migration 004 (`migrations/004_user_management_and_policy_fixes.sql`)
+  MUSS eingespielt werden:** die ursprünglichen Policies erlaubten anonymes
+  Lesen aller registrierten E-Mails und die Selbst-Freigabe per REST
+  (`USING (true)`). 004 ersetzt sie (eigene Zeile bzw. Admin), ergänzt
+  `revoked`, spiegelt den Kernfeld-Schutz in RLS und beschränkt Löschen
+  auf Platzhalter. Stand 13.09.2026: 5 Konten (Kai, Tabea, Stephan, Lea
+  Sophia, Anne), 3 Profile verknüpft.
 - **Serverseitige Freigabe-Prüfung** (Migration 003) ist eingespielt —
   verifiziert September 2026: RLS-Policies laufen über `public.is_approved()`,
   nicht freigegebene Konten lesen nichts. Prüfen per

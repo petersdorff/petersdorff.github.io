@@ -745,6 +745,29 @@ a {
   background: #fff5f5;
 }
 
+/* Fächer-Legende */
+.legend-swatch-male { background: hsl(207 72% 80%); }
+.legend-swatch-female { background: hsl(340 72% 80%); }
+.legend-swatch-fan-deceased { background: hsl(207 32% 84%); }
+.legend-swatch-registered { background: hsl(207 72% 80%); border: 2px solid var(--trace); }
+.legend-swatch-fan-current { background: hsl(207 72% 80%); border: 3px solid var(--red); }
+.legend-swatch-dimmed { background: hsl(207 72% 80%); opacity: 0.22; }
+.legend-swatch-text {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  opacity: 0.75;
+}
+.legend-hint {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--trace-faint);
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
 /* ═══════════════════════════════════════════════════════════
    CONNECTION SIDE PANEL
    Slides in from the right, doesn't cover the tree
@@ -1499,7 +1522,8 @@ a {
 }
 
 #btn-view-toggle .icon-gen,
-#btn-view-toggle .icon-temp {
+#btn-view-toggle .icon-temp,
+#btn-view-toggle .icon-fan {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -1516,6 +1540,18 @@ a {
 }
 
 #btn-view-toggle.mode-temporal .icon-temp {
+  opacity: 1;
+}
+
+#btn-view-toggle .icon-fan {
+  opacity: 0;
+}
+
+#btn-view-toggle.mode-fan .icon-gen {
+  opacity: 0;
+}
+
+#btn-view-toggle.mode-fan .icon-fan {
   opacity: 1;
 }
 
@@ -1742,7 +1778,13 @@ a {
   -webkit-user-select: none;
 }
 
-#fab-fan.active {
-  background: var(--trace);
-  color: var(--bg);
+/* Partner-Namen im Segment: Hyperlink zum eigenen Profil */
+.fan-spouse-link {
+  pointer-events: auto;
+  cursor: pointer;
+  fill: var(--blue);
+  fill-opacity: 1;
+  text-decoration: underline;
 }
+.fan-spouse-link:hover { fill: var(--red); }
+

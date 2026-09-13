@@ -51,8 +51,20 @@ const Fan = (() => {
     svg.appendChild(labelLayer);
     container.appendChild(svg);
     attachPanZoom();
+    // Wird der Container erst sichtbar (0 → Breite), einpassen; sonst nur
+    // das Seitenverhältnis nachziehen (z.B. Rotation des Handys).
+    let lastW = 0;
     if (window.ResizeObserver) {
-      new ResizeObserver(() => { if (active) keepAspect(); }).observe(container);
+      new ResizeObserver(() => {
+        if (!active) return;
+        const w = container.clientWidth;
+        if (w > 0 && lastW === 0 && members.length) {
+          highlight && hlAnchors.length ? fitToHighlight() : fit();
+        } else if (w > 0) {
+          keepAspect();
+        }
+        lastW = w;
+      }).observe(container);
     }
   }
 
@@ -332,19 +344,43 @@ const Fan = (() => {
     } else if (tier === 'mid') {
       const txt = center ? `${m.firstName} ${m.lastName}` : me + displayName(m, familyName);
       lines.push({ ...fitText(txt, along, center ? 12 : 13, 6.5), weight: 600 });
-      if (spouses.length) {
-        lines.push({ ...fitText('∞ ' + spouses.map(s => s.firstName).join(' · '), along, 9.5, 6), weight: 400, dim: true });
-      }
+      if (spouses.length) lines.push(spouseLine(spouses, along, 9.5, 6, sp => sp.firstName));
     } else {
       const txt = center ? `${m.firstName} ${m.lastName}` : me + displayName(m, familyName);
       lines.push({ ...fitText(txt, along, 11, 6.5), weight: 600 });
-      if (spouses.length) {
-        lines.push({ ...fitText('∞ ' + spouses.map(spouseName).join(' · '), along, 8.5, 6), weight: 400, dim: true });
-      }
+      if (spouses.length) lines.push(spouseLine(spouses, along, 8.5, 6, spouseName));
       const yr = yearLabel(m);
       if (yr) lines.push({ ...fitText(yr, along, 8, 6), weight: 400, dim: true });
     }
     return lines;
+  }
+
+  /** „∞ Name · Name" als klickbare Teile: jeder Partner-Name trägt seine
+      ID und öffnet beim Antippen das eigene Profil. Passt Schriftgröße
+      an und kürzt notfalls den letzten Namen. */
+  function spouseLine(spouses, along, fs, minFs, nameFn) {
+    const names = spouses.map(sp => ({ text: nameFn(sp), id: sp.id }));
+    const full = '∞ ' + names.map(n => n.text).join(' · ');
+    const fit = fitText(full, along, fs, minFs);
+    const maxChars = Math.max(1, Math.floor(along / (CHAR_W * fit.fs)));
+    const parts = [{ text: '∞ ' }];
+    let used = 2;
+    for (let i = 0; i < names.length; i++) {
+      const sep = i > 0 ? ' · ' : '';
+      let text = names[i].text;
+      if (used + sep.length + text.length > maxChars) {
+        const room = maxChars - used - sep.length - 1;
+        if (room < 2) break;
+        text = text.slice(0, room) + '…';
+        if (sep) parts.push({ text: sep });
+        parts.push({ text, id: names[i].id });
+        break;
+      }
+      if (sep) parts.push({ text: sep });
+      parts.push({ text, id: names[i].id });
+      used += sep.length + text.length;
+    }
+    return { fs: fit.fs, weight: 400, dim: true, parts };
   }
 
   function renderLabels(force = false) {
@@ -373,12 +409,18 @@ const Fan = (() => {
       let cy = -h / 2;
       for (const ln of kept) {
         const lh = ln.fs * spec.lineH;
-        const t = el('tspan', {
-          x: 0, y: (cy + lh / 2).toFixed(2), 'font-size': ln.fs, 'font-weight': ln.weight,
-          'dominant-baseline': 'central', ...(ln.dim ? { 'fill-opacity': 0.75 } : {}),
+        const base = { 'font-size': ln.fs, 'font-weight': ln.weight, 'dominant-baseline': 'central',
+                       ...(ln.dim ? { 'fill-opacity': 0.75 } : {}) };
+        const parts = ln.parts || [{ text: ln.text }];
+        parts.forEach((part, i) => {
+          // Nur der erste tspan einer Zeile ist absolut positioniert; die
+          // folgenden fließen inline, text-anchor zentriert den Block.
+          const attrs = i === 0 ? { x: 0, y: (cy + lh / 2).toFixed(2), ...base } : { ...base };
+          if (part.id) { attrs.class = 'fan-spouse-link'; attrs['data-id'] = part.id; }
+          const t = el('tspan', attrs);
+          t.textContent = part.text;
+          text.appendChild(t);
         });
-        t.textContent = ln.text;
-        text.appendChild(t);
         cy += lh;
       }
       labelLayer.appendChild(text);
@@ -496,6 +538,15 @@ const Fan = (() => {
     apply();
   }
 
+  /** Person in die Bildmitte holen, ohne den Zoom zu ändern. */
+  function panTo(memberId) {
+    const s = segById.get(memberId) || segById.get(hostOf.get(memberId));
+    if (!s) return;
+    vb.x = s.x - vb.w / 2;
+    vb.y = s.y - vb.h / 2;
+    apply();
+  }
+
   function attachPanZoom() {
     const pts = new Map();
     let moved = 0, prevPinch = null;
@@ -535,7 +586,7 @@ const Fan = (() => {
     const up = e => {
       if (!pts.has(e.pointerId)) return;
       pts.delete(e.pointerId);
-      if (pts.size === 0 && moved < 6 && e.type === 'pointerup') {
+      if (pts.size === 0 && moved < 10 && e.type === 'pointerup') {
         const seg = e.target.closest && e.target.closest('[data-id]');
         if (seg && onTapCallback) onTapCallback(seg.getAttribute('data-id'));
       }
@@ -549,6 +600,6 @@ const Fan = (() => {
     }, { passive: false });
   }
 
-  return { init, onTap, isActive, show, hide, toggle, render, fit, centerOn, highlightConnection, clearHighlight,
+  return { init, onTap, isActive, show, hide, toggle, render, fit, centerOn, panTo, highlightConnection, clearHighlight,
            getTier: () => lodTier };
 })();

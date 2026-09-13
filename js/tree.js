@@ -1,1752 +1,738 @@
 /* ═══════════════════════════════════════════════════════════
-   STAMMBAUM – Tree Visualization (Cytoscape.js)  v70
-   Bottom-up layout: children first, parents centered above.
-   PCB / Circuit Board aesthetic
+   STAMMBAUM – Stammtafel (reines SVG, ohne Bibliothek)
 
-   Supports two view modes:
-   - "generational" : members at generation-based Y (all same-gen on one row)
-   - "temporal"      : members at birth-year-proportional Y (timeline)
+   Verdichtete Nachfahrentafel im Stil von MacFamilyTree & Co.:
+   - Person als Karte, Partner als schmalere Karten direkt darunter
+     (eine „Einheit" pro Blutsverwandten) — wenig Breite, klare Paare
+   - Kinderlose Geschwister werden zu Spalten gestapelt (Sammel-Linie
+     links), nur Kinder mit eigenen Nachkommen bekommen eigene Teilbäume
+   - Konturbasiertes Tidy-Layout: Teilbäume rücken so eng zusammen wie
+     ihre Kontur es erlaubt, Eltern stehen mittig über ihren Kindern
+   - Generationen als Bänder mit fixen Beschriftungen am linken Rand
+   - Teilbäume ein-/ausklappbar (Chip unter der Einheit), Minimap
+     rechts oben zum Springen, semantischer Zoom wie im Fächer
    ═══════════════════════════════════════════════════════════ */
 
 const Tree = (() => {
-  let cy = null;
-  let members = [];
-  let relationships = [];
-  let highlightedPath = [];
-  let highlightedFromId = null;
-  let highlightedToId = null;
-  let onNodeTapCallback = null;
-  let onBackgroundTapCallback = null;
+  // ─── Geometrie (SVG-Einheiten) ───
+  const CARD_W = 104, CARD_H = 40;    // Personenkarte
+  const SP_H = 27, SP_GAP = 3;        // Partnerkarte (unter der Person)
+  const H_GAP = 16;                   // Abstand zwischen Spalten
+  const LEAF_GAP = 8;                 // Abstand gestapelter Geschwister
+  const MAX_COL_H = 150;              // Stapel-Höhe, bevor eine neue Spalte beginnt (2 Paare / 3 Einzelne)
+  const V_GAP = 60;                   // Abstand zwischen Generationen (Sammelschiene)
+  const SPINE_DX = 9;                 // Sammel-Linie links neben gestapelter Spalte
+  const PAD = 90;
+  const LOD_MID = 0.55, LOD_FULL = 1.1;   // px je Einheit
+  const CHAR_W = 0.6;                 // IBM Plex Mono
+  const NS = 'http://www.w3.org/2000/svg';
+  const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+
+  // ─── Zustand ───
+  let container = null, svg = null;
+  let bandLayer = null, edgeLayer = null, cardLayer = null;
+  let members = [], relationships = [];
+  let root = null;                 // Wurzelknoten der aktiven Familie
+  let units = new Map();           // id (Blutsverwandter) → { node, x, y, h, gen, col }
+  let hostOf = new Map();          // Angeheiratete → id der Einheit
+  let rows = [];                   // je Generation: { y, h, minYear }
+  let bbox = { x: 0, y: 0, w: 1, h: 1 };
+  let vb = { x: 0, y: 0, w: 1000, h: 1000 };
+  let collapsed = new Set();       // eingeklappte Einheiten
   let currentUserId = null;
-
-  // View mode state
-  let viewMode = localStorage.getItem('stammbaum_viewMode') || 'generational';
-
-  const COLORS = {
-    trace: '#1a1a1a',
-    traceFaint: '#d0d0d0',
-    red: '#e63946',
-    redGlow: 'rgba(230, 57, 70, 0.3)',
-    blue: '#457b9d',
-    bg: '#ffffff',
-    bgSecondary: '#f8f9fa',
-    textSecondary: '#6b7280',
-    textMuted: '#9ca3af',
-    spouseLine: '#1a1a1a',
-  };
-
-  // Semantic zoom (level of detail): full = Vorname + Nachname + Daten,
-  // mid = Vorname + Geburtsjahr, far = nur Vorname (nie ganz ohne Label).
-  const LOD_MID = 0.55;
-  const LOD_FAR = 0.28;
-  let lodTier = 'full';
-
-  // Layout constants
-  const NODE_W = 170;
-  const NODE_H = 62;
-  const SPOUSE_GAP = 30;     // gap between spouse nodes
-  const SIBLING_GAP = 50;    // gap between sibling nodes
-  const GEN_GAP = 140;       // vertical gap between generations
-  const COUPLE_NODE_SIZE = 1; // invisible midpoint node
-  const YEAR_PX = 5;          // pixels per year in temporal mode
+  let onNodeTapCallback = null, onBackgroundTapCallback = null;
+  let highlight = null;            // { fromId, toId }
+  let involved = null;             // Set der beteiligten Einheiten
+  let lodTier = null;
+  let minimap = null, genLabels = null;
+  let animFrame = null;
 
   // ═══════════════════════════════════════════════════════════
   //  INIT
   // ═══════════════════════════════════════════════════════════
 
   function init(containerId) {
-    cy = cytoscape({
-      container: document.getElementById(containerId),
-      style: getCytoscapeStyle(),
-      layout: { name: 'preset' },
-      minZoom: 0.1,
-      maxZoom: 3,
-      wheelSensitivity: 0.3,
-      boxSelectionEnabled: false,
-      selectionType: 'single',
-      autoungrabify: true,
-    });
+    container = document.getElementById(containerId);
+    svg = el('svg', { class: 'tree-svg' });
+    bandLayer = el('g', { class: 'tree-bands' });
+    edgeLayer = el('g', { class: 'tree-edges' });
+    cardLayer = el('g', { class: 'tree-cards' });
+    svg.append(bandLayer, edgeLayer, cardLayer);
+    container.appendChild(svg);
+    attachPanZoom();
+    attachMinimap();
+    genLabels = document.createElement('div');
+    genLabels.className = 'tree-genlabels';
+    container.appendChild(genLabels);
 
-    // Tap on node
-    cy.on('tap', 'node', (evt) => {
-      const nodeId = evt.target.id();
-      if (nodeId.startsWith('couple-')) return;
-      if (onNodeTapCallback) onNodeTapCallback(nodeId);
-    });
-
-    // Tap on background to deselect and close overlays
-    cy.on('tap', (evt) => {
-      if (evt.target === cy) {
-        clearHighlight();
-        if (onBackgroundTapCallback) onBackgroundTapCallback();
-      }
-    });
-
-    // Semantic zoom: swap label detail when crossing zoom thresholds
-    cy.on('zoom', () => applyLod());
-
-    // Re-render highlights on tab switch (without zoom animation)
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && cy) {
-        cy.resize();
-        if (highlightedFromId && highlightedToId) {
-          // Just restore the highlight styling — don't re-zoom/animate
-          restoreHighlight();
-        } else {
-          cy.style().update();
-        }
-      }
-    });
-
-  }
-
-  function onNodeTap(callback) {
-    onNodeTapCallback = callback;
-  }
-
-  function onBackgroundTap(callback) {
-    onBackgroundTapCallback = callback;
-  }
-
-  function setCurrentUser(memberId) {
-    currentUserId = memberId;
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  VIEW MODE
-  // ═══════════════════════════════════════════════════════════
-
-  function setViewMode(mode) {
-    if (mode !== 'generational' && mode !== 'temporal') return;
-    if (mode === viewMode) return;
-    viewMode = mode;
-    localStorage.setItem('stammbaum_viewMode', mode);
-    if (members.length > 0) {
-      renderWithAnimation();
+    let lastW = 0;
+    if (window.ResizeObserver) {
+      new ResizeObserver(() => {
+        const w = container.clientWidth;
+        if (w > 0 && lastW === 0 && units.size) fitAll(false);
+        else if (w > 0) keepAspect();
+        lastW = w;
+      }).observe(container);
     }
   }
 
-  function getViewMode() {
-    return viewMode;
+  function onNodeTap(cb) { onNodeTapCallback = cb; }
+  function onBackgroundTap(cb) { onBackgroundTapCallback = cb; }
+
+  function setCurrentUser(id) {
+    currentUserId = id;
+    if (units.size) drawCards();
   }
 
   // ═══════════════════════════════════════════════════════════
-  //  SHARED LAYOUT HELPERS
+  //  DATEN → LAYOUT
   // ═══════════════════════════════════════════════════════════
 
-  /**
-   * Build adjacency structures, identify couples, assign generations,
-   * compute family units, and calculate subtree widths.
-   * Shared between generational and temporal layouts.
-   */
-  function buildLayoutBase(members, relationships) {
-    const memberMap = new Map(members.map(m => [m.id, m]));
-
-    // ─── Build adjacency structures ───
-    const spouseEdges = [];
-    const parentChildEdges = [];
-    const siblingEdges = [];
-    const spouseOf = new Map();
-    const childrenOf = new Map();
-    const parentsOf = new Map();
-
-    for (const m of members) {
-      spouseOf.set(m.id, []);
-      childrenOf.set(m.id, []);
-      parentsOf.set(m.id, []);
-    }
-
-    for (const r of relationships) {
-      if (r.type === 'spouse') {
-        spouseEdges.push({ from: r.fromId, to: r.toId, id: r.id, former: !!r.isFormer });
-        if (spouseOf.has(r.fromId)) spouseOf.get(r.fromId).push(r.toId);
-        if (spouseOf.has(r.toId)) spouseOf.get(r.toId).push(r.fromId);
-      } else if (r.type === 'parent_child') {
-        parentChildEdges.push({ parent: r.fromId, child: r.toId, id: r.id });
-        if (childrenOf.has(r.fromId)) childrenOf.get(r.fromId).push(r.toId);
-        if (parentsOf.has(r.toId)) parentsOf.get(r.toId).push(r.fromId);
-      } else if (r.type === 'sibling') {
-        siblingEdges.push({ from: r.fromId, to: r.toId, id: r.id });
-      }
-    }
-
-    // ─── Identify couples (supports multiple marriages) ───
-    const inCouple = new Map();   // personId -> coupleId[]
-    const couples = [];
-    const existingPairs = new Set();
-
-    for (const se of spouseEdges) {
-      const pairKey = [se.from, se.to].sort().join('|');
-      if (existingPairs.has(pairKey)) continue;
-      existingPairs.add(pairKey);
-
-      // Blood descendant (has parents in tree) goes left (a),
-      // married-in spouse goes right (b).
-      const fromHasParents = (parentsOf.get(se.from) || []).length > 0;
-      const toHasParents = (parentsOf.get(se.to) || []).length > 0;
-      let left = se.from, right = se.to;
-      if (!fromHasParents && toHasParents) {
-        left = se.to;
-        right = se.from;
-      }
-      const coupleId = `couple-${left}-${right}`;
-      couples.push({ id: coupleId, a: left, b: right });
-      if (!inCouple.has(left)) inCouple.set(left, []);
-      inCouple.get(left).push(coupleId);
-      if (!inCouple.has(right)) inCouple.set(right, []);
-      inCouple.get(right).push(coupleId);
-    }
-
-    const coupleMap = new Map(couples.map(c => [c.id, c]));
-
-    // ─── Multi-couple detection ───
-    // A person with 2+ spouses becomes a "multi-couple pivot".
-    // Layout: Spouse2 ─── [mid2] ─── Pivot ─── [mid1] ─── Spouse1
-    const multiCouplePersons = new Set();
-    const multiCoupleMap = new Map();     // "multi-{pivotId}" -> { pivotId, couples: [{coupleId, spouse}] }
-    const absorbedCouples = new Set();
-
-    for (const [personId, coupleIds] of inCouple) {
-      if (coupleIds.length > 1) {
-        multiCouplePersons.add(personId);
-        const multiId = `multi-${personId}`;
-        const couplesInfo = coupleIds.map(cid => {
-          const c = coupleMap.get(cid);
-          const spouse = c.a === personId ? c.b : c.a;
-          return { coupleId: cid, spouse };
-        });
-        // Sort: oldest spouse first (index 0 = right side in layout)
-        couplesInfo.sort((a, b) => {
-          const ya = memberMap.get(a.spouse)?.birthDate || '9999';
-          const yb = memberMap.get(b.spouse)?.birthDate || '9999';
-          return ya.localeCompare(yb);
-        });
-        multiCoupleMap.set(multiId, { pivotId: personId, couples: couplesInfo });
-        for (const cid of coupleIds) absorbedCouples.add(cid);
-      }
-    }
-
-    // ─── Couple children (partitioned by marriage) ───
-    // For multi-couple persons, only children shared between BOTH parents
-    // in a specific couple belong to that couple. Children with only one
-    // parent (the pivot) get a fallback assignment later.
-    function getCoupleChildren(couple) {
-      const childrenA = new Set(childrenOf.get(couple.a) || []);
-      const childrenB = new Set(childrenOf.get(couple.b) || []);
-      const pivotId = multiCouplePersons.has(couple.a) ? couple.a
-                    : multiCouplePersons.has(couple.b) ? couple.b : null;
-      if (pivotId) {
-        // Multi-couple: only shared children (intersection)
-        return [...childrenA].filter(c => childrenB.has(c));
-      }
-      // Single couple: all children of both (union, original behavior)
-      return [...new Set([...childrenA, ...childrenB])];
-    }
-
-    // ─── Assign generations ───
-    // Strategy: find connected components via ALL edge types, then within
-    // each component BFS from the topmost ancestor(s) only. This ensures
-    // people who marry into the family get the correct generation level.
-    const generation = new Map();
-
-    // Step 1: Build undirected adjacency for finding connected components
-    const adj = new Map();
-    for (const m of members) adj.set(m.id, new Set());
-    for (const r of [...parentChildEdges, ...siblingEdges]) {
-      const a = r.parent || r.from;
-      const b = r.child || r.to;
-      if (adj.has(a) && adj.has(b)) { adj.get(a).add(b); adj.get(b).add(a); }
-    }
-    for (const se of spouseEdges) {
-      if (adj.has(se.from) && adj.has(se.to)) { adj.get(se.from).add(se.to); adj.get(se.to).add(se.from); }
-    }
-
-    // Step 2: Find connected components
-    const visited = new Set();
-    const components = [];
-    for (const m of members) {
-      if (visited.has(m.id)) continue;
-      const comp = [];
-      const bfsQ = [m.id];
-      visited.add(m.id);
-      while (bfsQ.length > 0) {
-        const pid = bfsQ.shift();
-        comp.push(pid);
-        for (const nbr of adj.get(pid) || []) {
-          if (!visited.has(nbr)) { visited.add(nbr); bfsQ.push(nbr); }
-        }
-      }
-      components.push(comp);
-    }
-
-    // Step 3: Within each component, find the single best root and BFS generations
-    for (const comp of components) {
-      // Find members with no parents (roots of this component)
-      const compRoots = comp.filter(id => (parentsOf.get(id) || []).length === 0);
-
-      // Pick the SINGLE best root: the one with the most descendants reachable
-      // via parent→child edges. This filters out married-in spouses who are
-      // parentless but not the true ancestor. Ties broken by earliest birth year.
-      let bestRoot = comp[0];
-      if (compRoots.length > 0) {
-        let bestScore = -1;
-        for (const rootId of compRoots) {
-          // Count descendants reachable via parent→child only
-          let count = 0;
-          const dq = [rootId];
-          const dVisited = new Set([rootId]);
-          while (dq.length > 0) {
-            const pid = dq.shift();
-            for (const cid of (childrenOf.get(pid) || [])) {
-              if (!dVisited.has(cid)) {
-                dVisited.add(cid);
-                dq.push(cid);
-                count++;
-              }
-            }
-          }
-          const m = memberMap.get(rootId);
-          const year = m?.birthDate ? parseInt(m.birthDate.substring(0, 4)) : 9999;
-          // Score: descendants first (higher is better), then earlier birth year as tiebreaker
-          if (count > bestScore || (count === bestScore && year < (memberMap.get(bestRoot)?.birthDate ? parseInt(memberMap.get(bestRoot).birthDate.substring(0, 4)) : 9999))) {
-            bestScore = count;
-            bestRoot = rootId;
-          }
-        }
-      }
-
-      // BFS from the single best root
-      const queue = [];
-      generation.set(bestRoot, 0);
-      queue.push(bestRoot);
-
-      while (queue.length > 0) {
-        const personId = queue.shift();
-        const gen = generation.get(personId);
-
-        // Propagate to children
-        for (const childId of (childrenOf.get(personId) || [])) {
-          if (!generation.has(childId)) {
-            generation.set(childId, gen + 1);
-            queue.push(childId);
-          }
-        }
-        // Propagate to parents (for upward traversal from non-root starts)
-        for (const parentId of (parentsOf.get(personId) || [])) {
-          if (!generation.has(parentId)) {
-            generation.set(parentId, gen - 1);
-            queue.push(parentId);
-          }
-        }
-        // Propagate to spouses (same generation)
-        for (const spouseId of (spouseOf.get(personId) || [])) {
-          if (!generation.has(spouseId)) {
-            generation.set(spouseId, gen);
-            queue.push(spouseId);
-          }
-        }
-      }
-    }
-
-    // Step 4: Align spouses that ended up at different generations
-    // (can happen when a spouse was reached via parent_child before spouse edge)
-    for (const se of spouseEdges) {
-      const genA = generation.get(se.from);
-      const genB = generation.get(se.to);
-      if (genA !== undefined && genB !== undefined && genA !== genB) {
-        // Prefer the generation of whichever has a blood-line parent connection
-        const aHasParents = (parentsOf.get(se.from) || []).length > 0;
-        const bHasParents = (parentsOf.get(se.to) || []).length > 0;
-        if (aHasParents && !bHasParents) {
-          generation.set(se.to, genA);
-        } else if (bHasParents && !aHasParents) {
-          generation.set(se.from, genB);
-        } else {
-          // Both have parents — use the deeper (larger) generation
-          const maxG = Math.max(genA, genB);
-          generation.set(se.from, maxG);
-          generation.set(se.to, maxG);
-        }
-      }
-    }
-
-    // Step 5: Catch any unassigned members
-    for (const m of members) {
-      if (!generation.has(m.id)) generation.set(m.id, 0);
-    }
-
-    // Step 6: Normalize so minimum generation is 0
-    const minGen = Math.min(...generation.values());
-    if (minGen < 0) {
-      for (const [id, gen] of generation) generation.set(id, gen - minGen);
-    }
-
-    const maxGen = Math.max(...generation.values(), 0);
-
-    // ─── Build generation groups ───
-    const genGroups = [];
-    for (let g = 0; g <= maxGen; g++) genGroups.push([]);
-    const placed = new Set();
-
-    // Multi-couple units first (so their members are marked as placed)
-    for (const [multiId, info] of multiCoupleMap) {
-      const gen = generation.get(info.pivotId) || 0;
-      genGroups[gen].push({
-        type: 'multi-couple', id: multiId, pivotId: info.pivotId,
-        couples: info.couples,
-        children: [],  // filled after unitChildren assignment
-      });
-      placed.add(info.pivotId);
-      for (const { spouse } of info.couples) placed.add(spouse);
-    }
-
-    // Regular couples (skip absorbed ones)
-    for (const couple of couples) {
-      if (absorbedCouples.has(couple.id)) continue;
-      const gen = generation.get(couple.a) || 0;
-      genGroups[gen].push({
-        type: 'couple', id: couple.id, a: couple.a, b: couple.b,
-        children: getCoupleChildren(couple),
-      });
-      placed.add(couple.a);
-      placed.add(couple.b);
-    }
-
-    // Singles
-    for (const m of members) {
-      if (!placed.has(m.id)) {
-        const gen = generation.get(m.id) || 0;
-        genGroups[gen].push({
-          type: 'single', id: m.id, children: childrenOf.get(m.id) || [],
-        });
-        placed.add(m.id);
-      }
-    }
-
-    // ─── Unit children + width calculation ───
-    function getUnitForPerson(personId) {
-      if (!inCouple.has(personId)) return personId;
-      const coupleIds = inCouple.get(personId);
-      // Multi-couple pivot?
-      if (multiCouplePersons.has(personId)) return `multi-${personId}`;
-      // Spouse of a multi-couple pivot?
-      for (const cid of coupleIds) {
-        if (absorbedCouples.has(cid)) {
-          const couple = coupleMap.get(cid);
-          const other = couple.a === personId ? couple.b : couple.a;
-          if (multiCouplePersons.has(other)) return `multi-${other}`;
-        }
-      }
-      return coupleIds[0]; // single couple
-    }
-
-    const unitChildren = new Map();
-    const childPlaced = new Set();
-
-    // Assign children to individual couples
-    for (const couple of couples) {
-      const children = getCoupleChildren(couple);
-      unitChildren.set(couple.id, children);
-      for (const c of children) childPlaced.add(c);
-    }
-    // Aggregate children for multi-couple units + pick up unplaced pivot children
-    for (const [multiId, info] of multiCoupleMap) {
-      const allChildren = [];
-      for (const { coupleId } of info.couples) {
-        allChildren.push(...(unitChildren.get(coupleId) || []));
-      }
-      // Any unplaced children of the pivot (no second parent in any couple)
-      const pivotChildren = childrenOf.get(info.pivotId) || [];
-      for (const c of pivotChildren) {
-        if (!childPlaced.has(c)) {
-          allChildren.push(c);
-          childPlaced.add(c);
-          // Also add to the first couple's children for edge routing
-          const firstCoupleId = info.couples[0].coupleId;
-          const fc = unitChildren.get(firstCoupleId) || [];
-          fc.push(c);
-          unitChildren.set(firstCoupleId, fc);
-        }
-      }
-      unitChildren.set(multiId, allChildren);
-    }
-    // Back-fill children for genGroups multi-couple entries
-    for (let g = 0; g <= maxGen; g++) {
-      for (const unit of genGroups[g]) {
-        if (unit.type === 'multi-couple') {
-          unit.children = unitChildren.get(unit.id) || [];
-        }
-      }
-    }
-    // Single persons (not in any couple)
-    for (const m of members) {
-      if (!inCouple.has(m.id)) {
-        const children = (childrenOf.get(m.id) || []).filter(c => !childPlaced.has(c));
-        if (children.length > 0) {
-          unitChildren.set(m.id, children);
-          for (const c of children) childPlaced.add(c);
-        }
-      }
-    }
-
-    const unitWidth = new Map();
-
-    // Helper: total width of a list of children laid out in a row
-    function childrenRowWidth(childIds) {
-      if (!childIds || childIds.length === 0) return 0;
-      const unique = [...new Set(childIds.map(c => getUnitForPerson(c)))];
-      let w = 0;
-      for (const cu of unique) w += calcWidth(cu);
-      w += (unique.length - 1) * SIBLING_GAP;
-      return w;
-    }
-
-    function calcWidth(unitId) {
-      if (unitWidth.has(unitId)) return unitWidth.get(unitId);
-
-      if (multiCoupleMap.has(unitId)) {
-        // Multi-couple: pivot has multiple spouses. ALL children from all
-        // sub-couples are treated as one combined row (like a regular couple).
-        // The self-width is the full span of the parent row (pivot + all spouses).
-        // The total width = max(self-width, combined children row width).
-        const info = multiCoupleMap.get(unitId);
-
-        // Self-width: pivot + each sub-couple adds one spouse + gap
-        let selfWidth = NODE_W; // pivot
-        for (let i = 0; i < info.couples.length; i++) {
-          selfWidth += NODE_W + SPOUSE_GAP; // each spouse + gap
-        }
-
-        // Combined children from all sub-couples
-        const allChildren = [];
-        for (const ci of info.couples) {
-          for (const cid of (unitChildren.get(ci.coupleId) || [])) {
-            allChildren.push(cid);
-          }
-        }
-        const childWidth = childrenRowWidth(allChildren);
-        const totalWidth = Math.max(selfWidth, childWidth);
-
-        unitWidth.set(unitId, totalWidth);
-        return totalWidth;
-      }
-
-      const children = unitChildren.get(unitId) || [];
-      const selfWidth = coupleMap.has(unitId) ? NODE_W * 2 + SPOUSE_GAP : NODE_W;
-
-      if (children.length === 0) { unitWidth.set(unitId, selfWidth); return selfWidth; }
-
-      const childWidth = childrenRowWidth(children);
-      const totalWidth = Math.max(selfWidth, childWidth);
-      unitWidth.set(unitId, totalWidth);
-      return totalWidth;
-    }
-
-    // Calculate widths: multi-couple units first, then regular couples, then singles
-    for (const [multiId] of multiCoupleMap) calcWidth(multiId);
-    for (const couple of couples) {
-      if (!absorbedCouples.has(couple.id)) calcWidth(couple.id);
-    }
-    for (const m of members) { if (!inCouple.has(m.id)) calcWidth(m.id); }
-
-    // Helper: get a sortable birth date string for the blood descendant in a unit.
-    function unitBirthYear(unitId) {
-      // Multi-couple: use pivot person
-      if (multiCoupleMap.has(unitId)) {
-        const person = memberMap.get(multiCoupleMap.get(unitId).pivotId);
-        if (person?.birthDate) return person.birthDate;
-        return '9999-12-31';
-      }
-      const couple = coupleMap.get(unitId);
-      let person;
-      if (couple) {
-        // couple.a is the blood descendant (set during couple creation)
-        person = memberMap.get(couple.a);
-      } else {
-        person = memberMap.get(unitId);
-      }
-      if (person?.birthDate) return person.birthDate;
-      return '9999-12-31';
-    }
-
-    return {
-      memberMap, spouseEdges, parentChildEdges, siblingEdges,
-      spouseOf, childrenOf, parentsOf,
-      inCouple, couples, coupleMap,
-      multiCouplePersons, multiCoupleMap, absorbedCouples,
-      generation, genGroups, maxGen,
-      unitChildren, unitWidth, getUnitForPerson, calcWidth,
-      childrenRowWidth, unitBirthYear,
-    };
-  }
-
-  /**
-   * Build Cytoscape elements (nodes + edges) from layout base.
-   * Shared between both layout modes.
-   */
-  function buildElements(base) {
-    const elements = [];
-    const { spouseEdges, parentChildEdges, siblingEdges, inCouple, couples, coupleMap, parentsOf, unitChildren } = base;
-
-    // Person nodes
-    for (const m of members) {
-      const isMe = m.id === currentUserId;
-      const displayName = (isMe ? '➤ DU · ' : '') + `${m.firstName} ${m.lastName}`;
-      elements.push({
-        group: 'nodes',
-        data: {
-          id: m.id, label: displayName,
-          firstName: m.firstName,
-          birthYear: m.birthDate ? `* ${m.birthDate.substring(0, 4)}` : '',
-          initials: getInitials(m.firstName, m.lastName),
-          subLabel: m.birthName || '',
-          yearLabel: getYearLabel(m.birthDate, m.deathDate),
-          isDeceased: m.isDeceased || false,
-          isPlaceholder: m.isPlaceholder || false,
-        },
-        classes: [
-          m.isDeceased ? 'deceased' : 'alive',
-          m.isPlaceholder ? 'placeholder' : 'claimed',
-          m.id === currentUserId ? 'current-user' : '',
-        ].filter(Boolean).join(' '),
-      });
-    }
-
-    // Couple midpoint nodes (each couple gets its own, even in multi-couple)
-    for (const couple of couples) {
-      elements.push({
-        group: 'nodes',
-        data: { id: couple.id, label: '', coupleNode: true },
-        classes: 'couple-midpoint',
-      });
-    }
-
-    // Spouse edges (split halves through the couple midpoint)
-    for (const se of spouseEdges) {
-      // Find the specific couple containing both se.from and se.to
-      const couplesFrom = inCouple.get(se.from) || [];
-      const couplesTo = inCouple.get(se.to) || [];
-      const coupleId = couplesFrom.find(c => couplesTo.includes(c));
-      if (coupleId) {
-        elements.push({ group: 'edges', data: { id: `e-spouse-${se.from}-${coupleId}`, source: se.from, target: coupleId, relType: 'spouse', spouseHalf: 'a' }, classes: 'spouse-edge' + (se.former ? ' former' : '') });
-        elements.push({ group: 'edges', data: { id: `e-spouse-${coupleId}-${se.to}`, source: coupleId, target: se.to, relType: 'spouse', spouseHalf: 'b' }, classes: 'spouse-edge' + (se.former ? ' former' : '') });
-      } else {
-        elements.push({ group: 'edges', data: { id: `e-${se.id}`, source: se.from, target: se.to, relType: 'spouse' }, classes: 'spouse-edge' + (se.former ? ' former' : '') });
-      }
-    }
-
-    // Parent-child edges — route through the correct couple midpoint
-    for (const pc of parentChildEdges) {
-      const parentCoupleIds = inCouple.get(pc.parent) || [];
-      // Find the couple whose children include this child
-      let parentCoupleId = null;
-      for (const cid of parentCoupleIds) {
-        const cc = unitChildren.get(cid) || [];
-        if (cc.includes(pc.child)) { parentCoupleId = cid; break; }
-      }
-      // Fallback: first couple
-      if (!parentCoupleId && parentCoupleIds.length > 0) {
-        parentCoupleId = parentCoupleIds[0];
-      }
-      if (parentCoupleId) {
-        const edgeId = `e-family-${parentCoupleId}-${pc.child}`;
-        if (!elements.find(e => e.data?.id === edgeId)) {
-          elements.push({ group: 'edges', data: { id: edgeId, source: parentCoupleId, target: pc.child, relType: 'parent_child' }, classes: 'parent-child-edge' });
-        }
-      } else {
-        elements.push({ group: 'edges', data: { id: `e-${pc.id}`, source: pc.parent, target: pc.child, relType: 'parent_child' }, classes: 'parent-child-edge' });
-      }
-    }
-
-    // Sibling edges — only show if siblings don't already share a parent
-    // (shared parents make the relationship obvious from the tree structure)
-    for (const se of siblingEdges) {
-      const parentsA = parentsOf.get(se.from) || [];
-      const parentsB = parentsOf.get(se.to) || [];
-      const sharedParent = parentsA.some(p => parentsB.includes(p));
-      if (!sharedParent) {
-        elements.push({ group: 'edges', data: { id: `e-${se.id}`, source: se.from, target: se.to, relType: 'sibling' }, classes: 'sibling-edge' });
-      }
-    }
-
-    return elements;
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  COLLISION AVOIDANCE — Post-layout overlap resolution
-  // ═══════════════════════════════════════════════════════════
-
-  /**
-   * Post-layout pass: detect and resolve overlapping nodes.
-   *
-   * Works with "slots" — a slot is either a coupled pair (treated as one wide
-   * block: personA + midpoint + personB) or a single uncoupled person.
-   * Spouses are NEVER separated; the whole slot shifts as a unit.
-   *
-   * @param {Object} positions - node ID → {x, y}
-   * @param {Array} elements - layout elements
-   * @param {Object} opts - { yTolerance: number } (0 for generational, NODE_H for temporal)
-   */
-  function resolveOverlaps(positions, elements, opts = {}) {
-    const MIN_GAP = 20;
-    const yTol = opts.yTolerance || 0;
-
-    // Build couple membership: person → [coupleIds]
-    const personToCouples = new Map(); // person → [coupleId, ...]
-    const couplePersons = new Map();   // coupleId → {a, b}
-    for (const [id] of Object.entries(positions)) {
-      if (!id.startsWith('couple-')) continue;
-      const inner = id.substring('couple-'.length);
-      if (inner.length < 73) continue;
-      const a = inner.substring(0, 36);
-      const b = inner.substring(37);
-      couplePersons.set(id, { a, b });
-      if (!personToCouples.has(a)) personToCouples.set(a, []);
-      personToCouples.get(a).push(id);
-      if (!personToCouples.has(b)) personToCouples.set(b, []);
-      personToCouples.get(b).push(id);
-    }
-
-    // Detect multi-couple pivots (person in 2+ couples)
-    const multiCouplePivots = new Set();
-    for (const [person, couples] of personToCouples) {
-      if (couples.length >= 2) multiCouplePivots.add(person);
-    }
-
-    // Build slots: each slot is { ids: [nodeIds to shift together], leftX, rightX, centerY }
-    const processedPersons = new Set();
-    const slots = [];
-
-    for (const [id, pos] of Object.entries(positions)) {
-      if (id.startsWith('couple-')) continue;
-      if (processedPersons.has(id)) continue;
-
-      // Check if this person is a multi-couple pivot
-      if (multiCouplePivots.has(id)) {
-        // Group pivot + ALL spouses + ALL couple midpoints into one slot
-        const allIds = [id];
-        let minPosX = pos.x, maxPosX = pos.x;
-        let sumY = pos.y, countY = 1;
-
-        for (const cid of personToCouples.get(id)) {
-          const cp = couplePersons.get(cid);
-          if (!cp) continue;
-          const spouseId = cp.a === id ? cp.b : cp.a;
-          const spousePos = positions[spouseId];
-          const midPos = positions[cid];
-          if (spousePos) {
-            allIds.push(spouseId);
-            minPosX = Math.min(minPosX, spousePos.x);
-            maxPosX = Math.max(maxPosX, spousePos.x);
-            sumY += spousePos.y;
-            countY++;
-            processedPersons.add(spouseId);
-          }
-          if (midPos) {
-            allIds.push(cid);
-          }
-        }
-
-        slots.push({
-          ids: allIds,
-          leftX: minPosX - NODE_W / 2,
-          rightX: maxPosX + NODE_W / 2,
-          centerY: sumY / countY,
-          sortX: (minPosX + maxPosX) / 2
-        });
-        processedPersons.add(id);
-        continue;
-      }
-
-      // Check if this person is in a regular couple
-      const coupleIds = personToCouples.get(id);
-      if (coupleIds && coupleIds.length > 0) {
-        const coupleId = coupleIds[0];
-        const cp = couplePersons.get(coupleId);
-        if (cp) {
-          const posA = positions[cp.a];
-          const posB = positions[cp.b];
-          const posMid = positions[coupleId];
-          if (posA && posB && posMid) {
-            const leftX = Math.min(posA.x, posB.x) - NODE_W / 2;
-            const rightX = Math.max(posA.x, posB.x) + NODE_W / 2;
-            const centerY = (posA.y + posB.y) / 2;
-            slots.push({
-              ids: [cp.a, cp.b, coupleId],
-              leftX, rightX, centerY,
-              sortX: (posA.x + posB.x) / 2
-            });
-            processedPersons.add(cp.a);
-            processedPersons.add(cp.b);
-            continue;
-          }
-        }
-      }
-
-      // Single person (no couple or couple not in positions)
-      slots.push({
-        ids: [id],
-        leftX: pos.x - NODE_W / 2,
-        rightX: pos.x + NODE_W / 2,
-        centerY: pos.y,
-        sortX: pos.x
-      });
-      processedPersons.add(id);
-    }
-
-    // Helper: shift a slot by dx
-    function shiftSlot(slot, dx) {
-      for (const nid of slot.ids) {
-        if (positions[nid]) positions[nid].x += dx;
-      }
-      slot.leftX += dx;
-      slot.rightX += dx;
-      slot.sortX += dx;
-    }
-
-    if (yTol === 0) {
-      // === GENERATIONAL MODE: group by exact Y row ===
-      const rowMap = new Map();
-      for (const s of slots) {
-        const rowKey = Math.round(s.centerY);
-        if (!rowMap.has(rowKey)) rowMap.set(rowKey, []);
-        rowMap.get(rowKey).push(s);
-      }
-
-      const sortedRowKeys = [...rowMap.keys()].sort((a, b) => a - b);
-      for (const rowKey of sortedRowKeys) {
-        const rowSlots = rowMap.get(rowKey);
-        rowSlots.sort((a, b) => a.leftX - b.leftX);
-
-        for (let i = 1; i < rowSlots.length; i++) {
-          const prev = rowSlots[i - 1];
-          const curr = rowSlots[i];
-          const gap = curr.leftX - prev.rightX;
-
-          if (gap < MIN_GAP) {
-            const shift = MIN_GAP - gap;
-            for (let j = i; j < rowSlots.length; j++) {
-              shiftSlot(rowSlots[j], shift);
-            }
-          }
-        }
-      }
-    } else {
-      // === TEMPORAL MODE: 2D overlap check with Y tolerance ===
-      slots.sort((a, b) => a.leftX - b.leftX);
-
-      for (let pass = 0; pass < 5; pass++) {
-        let shifted = false;
-        for (let i = 1; i < slots.length; i++) {
-          const curr = slots[i];
-          for (let j = i - 1; j >= 0; j--) {
-            const prev = slots[j];
-            if (curr.leftX - prev.rightX >= MIN_GAP) break;
-            if (Math.abs(curr.centerY - prev.centerY) < NODE_H + MIN_GAP) {
-              const gap = curr.leftX - prev.rightX;
-              if (gap < MIN_GAP) {
-                const shift = MIN_GAP - gap;
-                for (let k = i; k < slots.length; k++) {
-                  shiftSlot(slots[k], shift);
-                }
-                shifted = true;
-                break;
-              }
-            }
-          }
-        }
-        if (!shifted) break;
-      }
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  GENERATIONAL LAYOUT
-  // ═══════════════════════════════════════════════════════════
-
-  function buildGenerationalLayout(members, relationships) {
-    const base = buildLayoutBase(members, relationships);
-    const positions = {};
-    const { memberMap, coupleMap, genGroups, maxGen, generation, unitChildren,
-            unitWidth, getUnitForPerson, inCouple, childrenRowWidth,
-            unitBirthYear, multiCoupleMap, absorbedCouples } = base;
-    const elements = buildElements(base);
-
-    // ─── RECURSIVE BOTTOM-UP LAYOUT ───
-    // For each root unit, recurse to children first, then center parent above.
-    // This guarantees siblings are always contiguous and parents centered.
-
-    const unitPositioned = new Set();
-    const subtreeExtentCache = new Map(); // unitId → { leftX, rightX }
-
-    /**
-     * Recursively lay out a unit and all its descendants.
-     * Returns { leftX, rightX } — the horizontal extent of the entire subtree.
-     *
-     * @param {string} unitId - the unit to lay out
-     * @param {number} x - the LEFT edge where this subtree may start
-     * @param {number} gen - generation level (for Y coordinate)
-     * @returns {{ leftX: number, rightX: number }}
-     */
-    function layoutSubtree(unitId, x, gen) {
-      if (unitPositioned.has(unitId)) {
-        // Already placed — return cached subtree extent
-        return subtreeExtentCache.get(unitId) || getUnitExtent(unitId);
-      }
-
-      const y = gen * GEN_GAP;
-      const children = unitChildren.get(unitId) || [];
-
-      // Deduplicate children into child units, sorted by birth year
-      const childUnitIds = [];
-      const seen = new Set();
-      for (const childId of children) {
-        const cu = getUnitForPerson(childId);
-        if (!seen.has(cu)) { seen.add(cu); childUnitIds.push(cu); }
-      }
-      childUnitIds.sort((a, b) => unitBirthYear(a).localeCompare(unitBirthYear(b)));
-
-      if (childUnitIds.length === 0) {
-        // LEAF UNIT: no children. Place at x, using self-width.
-        const sw = unitSelfWidth(unitId);
-        const centerX = x + sw / 2;
-        placeUnit(unitId, centerX, y);
-        const result = { leftX: x, rightX: x + sw };
-        subtreeExtentCache.set(unitId, result);
-        return result;
-      }
-
-      // HAS CHILDREN: recurse into each child first, placing them left-to-right
-      const childGen = gen + 1;
-      let childX = x;
-      let subtreeLeftX = Infinity, subtreeRightX = -Infinity;
-
-      // Track each child's subtree result so we can find the child unit's
-      // own position (center) for centering the parent.
-      const childResults = [];
-
-      for (let i = 0; i < childUnitIds.length; i++) {
-        const childResult = layoutSubtree(childUnitIds[i], childX, childGen);
-        childResults.push({ unitId: childUnitIds[i], result: childResult });
-        subtreeLeftX = Math.min(subtreeLeftX, childResult.leftX);
-        subtreeRightX = Math.max(subtreeRightX, childResult.rightX);
-        childX = childResult.rightX + SIBLING_GAP;
-      }
-
-      // Center this unit above its DIRECT CHILDREN's positions,
-      // not the full subtree extents. This keeps parents visually
-      // centered above their children, not pulled toward large subtrees.
-      let directChildMinX = Infinity, directChildMaxX = -Infinity;
-      for (const cr of childResults) {
-        const ext = getUnitExtent(cr.unitId);
-        directChildMinX = Math.min(directChildMinX, ext.leftX);
-        directChildMaxX = Math.max(directChildMaxX, ext.rightX);
-      }
-      const childrenCenterX = (directChildMinX + directChildMaxX) / 2;
-      const sw = unitSelfWidth(unitId);
-
-      placeUnit(unitId, childrenCenterX, y);
-
-      // Subtree extent includes children's subtrees AND this unit itself
-      // (including multi-couple spouses that may extend beyond children)
-      const unitExt = getUnitExtent(unitId);
-      const result = {
-        leftX: Math.min(subtreeLeftX, unitExt.leftX),
-        rightX: Math.max(subtreeRightX, unitExt.rightX)
-      };
-      subtreeExtentCache.set(unitId, result);
-      return result;
-    }
-
-    /**
-     * Get the extent of an already-positioned unit (all person nodes).
-     */
-    function getUnitExtent(unitId) {
-      let minX = Infinity, maxX = -Infinity;
-      for (const pid of getUnitPersonIds(unitId)) {
-        if (positions[pid]) {
-          minX = Math.min(minX, positions[pid].x - NODE_W / 2);
-          maxX = Math.max(maxX, positions[pid].x + NODE_W / 2);
-        }
-      }
-      return { leftX: minX, rightX: maxX };
-    }
-
-    /**
-     * Get all person IDs belonging to a unit.
-     */
-    function getUnitPersonIds(unitId) {
-      const multi = multiCoupleMap.get(unitId);
-      if (multi) {
-        const ids = [multi.pivotId];
-        for (const ci of multi.couples) ids.push(ci.spouse);
-        return ids;
-      }
-      const couple = coupleMap.get(unitId);
-      if (couple) return [couple.a, couple.b];
-      return [unitId];
-    }
-
-    /**
-     * Get the self-width of a unit (parent row only, not children).
-     */
-    function unitSelfWidth(unitId) {
-      const multi = multiCoupleMap.get(unitId);
-      if (multi) {
-        let w = NODE_W;
-        for (let i = 0; i < multi.couples.length; i++) w += NODE_W + SPOUSE_GAP;
-        return w;
-      }
-      if (coupleMap.has(unitId)) return NODE_W * 2 + SPOUSE_GAP;
-      return NODE_W;
-    }
-
-    /**
-     * Place a unit's person nodes and midpoint nodes at the given center.
-     */
-    function placeUnit(unitId, centerX, y) {
-      if (unitPositioned.has(unitId)) return;
-      unitPositioned.add(unitId);
-
-      const multi = multiCoupleMap.get(unitId);
-      if (multi) {
-        // Multi-couple: pivot at center of ALL children.
-        // Spouses stacked outward on alternating sides, adjacent to pivot.
-        // Each spouse at standard distance (NODE_W + SPOUSE_GAP) from the
-        // nearest already-placed person.
-        positions[multi.pivotId] = { x: centerX, y };
-
-        let rightEdge = centerX + NODE_W / 2;
-        let leftEdge = centerX - NODE_W / 2;
-
-        for (let ci = 0; ci < multi.couples.length; ci++) {
-          const coupleInfo = multi.couples[ci];
-
-          // Alternate sides: first spouse right, second left, etc.
-          const side = ci % 2 === 0 ? 1 : -1;
-          let spouseX;
-          if (side > 0) {
-            spouseX = rightEdge + SPOUSE_GAP + NODE_W / 2;
-            rightEdge = spouseX + NODE_W / 2;
-          } else {
-            spouseX = leftEdge - SPOUSE_GAP - NODE_W / 2;
-            leftEdge = spouseX - NODE_W / 2;
-          }
-
-          const midX = (centerX + spouseX) / 2;
-          positions[coupleInfo.coupleId] = { x: midX, y };
-          positions[coupleInfo.spouse] = { x: spouseX, y };
-        }
-        return;
-      }
-
-      const couple = coupleMap.get(unitId);
-      if (couple) {
-        positions[couple.a] = { x: centerX - SPOUSE_GAP / 2 - NODE_W / 2, y };
-        positions[couple.b] = { x: centerX + SPOUSE_GAP / 2 + NODE_W / 2, y };
-        positions[unitId] = { x: centerX, y };
-        return;
-      }
-
-      // Single person
-      positions[unitId] = { x: centerX, y };
-    }
-
-    // ─── Lay out each root unit's subtree ───
-    // Stable branch order: oldest root (by birth year) first, left to right.
-    const rootUnits = (genGroups[0] || []).slice()
-      .sort((a, b) => unitBirthYear(a.id).localeCompare(unitBirthYear(b.id)));
-    let nextX = 0;
-
-    for (const ru of rootUnits) {
-      const result = layoutSubtree(ru.id, nextX, 0);
-      nextX = result.rightX + SIBLING_GAP * 2;
-    }
-
-    // Handle any disconnected/unplaced units
-    for (let g = 0; g <= maxGen; g++) {
-      for (const unit of genGroups[g]) {
-        if (!unitPositioned.has(unit.id)) {
-          const result = layoutSubtree(unit.id, nextX, g);
-          nextX = result.rightX + SIBLING_GAP * 2;
-        }
-      }
-    }
-
-    // Center the entire tree around X=0
-    let globalMinX = Infinity, globalMaxX = -Infinity;
-    for (const pos of Object.values(positions)) {
-      globalMinX = Math.min(globalMinX, pos.x);
-      globalMaxX = Math.max(globalMaxX, pos.x);
-    }
-    const offsetX = -(globalMinX + globalMaxX) / 2;
-    if (isFinite(offsetX) && offsetX !== 0) {
-      for (const pos of Object.values(positions)) pos.x += offsetX;
-    }
-
-    // Safety net: resolve any remaining overlaps per row
-    resolveOverlaps(positions, elements);
-
-    return { elements, positions };
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  TEMPORAL LAYOUT
-  // ═══════════════════════════════════════════════════════════
-
-  function buildTemporalLayout(members, relationships) {
-    // Derive temporal layout from generational layout:
-    // Keep the same X positions, replace Y with birth-year-based Y.
-    const genResult = buildGenerationalLayout(members, relationships);
-    const positions = genResult.positions;
-    const elements = genResult.elements;
-
-    // Rebuild base just for generation + couple info (lightweight)
-    const base = buildLayoutBase(members, relationships);
-    const { generation, couples, memberMap } = base;
-
-    // ─── Compute birth years ───
-    const birthYears = new Map();
-    let minYear = Infinity;
-
-    for (const m of members) {
-      if (m.birthDate) {
-        const y = parseInt(m.birthDate.substring(0, 4));
-        if (!isNaN(y)) {
-          birthYears.set(m.id, y);
-          minYear = Math.min(minYear, y);
-        }
-      }
-    }
-
-    // Average birth year per generation (for fallback)
-    const genYears = new Map();
-    for (const [id, year] of birthYears) {
-      const gen = generation.get(id) || 0;
-      if (!genYears.has(gen)) genYears.set(gen, []);
-      genYears.get(gen).push(year);
-    }
-    const genAvgYear = new Map();
-    for (const [gen, years] of genYears) {
-      genAvgYear.set(gen, years.reduce((a, b) => a + b, 0) / years.length);
-    }
-
-    // Assign missing birth years
-    for (const m of members) {
-      if (!birthYears.has(m.id)) {
-        const gen = generation.get(m.id) || 0;
-        const avg = genAvgYear.get(gen);
-        birthYears.set(m.id, avg ? Math.round(avg)
-          : (minYear !== Infinity ? minYear + gen * 25 : 1950 + gen * 25));
-      }
-    }
-
-    if (minYear === Infinity) minYear = 1920;
-    const baseYear = Math.floor(minYear / 10) * 10;
-
-    // ─── Replace Y coordinates with birth-year Y ───
-    for (const m of members) {
-      if (positions[m.id]) {
-        positions[m.id].y = (birthYears.get(m.id) - baseYear) * YEAR_PX;
-      }
-    }
-
-    // Couple midpoints: average of spouse Ys
-    for (const couple of couples) {
-      if (positions[couple.id]) {
-        const ya = positions[couple.a]?.y || 0;
-        const yb = positions[couple.b]?.y || 0;
-        positions[couple.id].y = (ya + yb) / 2;
-      }
-    }
-
-    // Light overlap resolution with Y tolerance
-    resolveOverlaps(positions, elements, { yTolerance: NODE_H });
-
-    return { elements, positions };
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  RENDER
-  // ═══════════════════════════════════════════════════════════
-
+  /** Personen + Beziehungen des aktiven Zweigs (Auswahl macht die App). */
   function render(memberData, relationshipData) {
-    // Filter out orphan members (those with zero relationships)
-    const connectedIds = new Set();
-    for (const r of relationshipData) {
-      connectedIds.add(r.fromId);
-      connectedIds.add(r.toId);
-    }
-    members = memberData.filter(m => connectedIds.has(m.id));
+    members = memberData;
     relationships = relationshipData;
-
-    const result = viewMode === 'temporal'
-      ? buildTemporalLayout(members, relationships)
-      : buildGenerationalLayout(members, relationships);
-    const { elements, positions } = result;
-
-    cy.resize();
-    cy.elements().remove();
-    cy.add(elements);
-
-    for (const [id, pos] of Object.entries(positions)) {
-      const node = cy.getElementById(id);
-      if (node.length) node.position(pos);
-    }
-
-    if (currentUserId) {
-      const node = cy.getElementById(currentUserId);
-      if (node.length) node.addClass('current-user');
-    }
-
-    // Allow zooming out far enough to actually fit large trees
-    updateMinZoom();
-
-    cy.fit(undefined, 60);
-    applySpouseEdgeStyle();
-    cy.style().update();
-    applyLod(true);
-  }
-
-  /**
-   * Apply the level-of-detail tier matching the current zoom.
-   * Cheap: only touches classes when the tier actually changes.
-   */
-  function applyLod(force = false) {
-    if (!cy) return;
-    const z = cy.zoom();
-    const tier = z < LOD_FAR ? 'far' : (z < LOD_MID ? 'mid' : 'full');
-    if (!force && tier === lodTier) return;
-    lodTier = tier;
-    cy.batch(() => {
-      const nodes = cy.nodes().not('.couple-midpoint');
-      nodes.removeClass('lod-mid lod-far');
-      if (tier === 'mid') nodes.addClass('lod-mid');
-      else if (tier === 'far') nodes.addClass('lod-far');
-    });
-  }
-
-  /**
-   * Set minZoom so "fit all" is always reachable, even for very wide trees.
-   */
-  function updateMinZoom() {
-    const bb = cy.elements().boundingBox();
-    const w = cy.width() || 1, h = cy.height() || 1;
-    if (bb.w > 0 && bb.h > 0) {
-      const fitZoom = Math.min(w / (bb.w + 120), h / (bb.h + 120));
-      cy.minZoom(Math.min(0.1, fitZoom * 0.9));
+    const res = Fan.buildFamiliesFrom(members, relationships);
+    root = res.families.length ? res.families[0].root : null;
+    layout();
+    draw();
+    if (units.size && container.clientWidth > 0) {
+      highlight && involved ? fitToHighlight() : fitAll(false);
     }
   }
 
+  const unitH = node => CARD_H + node.spouses.length * (SP_GAP + SP_H);
+  const birthKey = m => m.birthDate || '9999';
+  const descendants = node => node.children.reduce((n, c) => n + 1 + descendants(c), 0);
+
   /**
-   * Animated re-render for view mode switching.
+   * Konturbasiertes Layout. Jeder Knoten liefert seine Kontur (linke/rechte
+   * Ausdehnung je Generationsebene unter ihm, relativ zu seiner Mitte) und
+   * die relativen x-Positionen seiner Kinder-Slots. Kinderlose Kinder
+   * werden zu gestapelten Spalten zusammengefasst.
    */
-  function renderWithAnimation() {
-    const result = viewMode === 'temporal'
-      ? buildTemporalLayout(members, relationships)
-      : buildGenerationalLayout(members, relationships);
-    const { positions } = result;
+  function layout() {
+    units = new Map(); hostOf = new Map(); rows = [];
+    if (!root) { bbox = { x: 0, y: 0, w: 1, h: 1 }; return; }
 
-    applySpouseEdgeStyle();
-
-    const duration = 700;
-    for (const [id, pos] of Object.entries(positions)) {
-      const node = cy.getElementById(id);
-      if (node.length) {
-        node.animate({ position: pos }, { duration, easing: 'ease-in-out-cubic' });
+    function build(node) {
+      node.h = unitH(node);
+      node.slots = [];
+      const kids = collapsed.has(node.m.id) ? [] : node.children;
+      if (!kids.length) {
+        node.L = [-CARD_W / 2]; node.R = [CARD_W / 2];
+        return;
       }
-    }
-  }
-
-  /**
-   * Apply view-mode-specific style to spouse edges.
-   */
-  function applySpouseEdgeStyle() {
-    if (!cy) return;
-    cy.edges('.spouse-edge').style({ 'curve-style': 'straight' });
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  CYTOSCAPE STYLE
-  // ═══════════════════════════════════════════════════════════
-
-  function getCytoscapeStyle() {
-    return [
-      {
-        selector: 'node',
-        style: {
-          'shape': 'round-rectangle',
-          'width': NODE_W,
-          'height': NODE_H,
-          'background-color': COLORS.bg,
-          'border-width': 2,
-          'border-color': COLORS.trace,
-          'border-style': 'solid',
-          'label': 'data(label)',
-          'text-valign': 'center',
-          'text-halign': 'center',
-          'font-family': '"IBM Plex Mono", monospace',
-          'font-size': 11,
-          'font-weight': 500,
-          'color': COLORS.trace,
-          'text-wrap': 'ellipsis',
-          'text-max-width': NODE_W - 20,
-          'text-margin-y': -4,
-          'transition-property': 'background-color, border-color, opacity, border-width',
-          'transition-duration': '300ms',
-          'transition-timing-function': 'ease-out',
-          'z-index': 10,
-        },
-      },
-      {
-        selector: 'node[yearLabel]',
-        style: {
-          'text-wrap': 'wrap',
-          'label': (ele) => {
-            if (ele.data('coupleNode')) return '';
-            const name = ele.data('label');
-            const year = ele.data('yearLabel');
-            const sub = ele.data('subLabel');
-            let text = name;
-            if (sub) text += `\n${sub.startsWith('geb.') ? sub : 'geb. ' + sub}`;
-            if (year) text += `\n${year}`;
-            return text;
-          },
-          'font-size': 10,
-          'line-height': 1.4,
-          'text-max-width': NODE_W - 20,
-          'height': (ele) => {
-            if (ele.data('coupleNode')) return COUPLE_NODE_SIZE;
-            const sub = ele.data('subLabel');
-            const year = ele.data('yearLabel');
-            let h = 48;
-            if (sub) h += 14;
-            if (year) h += 14;
-            return h;
-          },
-        },
-      },
-      {
-        selector: 'node.couple-midpoint',
-        style: {
-          'width': COUPLE_NODE_SIZE, 'height': COUPLE_NODE_SIZE,
-          'background-opacity': 0, 'border-width': 0, 'label': '',
-          'events': 'no', 'z-index': 1,
-        },
-      },
-      {
-        // Semantic zoom, middle tier: Vorname + Geburtsjahr.
-        // Must come after node[yearLabel] so it wins the label/font cascade.
-        selector: 'node.lod-mid',
-        style: {
-          'label': (ele) => {
-            if (ele.data('coupleNode')) return '';
-            const year = ele.data('birthYear');
-            return (ele.data('firstName') || '') + (year ? `\n${year}` : '');
-          },
-          'font-size': 22,
-          'text-wrap': 'wrap',
-          'line-height': 1.3,
-          'text-max-width': NODE_W - 10,
-          'text-margin-y': 0,
-        },
-      },
-      {
-        // Semantic zoom, far tier: nur der Vorname, groß
-        selector: 'node.lod-far',
-        style: {
-          'label': (ele) => ele.data('coupleNode') ? '' : (ele.data('firstName') || ''),
-          'font-size': 30,
-          'text-wrap': 'ellipsis',
-          'text-max-width': NODE_W - 4,
-          'text-margin-y': 0,
-        },
-      },
-      {
-        selector: 'node.placeholder',
-        style: { 'border-style': 'dashed' },
-      },
-      {
-        selector: 'node.deceased',
-        style: {
-          'border-color': COLORS.textMuted,
-          'color': COLORS.textMuted, 'background-color': COLORS.bgSecondary,
-        },
-      },
-      {
-        selector: 'node.current-user',
-        style: {
-          'border-color': COLORS.red, 'border-width': 3, 'background-color': '#fff5f5',
-        },
-      },
-      {
-        selector: 'node.highlighted',
-        style: {
-          'border-color': COLORS.red, 'border-width': 3,
-          'background-color': '#fff5f5', 'z-index': 100,
-        },
-      },
-      {
-        selector: 'node.dimmed',
-        style: { 'display': 'none' },
-      },
-      {
-        selector: 'node:selected',
-        style: { 'border-color': COLORS.red, 'border-width': 3 },
-      },
-      {
-        selector: 'edge.parent-child-edge',
-        style: {
-          'width': 2, 'line-color': COLORS.trace, 'target-arrow-shape': 'none',
-          'curve-style': 'taxi', 'taxi-direction': 'downward',
-          'taxi-turn': 40, 'taxi-turn-min-distance': 20,
-          'transition-property': 'line-color, width, opacity',
-          'transition-duration': '300ms', 'z-index': 5,
-        },
-      },
-      {
-        selector: 'edge.spouse-edge',
-        style: {
-          'width': 2, 'line-color': COLORS.spouseLine, 'line-style': 'solid',
-          'target-arrow-shape': 'none',
-          'curve-style': 'straight',
-          'transition-property': 'line-color, width, opacity',
-          'transition-duration': '300ms', 'z-index': 5,
-        },
-      },
-      {
-        selector: 'edge.spouse-edge.former',
-        style: { 'line-style': 'dashed', 'line-dash-pattern': [6, 4], 'line-color': COLORS.textMuted },
-      },
-      {
-        selector: 'edge.sibling-edge',
-        style: {
-          'width': 2, 'line-color': '#6b9e78', 'line-style': 'dotted',
-          'line-dash-pattern': [4, 4], 'target-arrow-shape': 'none',
-          'curve-style': 'straight', 'transition-property': 'line-color, width, opacity',
-          'transition-duration': '300ms', 'z-index': 5,
-        },
-      },
-      {
-        selector: 'edge.highlighted',
-        style: {
-          'line-color': COLORS.red, 'width': 4, 'z-index': 100, 'line-style': 'solid',
-        },
-      },
-      {
-        selector: 'edge.dimmed',
-        style: { 'display': 'none' },
-      },
-    ];
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  HIGHLIGHT CONNECTION
-  // ═══════════════════════════════════════════════════════════
-
-  /**
-   * Apply highlight styling to the given path nodes/edges.
-   * Shared logic between highlightConnection and restoreHighlight.
-   */
-  function applyHighlightStyling(pathNodeIds, pathEdgePairs) {
-    // Build person -> [coupleId, ...] map from Cytoscape nodes (supports multi-couple)
-    const personToCouples = new Map();
-    cy.nodes('.couple-midpoint').forEach(cpNode => {
-      const cpId = cpNode.id();
-      const inner = cpId.substring('couple-'.length);
-      if (inner.length >= 73) {
-        const p1 = inner.substring(0, 36);
-        const p2 = inner.substring(37);
-        if (!personToCouples.has(p1)) personToCouples.set(p1, []);
-        personToCouples.get(p1).push(cpId);
-        if (!personToCouples.has(p2)) personToCouples.set(p2, []);
-        personToCouples.get(p2).push(cpId);
-      }
-    });
-
-    cy.elements().addClass('dimmed');
-
-    for (const nodeId of pathNodeIds) {
-      const node = cy.getElementById(nodeId);
-      if (node.length) node.removeClass('dimmed').addClass('highlighted');
-    }
-
-    function markEdge(edge) {
-      edge.removeClass('dimmed').addClass('highlighted');
-      const s = edge.data('source'), t = edge.data('target');
-      if (s.startsWith('couple-')) cy.getElementById(s).removeClass('dimmed');
-      if (t.startsWith('couple-')) cy.getElementById(t).removeClass('dimmed');
-    }
-
-    function findEdges(idA, idB) {
-      return cy.edges().filter(e => {
-        const s = e.data('source'), t = e.data('target');
-        return (s === idA && t === idB) || (s === idB && t === idA);
-      });
-    }
-
-    for (const [from, to] of pathEdgePairs) {
-      const couplesOfFrom = personToCouples.get(from) || [];
-      const couplesOfTo = personToCouples.get(to) || [];
-
-      const directEdges = findEdges(from, to);
-      if (directEdges.length > 0) { directEdges.forEach(e => markEdge(e)); continue; }
-
-      // Check if both share a couple midpoint (spouses in same couple)
-      const sharedCouple = couplesOfFrom.find(c => couplesOfTo.includes(c));
-      if (sharedCouple) {
-        findEdges(from, sharedCouple).forEach(e => markEdge(e));
-        findEdges(sharedCouple, to).forEach(e => markEdge(e));
-        continue;
-      }
-
-      // Try routing through a couple midpoint of 'from'
-      let found = false;
-      for (const cpId of couplesOfFrom) {
-        const midToChild = findEdges(cpId, to);
-        if (midToChild.length > 0) {
-          findEdges(from, cpId).forEach(e => markEdge(e));
-          midToChild.forEach(e => markEdge(e));
-          found = true;
-          break;
+      const slots = [];
+      let col = null;
+      for (const c of kids) {
+        const hasKids = c.children.length && !collapsed.has(c.m.id);
+        if (hasKids) {
+          build(c);
+          slots.push({ kind: 'node', node: c, L: c.L, R: c.R, birth: birthKey(c.m) });
+          col = null;
+        } else {
+          c.L = [-CARD_W / 2]; c.R = [CARD_W / 2]; c.h = unitH(c); c.slots = [];
+          const need = (col ? col.h + LEAF_GAP : 0) + c.h;
+          if (!col || need > MAX_COL_H) {
+            col = { kind: 'col', nodes: [], h: 0, L: [-CARD_W / 2], R: [CARD_W / 2], birth: birthKey(c.m) };
+            slots.push(col);
+          }
+          col.nodes.push(c);
+          col.h = col.h + (col.nodes.length > 1 ? LEAF_GAP : 0) + c.h;
         }
       }
-      // Try routing through a couple midpoint of 'to'
-      if (!found) {
-        for (const cpId of couplesOfTo) {
-          const midToParent = findEdges(cpId, from);
-          if (midToParent.length > 0) {
-            midToParent.forEach(e => markEdge(e));
-            findEdges(to, cpId).forEach(e => markEdge(e));
-            break;
+      // Reihenfolge nach Geburt des jeweils ersten Mitglieds
+      slots.sort((a, b) => a.birth.localeCompare(b.birth));
+
+      // Slots von links nach rechts anlegen: jeder rückt so weit nach links,
+      // wie es die Kontur des bisherigen „Waldes" auf allen Ebenen erlaubt.
+      const pos = [];
+      let FL = null, FR = null;
+      slots.forEach((s, i) => {
+        if (i === 0) { pos.push(0); FL = s.L.slice(); FR = s.R.slice(); return; }
+        let shift = -Infinity;
+        for (let l = 0; l < Math.min(FR.length, s.L.length); l++) shift = Math.max(shift, FR[l] - s.L[l] + H_GAP);
+        pos.push(shift);
+        for (let l = 0; l < s.L.length; l++) {
+          FR[l] = s.R[l] + shift;
+          if (l >= FL.length) FL[l] = s.L[l] + shift;
+        }
+      });
+      const mid = (pos[0] + pos[pos.length - 1]) / 2;
+      slots.forEach((s, i) => { s.rel = pos[i] - mid; });
+      node.slots = slots;
+      node.L = [-CARD_W / 2, ...FL.map(v => v - mid)];
+      node.R = [CARD_W / 2, ...FR.map(v => v - mid)];
+    }
+    build(root);
+
+    // Absolute Positionen (x) und Generationszeilen
+    const rowH = [];
+    const place = (node, x, gen, parent) => {
+      node.parent = parent;
+      units.set(node.m.id, { node, x, gen, h: node.h });
+      node.spouses.forEach(sp => hostOf.set(sp.id, node.m.id));
+      rowH[gen] = Math.max(rowH[gen] || 0, node.h);
+      for (const s of node.slots) {
+        if (s.kind === 'node') {
+          place(s.node, x + s.rel, gen + 1, node);
+        } else {
+          rowH[gen + 1] = Math.max(rowH[gen + 1] || 0, s.h);
+          let off = 0;
+          s.nodes.forEach((c, i) => {
+            c.parent = node;
+            c.colIndex = i; c.col = s;
+            units.set(c.m.id, { node: c, x: x + s.rel, gen: gen + 1, h: c.h, col: s, off });
+            c.spouses.forEach(sp => hostOf.set(sp.id, c.m.id));
+            off += c.h + LEAF_GAP;
+          });
+        }
+      }
+    };
+    place(root, 0, 0, null);
+
+    let y = 0;
+    rows = rowH.map(h => { const r = { y, h, minYear: null }; y += h + V_GAP; return r; });
+    let minX = Infinity, maxX = -Infinity, maxY = 0;
+    for (const u of units.values()) {
+      u.y = rows[u.gen].y + (u.off || 0);
+      minX = Math.min(minX, u.x - CARD_W / 2); maxX = Math.max(maxX, u.x + CARD_W / 2);
+      maxY = Math.max(maxY, u.y + u.h);
+      const by = u.node.m.birthDate ? parseInt(u.node.m.birthDate.substring(0, 4), 10) : NaN;
+      if (isFinite(by)) rows[u.gen].minYear = rows[u.gen].minYear == null ? by : Math.min(rows[u.gen].minYear, by);
+    }
+    bbox = { x: minX, y: 0, w: Math.max(1, maxX - minX), h: Math.max(1, maxY) };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  ZEICHNEN
+  // ═══════════════════════════════════════════════════════════
+
+  function draw() {
+    bandLayer.innerHTML = ''; edgeLayer.innerHTML = '';
+    if (!units.size) { cardLayer.innerHTML = ''; updateMinimapShapes(); return; }
+    // Generationsbänder (abwechselnd), über die volle Breite
+    rows.forEach((r, g) => {
+      bandLayer.appendChild(el('rect', {
+        class: 'tree-band' + (g % 2 ? ' odd' : ''),
+        x: bbox.x - PAD * 4, y: r.y - V_GAP / 2, width: bbox.w + PAD * 8, height: r.h + V_GAP,
+      }));
+    });
+    // Verbindungen: Eltern-Einheit → Sammelschiene → Kind-Slots
+    for (const u of units.values()) {
+      const n = u.node;
+      if (!n.slots.length) continue;
+      const g = u.gen;
+      const busY = rows[g + 1].y - V_GAP / 2;
+      const px = u.x, pb = u.y + u.h;
+      const involvedEdge = cid => involved && involved.has(n.m.id) && involved.has(cid);
+      for (const s of n.slots) {
+        const sx = u.x + s.rel, top = rows[g + 1].y;
+        if (s.kind === 'node') {
+          edgeLayer.appendChild(el('path', {
+            class: 'tree-edge' + (involvedEdge(s.node.m.id) ? ' hl' : ''),
+            d: `M${f(px)},${f(pb)} V${f(busY)} H${f(sx)} V${f(top)}`,
+          }));
+        } else if (s.nodes.length === 1) {
+          edgeLayer.appendChild(el('path', {
+            class: 'tree-edge' + (involvedEdge(s.nodes[0].m.id) ? ' hl' : ''),
+            d: `M${f(px)},${f(pb)} V${f(busY)} H${f(sx)} V${f(top)}`,
+          }));
+        } else {
+          // gestapelte Geschwister: Sammel-Linie links, Stichleitung je Karte
+          const spineX = sx - CARD_W / 2 - SPINE_DX;
+          const last = units.get(s.nodes[s.nodes.length - 1].m.id);
+          const anyHl = s.nodes.some(c => involvedEdge(c.m.id));
+          edgeLayer.appendChild(el('path', {
+            class: 'tree-edge' + (anyHl ? ' hl' : ''),
+            d: `M${f(px)},${f(pb)} V${f(busY)} H${f(spineX)} V${f(last.y + CARD_H / 2)}`,
+          }));
+          for (const c of s.nodes) {
+            const cu = units.get(c.m.id);
+            edgeLayer.appendChild(el('path', {
+              class: 'tree-edge' + (involvedEdge(c.m.id) ? ' hl' : ''),
+              d: `M${f(spineX)},${f(cu.y + CARD_H / 2)} H${f(sx - CARD_W / 2)}`,
+            }));
           }
         }
       }
     }
+    drawCards();
+    updateMinimapShapes();
   }
+
+  function currentTier() {
+    const k = (svg.clientWidth || 1) / vb.w;
+    return k >= LOD_FULL ? 'full' : k >= LOD_MID ? 'mid' : 'far';
+  }
+
+  /** Karten (Person + Partner) je Einheit, Text je Zoomstufe. */
+  function drawCards() {
+    cardLayer.innerHTML = '';
+    const tier = lodTier = currentTier();
+    for (const u of units.values()) {
+      const n = u.node, m = n.m;
+      const isMe = m.id === currentUserId;
+      const dim = involved && !involved.has(m.id);
+      const g = el('g', {
+        class: 'tree-unit' + (dim ? ' tree-dim' : '') + (involved && involved.has(m.id) ? ' tree-hl' : ''),
+        'data-id': m.id, transform: `translate(${f(u.x - CARD_W / 2)},${f(u.y)})`,
+      });
+      // Personenkarte
+      const stroke = isMe ? '#e63946' : m.isPlaceholder ? 'none' : '#1a1a1a';
+      const card = el('g', { class: 'tree-person', 'data-id': m.id });
+      card.appendChild(el('rect', {
+        width: CARD_W, height: CARD_H, rx: 5, fill: personColor(m),
+        stroke, 'stroke-width': isMe ? 2.6 : 1.4,
+      }));
+      personText(card, m, tier, isMe);
+      g.appendChild(card);
+      // Partnerkarten darunter
+      n.spouses.forEach((sp, i) => {
+        const y = CARD_H + SP_GAP + i * (SP_H + SP_GAP);
+        const sg = el('g', { class: 'tree-spouse', 'data-id': sp.id, transform: `translate(0,${f(y)})` });
+        sg.appendChild(el('rect', {
+          width: CARD_W, height: SP_H, rx: 4, fill: spouseColor(sp),
+          stroke: sp.isPlaceholder ? 'none' : '#1a1a1a', 'stroke-width': 1, 'stroke-dasharray': sp.former ? '3 2' : null,
+        }));
+        spouseText(sg, sp, tier);
+        g.appendChild(sg);
+      });
+      // Ein-/Ausklapp-Chip unter der Einheit
+      if (n.children.length) {
+        const isCol = collapsed.has(m.id);
+        const t = el('g', { class: 'tree-toggle' + (isCol ? ' collapsed' : ''), 'data-toggle': m.id,
+          transform: `translate(${f(CARD_W / 2)},${f(u.h + 11)})` });   // in der Lücke unter der Einheit, auf der Ableitung
+        const label = isCol ? `+${descendants(n)}` : '−';
+        const w = isCol ? Math.max(16, 6 + label.length * 6.5) : 16;
+        t.appendChild(el('rect', { x: -w / 2, y: -8, width: w, height: 16, rx: 8, fill: '#fff', stroke: '#1a1a1a', 'stroke-width': 1.2 }));
+        const tx = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': 10.5, 'font-weight': 600, fill: '#1a1a1a' });
+        tx.textContent = label;
+        t.appendChild(tx);
+        const tt = el('title'); tt.textContent = isCol ? 'Nachkommen einblenden' : 'Nachkommen ausblenden'; t.appendChild(tt);
+        g.appendChild(t);
+      }
+      cardLayer.appendChild(g);
+    }
+  }
+
+  /** Textzeilen der Personenkarte je Zoomstufe: fern = Vorname, mittel =
+      + Jahre, nah = + Nachname/Geburtsname und volle Daten. */
+  function personText(g, m, tier, isMe) {
+    const me = isMe ? '➤ ' : '';
+    const maxW = CARD_W - 10;
+    const lines = [];
+    if (tier === 'far') {
+      lines.push({ ...fitText(me + m.firstName, maxW, 13, 7), w: 600 });
+    } else if (tier === 'mid') {
+      lines.push({ ...fitText(me + m.firstName, maxW, 12, 7), w: 600 });
+      const yr = yearLabel(m); if (yr) lines.push({ ...fitText(yr, maxW, 9, 6), w: 400, dim: true });
+    } else {
+      lines.push({ ...fitText(me + m.firstName, maxW, 11, 7), w: 600 });
+      const ln = [m.lastName, m.birthName ? (/^geb\./i.test(m.birthName) ? m.birthName : `geb. ${m.birthName}`) : ''].filter(Boolean).join(' ');
+      if (ln) lines.push({ ...fitText(ln, maxW, 8.5, 6), w: 500 });
+      const d = dateLabel(m); if (d) lines.push({ ...fitText(d, maxW, 8, 6), w: 400, dim: true });
+    }
+    writeLines(g, lines, CARD_H, m.isDeceased ? '#4b5563' : '#1a1a1a');
+  }
+
+  function spouseText(g, sp, tier) {
+    const glyph = sp.former ? '⚮ ' : '∞ ';
+    const maxW = CARD_W - 10;
+    const lines = [];
+    if (tier === 'far') {
+      lines.push({ ...fitText(glyph + sp.firstName, maxW, 10, 6.5), w: 500 });
+    } else if (tier === 'mid') {
+      const b = sp.birthDate ? ` (* ${sp.birthDate.substring(0, 4)})` : '';
+      lines.push({ ...fitText(glyph + sp.firstName + b, maxW, 9.5, 6.5), w: 500 });
+    } else {
+      lines.push({ ...fitText(glyph + spouseName(sp), maxW, 8.5, 6), w: 500 });
+      const d = dateLabel(sp); if (d) lines.push({ ...fitText(d, maxW, 7.5, 6), w: 400, dim: true });
+    }
+    writeLines(g, lines, SP_H, sp.isDeceased ? '#4b5563' : '#1a1a1a');
+  }
+
+  function writeLines(g, lines, boxH, fill) {
+    const lh = 1.2;
+    const total = lines.reduce((s, l) => s + l.fs * lh, 0);
+    let cy = (boxH - total) / 2;
+    for (const l of lines) {
+      const t = el('text', {
+        x: CARD_W / 2, y: f(cy + l.fs * lh / 2), 'text-anchor': 'middle', 'dominant-baseline': 'central',
+        'font-size': l.fs, 'font-weight': l.w, fill, ...(l.dim ? { 'fill-opacity': 0.75 } : {}),
+      });
+      t.textContent = l.text;
+      g.appendChild(t);
+      cy += l.fs * lh;
+    }
+  }
+
+  function fitText(text, maxPx, fs, minFs) {
+    let fz = fs;
+    while (fz > minFs && text.length * CHAR_W * fz > maxPx) fz -= 0.5;
+    if (text.length * CHAR_W * fz > maxPx) {
+      const n = Math.max(1, Math.floor(maxPx / (CHAR_W * fz)) - 1);
+      text = text.slice(0, n) + '…';
+    }
+    return { text, fs: fz };
+  }
+
+  function spouseName(s) {
+    const maiden = (s.birthName || '').replace(/^geb\.\s*/i, '').trim();
+    return `${s.firstName} ${maiden || s.lastName}`.trim();
+  }
+  function yearLabel(m) {
+    const b = m.birthDate ? m.birthDate.substring(0, 4) : '';
+    if (m.deathDate) return `${b || '?'} – ${m.deathDate.substring(0, 4)}`;
+    return b ? `* ${b}` : '';
+  }
+  function dateLabel(m) {
+    const fmt = d => { const [y, mo, da] = d.split('-'); return da && mo ? `${da}.${mo}.${y}` : y; };
+    const b = m.birthDate ? `* ${fmt(m.birthDate)}` : '';
+    const d = m.deathDate ? `† ${fmt(m.deathDate)}` : (m.isDeceased ? '†' : '');
+    return [b, d].filter(Boolean).join('  ');
+  }
+
+  /** Farben wie im Fächer: Männer hellblau, Frauen rosa, Verstorbene blass. */
+  function personColor(m) {
+    const [h, s] = m.gender === 'm' ? [207, 72] : m.gender === 'f' ? [340, 72] : [0, 0];
+    const sat = m.isDeceased ? Math.round(s * 0.45) : s;
+    return `hsl(${h} ${sat}% ${m.isDeceased ? 86 : 82}%)`;
+  }
+  function spouseColor(m) {
+    const [h, s] = m.gender === 'm' ? [207, 60] : m.gender === 'f' ? [340, 60] : [0, 0];
+    const sat = m.isDeceased ? Math.round(s * 0.45) : s;
+    return `hsl(${h} ${sat}% 93%)`;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  VERWANDTSCHAFTSPFAD
+  // ═══════════════════════════════════════════════════════════
 
   function highlightConnection(fromId, toId) {
-    clearHighlight();
-    cy.resize();
-
-    const { nodeIds: pathNodeIds, edgePairs: pathEdgePairs, expandedPath } = Relationship.getPathData(fromId, toId, members, relationships);
-    if (pathNodeIds.length === 0) return;
-
-    highlightedPath = pathNodeIds;
-    highlightedFromId = fromId;
-    highlightedToId = toId;
-
-    applyHighlightStyling(pathNodeIds, pathEdgePairs);
-
-    // Re-layout path nodes compactly:
-    // Walk the expanded path, track generation level (up = -1, down = +1, spouse = 0)
-    // Then position nodes in a compact vertical layout
-    const ROW_GAP = GEN_GAP;
-    const COL_GAP = NODE_W + SPOUSE_GAP;
-
-    // Assign generation levels from the path
-    const genLevel = new Map();
-    let currentGen = 0;
-    genLevel.set(expandedPath[0].id, 0);
-
-    for (let i = 1; i < expandedPath.length; i++) {
-      const step = expandedPath[i];
-      if (step.edgeType === 'parent') {
-        currentGen -= 1; // going up
-      } else if (step.edgeType === 'child') {
-        currentGen += 1; // going down
-      }
-      // spouse stays same level
-      genLevel.set(step.id, currentGen);
+    highlight = { fromId, toId };
+    const { expandedPath } = Relationship.getPathData(fromId, toId, members, relationships);
+    if (!expandedPath || !expandedPath.length) { involved = null; draw(); return; }
+    involved = new Set();
+    for (const step of expandedPath) {
+      const id = units.has(step.id) ? step.id : hostOf.get(step.id);
+      if (id) involved.add(id);
     }
-
-    // Group nodes by generation level
-    const genGroups = new Map();
-    for (const [id, gen] of genLevel) {
-      if (!genGroups.has(gen)) genGroups.set(gen, []);
-      genGroups.get(gen).push(id);
+    // Eingeklappte Vorfahren beteiligter Personen aufklappen
+    let reopened = false;
+    for (const id of involved) {
+      let p = units.get(id) && units.get(id).node.parent;
+      while (p) { if (collapsed.delete(p.m.id)) reopened = true; p = p.parent; }
     }
-
-    // Position: center each generation row, stack vertically
-    const sortedGens = [...genGroups.keys()].sort((a, b) => a - b);
-    const centerX = 0;
-
-    // Compute target positions for all path nodes first
-    const targetPos = new Map();
-    for (const gen of sortedGens) {
-      const ids = genGroups.get(gen);
-      const totalWidth = ids.length * COL_GAP;
-      const startX = centerX - totalWidth / 2 + COL_GAP / 2;
-      for (let i = 0; i < ids.length; i++) {
-        targetPos.set(ids[i], { x: startX + i * COL_GAP, y: gen * ROW_GAP });
-      }
-    }
-
-    // Now find and position couple midpoint nodes that connect path nodes.
-    // These are the invisible nodes that edges route through.
-    cy.nodes('.couple-midpoint').forEach(cpNode => {
-      if (cpNode.hasClass('dimmed')) return; // not part of path
-      const cpId = cpNode.id();
-      const inner = cpId.substring('couple-'.length);
-      if (inner.length < 73) return;
-      const p1 = inner.substring(0, 36);
-      const p2 = inner.substring(37);
-
-      const pos1 = targetPos.get(p1);
-      const pos2 = targetPos.get(p2);
-
-      if (pos1 && pos2) {
-        // Both spouses on path — midpoint between them
-        targetPos.set(cpId, { x: (pos1.x + pos2.x) / 2, y: (pos1.y + pos2.y) / 2 });
-      } else if (pos1) {
-        // Only one spouse on path — place midpoint at that spouse's position
-        targetPos.set(cpId, { x: pos1.x, y: pos1.y });
-      } else if (pos2) {
-        targetPos.set(cpId, { x: pos2.x, y: pos2.y });
-      }
-    });
-
-    // Animate all nodes (path + couple midpoints) to their target positions
-    const animDuration = 500;
-    for (const [id, pos] of targetPos) {
-      const node = cy.getElementById(id);
-      if (node.length) {
-        node.animate({ position: pos }, { duration: animDuration, easing: 'ease-in-out-cubic' });
-      }
-    }
-
-    // Fit the viewport to the TARGET positions, computed directly —
-    // deterministic, no race with the node animations. Leaves room for
-    // the connection panel (right on desktop, bottom sheet on mobile).
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const [id, pos] of targetPos) {
-      if (id.startsWith('couple-')) continue;
-      minX = Math.min(minX, pos.x - NODE_W / 2);
-      maxX = Math.max(maxX, pos.x + NODE_W / 2);
-      minY = Math.min(minY, pos.y - NODE_H / 2);
-      maxY = Math.max(maxY, pos.y + NODE_H / 2);
-    }
-    if (isFinite(minX)) {
-      cy.stop(); // cancel queued viewport animations (e.g. a running centerOn)
-      const isDesktop = window.innerWidth >= 600;
-      const panelW = isDesktop ? Math.min(320, cy.width() * 0.5) : 0;
-      const panelH = isDesktop ? 0 : Math.min(window.innerHeight * 0.45, cy.height() * 0.5);
-      const pad = 50;
-      const availW = cy.width() - panelW - 2 * pad;
-      const availH = cy.height() - panelH - 2 * pad;
-      const zoom = Math.max(cy.minZoom(),
-        Math.min(1.1, availW / (maxX - minX), availH / (maxY - minY)));
-      const cx = (minX + maxX) / 2, cyMid = (minY + maxY) / 2;
-      const pan = {
-        x: (cy.width() - panelW) / 2 - zoom * cx,
-        y: (cy.height() - panelH) / 2 - zoom * cyMid,
-      };
-      cy.animate({ zoom, pan }, { duration: animDuration, easing: 'ease-in-out-cubic' });
-    }
+    if (reopened) layout();
+    draw();
+    fitToHighlight();
   }
 
   function clearHighlight() {
-    const hadHighlight = highlightedFromId && highlightedToId;
-    highlightedPath = [];
-    highlightedFromId = null;
-    highlightedToId = null;
-    cy.elements().removeClass('dimmed highlighted');
+    highlight = null; involved = null;
+    if (units.size) draw();
+  }
 
-    // Restore positions deterministically by re-running the current layout
-    if (hadHighlight && members.length > 0) {
-      const result = viewMode === 'temporal'
-        ? buildTemporalLayout(members, relationships)
-        : buildGenerationalLayout(members, relationships);
-      for (const [id, pos] of Object.entries(result.positions)) {
-        const node = cy.getElementById(id);
-        if (node.length) {
-          node.animate({ position: pos }, { duration: 400, easing: 'ease-in-out-cubic' });
+  function fitToHighlight() {
+    if (!involved || !involved.size) return;
+    const us = [...involved].map(id => units.get(id)).filter(Boolean);
+    if (!us.length) return;
+    const minX = Math.min(...us.map(u => u.x - CARD_W / 2)) - 40, maxX = Math.max(...us.map(u => u.x + CARD_W / 2)) + 40;
+    const minY = Math.min(...us.map(u => u.y)) - 40, maxY = Math.max(...us.map(u => u.y + u.h)) + 40;
+    fitRect(minX, minY, maxX - minX, maxY - minY, true, false);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  PAN / ZOOM (viewBox)
+  // ═══════════════════════════════════════════════════════════
+
+  function apply() {
+    svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+    if (currentTier() !== lodTier && units.size) drawCards();
+    updateGenLabels();
+    updateMinimapView();
+  }
+
+  const unitsPerPx = () => vb.w / (svg.clientWidth || 1);
+
+  function keepAspect() {
+    const cw = container.clientWidth || 1, ch = container.clientHeight || 1;
+    const cx = vb.x + vb.w / 2, cy = vb.y + vb.h / 2;
+    vb.h = vb.w * ch / cw;
+    vb.x = cx - vb.w / 2; vb.y = cy - vb.h / 2;
+    apply();
+  }
+
+  /** Rechteck (Einheiten) einpassen; optional Platz für das Seitenpanel lassen. */
+  function fitRect(x, y, w, h, panel, animate) {
+    const cw = container.clientWidth || 1, ch = container.clientHeight || 1;
+    const isDesktop = window.innerWidth >= 600;
+    const panelW = panel && isDesktop ? Math.min(320, cw * 0.5) : 0;
+    const panelH = panel && !isDesktop ? Math.min(window.innerHeight * 0.45, ch * 0.5) : 0;
+    const availW = Math.max(50, cw - panelW), availH = Math.max(50, ch - panelH);
+    let s = Math.min(availW / w, availH / h);        // px je Einheit
+    s = Math.min(s, 1.6);                             // nicht absurd nah ranzoomen
+    const nw = cw / s, nh = ch / s;
+    const cx = x + w / 2 + (panelW / 2) / s, cy = y + h / 2 + (panelH / 2) / s;
+    setView({ x: cx - nw / 2, y: cy - nh / 2, w: nw, h: nh }, animate);
+  }
+
+  function fitAll(animate = true) {
+    if (!units.size) return;
+    fitRect(bbox.x - PAD, bbox.y - PAD, bbox.w + 2 * PAD, bbox.h + 2 * PAD, false, animate);
+  }
+
+  function setView(target, animate) {
+    if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+    if (!animate) { vb = { ...target }; apply(); return; }
+    const from = { ...vb }, t0 = performance.now(), dur = 320;
+    const step = now => {
+      const t = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - t, 3);
+      vb = { x: from.x + (target.x - from.x) * e, y: from.y + (target.y - from.y) * e,
+             w: from.w + (target.w - from.w) * e, h: from.h + (target.h - from.h) * e };
+      apply();
+      if (t < 1) animFrame = requestAnimationFrame(step); else animFrame = null;
+    };
+    animFrame = requestAnimationFrame(step);
+  }
+
+  function zoomAt(client, fac) {
+    const rect = svg.getBoundingClientRect();
+    const sx = vb.x + (client.x - rect.left) / rect.width * vb.w;
+    const sy = vb.y + (client.y - rect.top) / rect.height * vb.h;
+    const minW = (svg.clientWidth || 1) / 3;          // max. 3 px je Einheit
+    const maxW = Math.max(bbox.w, bbox.h) * 3 + PAD * 2;
+    const nw = Math.min(maxW, Math.max(minW, vb.w / fac));
+    const rf = vb.w / nw;
+    vb.x = sx - (sx - vb.x) / rf; vb.y = sy - (sy - vb.y) / rf;
+    vb.w = nw; vb.h = vb.h / rf;
+    apply();
+  }
+
+  /**
+   * Person in die Mitte holen. zoom: null = Zoom beibehalten, undefined =
+   * lesbare Stufe (0.9 px/Einheit), Zahl = px je Einheit. Eingeklappte
+   * Vorfahren werden aufgeklappt.
+   */
+  function centerOn(memberId, zoom, animate = true) {
+    let u = units.get(memberId) || units.get(hostOf.get(memberId));
+    if (!u) {
+      // vielleicht eingeklappt: Vorfahren öffnen und neu layouten
+      const target = findNode(root, memberId);
+      if (!target) return false;
+      let p = target.parent; let opened = false;
+      while (p) { if (collapsed.delete(p.m.id)) opened = true; p = p.parent; }
+      if (!opened) return false;
+      layout(); draw();
+      u = units.get(memberId) || units.get(hostOf.get(memberId));
+      if (!u) return false;
+    }
+    const cw = container.clientWidth || 1, ch = container.clientHeight || 1;
+    const k = zoom === null ? cw / vb.w : (typeof zoom === 'number' ? zoom : 0.9);
+    const w = cw / k, h = ch / k;
+    const cx = u.x, cy = u.y + u.h / 2;
+    setView({ x: cx - w / 2, y: cy - h / 2, w, h }, animate);
+    return true;
+  }
+
+  function findNode(node, id) {
+    if (!node) return null;
+    if (node.m.id === id || node.spouses.some(s => s.id === id)) return node;
+    for (const c of node.children) { const r = findNode(c, id); if (r) return r; }
+    return null;
+  }
+
+  function attachPanZoom() {
+    const pts = new Map();
+    let moved = 0, prevPinch = null, downTarget = null, downToggle = null;
+
+    svg.addEventListener('pointerdown', e => {
+      if (e.button !== undefined && e.button !== 0) return;
+      if (e.isPrimary) pts.clear();
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 1) {
+        moved = 0;
+        downTarget = e.target.closest ? e.target.closest('[data-id]') : null;
+        downToggle = e.target.closest ? e.target.closest('[data-toggle]') : null;
+      } else { downTarget = null; downToggle = null; }
+      try { svg.setPointerCapture(e.pointerId); } catch { /* synthetisch */ }
+      prevPinch = null;
+    });
+    svg.addEventListener('pointermove', e => {
+      if (!pts.has(e.pointerId)) return;
+      const p = pts.get(e.pointerId);
+      const dx = e.clientX - p.x, dy = e.clientY - p.y;
+      moved += Math.abs(dx) + Math.abs(dy);
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 1) {
+        const s = unitsPerPx();
+        vb.x -= dx * s; vb.y -= dy * s;
+        apply();
+      } else if (pts.size === 2) {
+        const [a, b] = [...pts.values()];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        if (prevPinch) {
+          const s = unitsPerPx();
+          vb.x -= (mid.x - prevPinch.mid.x) * s; vb.y -= (mid.y - prevPinch.mid.y) * s;
+          zoomAt(mid, dist / (prevPinch.dist || dist));
+        }
+        prevPinch = { dist, mid };
+      }
+    });
+    const up = e => {
+      if (!pts.has(e.pointerId)) return;
+      pts.delete(e.pointerId);
+      try { svg.releasePointerCapture(e.pointerId); } catch { /* egal */ }
+      if (pts.size === 0 && e.type === 'pointerup' && moved < 10) {
+        if (downToggle) {
+          toggleCollapse(downToggle.getAttribute('data-toggle'));
+        } else if (downTarget) {
+          if (onNodeTapCallback) onNodeTapCallback(downTarget.getAttribute('data-id'));
+        } else if (onBackgroundTapCallback) {
+          onBackgroundTapCallback();
         }
       }
-    }
-  }
-
-  function restoreHighlight() {
-    if (!cy || !highlightedFromId || !highlightedToId) return;
-
-    const { nodeIds: pathNodeIds, edgePairs: pathEdgePairs } = Relationship.getPathData(highlightedFromId, highlightedToId, members, relationships);
-    if (pathNodeIds.length === 0) return;
-
-    applyHighlightStyling(pathNodeIds, pathEdgePairs);
-    cy.style().update();
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  NAVIGATION
-  // ═══════════════════════════════════════════════════════════
-
-  function centerOn(memberId, zoom = 1.5, animate = true) {
-    const node = cy.getElementById(memberId);
-    if (node.length) {
-      // Refresh cached container size — it may have been 0 while the
-      // main view was hidden (display:none), which breaks center math.
-      cy.resize();
-      if (zoom === null) zoom = cy.zoom(); // null = keep current zoom
-      if (animate) {
-        cy.animate({ center: { eles: node }, zoom, duration: 500, easing: 'ease-out' });
+      if (pts.size === 0) { downTarget = null; downToggle = null; }
+    };
+    svg.addEventListener('pointerup', up);
+    svg.addEventListener('pointercancel', up);
+    svg.addEventListener('wheel', e => {
+      e.preventDefault();
+      if (e.ctrlKey || !e.deltaX) {
+        // Mausrad / Pinch am Trackpad: zoomen
+        zoomAt({ x: e.clientX, y: e.clientY }, Math.exp(-e.deltaY * 0.002));
       } else {
-        // Instant placement for the initial view: works even in background
-        // tabs where requestAnimationFrame (and thus animations) is frozen.
-        cy.zoom(zoom);
-        cy.center(node);
+        // Zwei-Finger-Wischen am Trackpad: schieben (die Tafel ist breit)
+        const s = unitsPerPx();
+        vb.x += e.deltaX * s; vb.y += e.deltaY * s;
+        apply();
       }
+    }, { passive: false });
+  }
+
+  /** Teilbaum ein-/ausklappen; Ansicht bleibt an derselben Stelle. */
+  function toggleCollapse(id) {
+    if (collapsed.has(id)) collapsed.delete(id); else collapsed.add(id);
+    const u = units.get(id);
+    const before = u ? { x: u.x, y: u.y } : null;
+    layout(); draw();
+    const after = units.get(id);
+    if (before && after) {   // Einheit bleibt optisch, wo sie war
+      vb.x += after.x - before.x; vb.y += after.y - before.y;
     }
-  }
-
-  function fitAll() {
-    cy.resize();
-    updateMinZoom();
-    cy.animate({ fit: { padding: 60 }, duration: 500, easing: 'ease-out' });
-  }
-
-  function getNodePosition(memberId) {
-    const node = cy.getElementById(memberId);
-    return node.length ? node.position() : null;
+    apply();
   }
 
   // ═══════════════════════════════════════════════════════════
-  //  HELPERS
+  //  ORIENTIERUNG: Generationsbeschriftung + Minimap
   // ═══════════════════════════════════════════════════════════
 
-  function getInitials(firstName, lastName) {
-    return `${(firstName || '?')[0]}${(lastName || '?')[0]}`.toUpperCase();
+  function updateGenLabels() {
+    if (!genLabels) return;
+    genLabels.innerHTML = '';
+    if (!units.size) return;
+    const k = (svg.clientWidth || 1) / vb.w;
+    const ch = container.clientHeight || 1;
+    rows.forEach((r, g) => {
+      const top = (r.y - V_GAP / 2 - vb.y) * k, bottom = (r.y + r.h + V_GAP / 2 - vb.y) * k;
+      if (bottom < 0 || top > ch) return;
+      const bandPx = bottom - top;
+      if (bandPx < 18) return;                    // weit draußen: Bänder zu schmal für Text
+      const compact = bandPx < 34;                // nur die Ziffer
+      const s = document.createElement('div');
+      s.className = 'tree-genlabel' + (compact ? ' compact' : '');
+      // Beschriftung am oberen Bandrand, bleibt aber im Bild, wenn das Band oben rausläuft
+      const hgt = compact ? 16 : 24;
+      s.style.top = `${Math.max(6, Math.min(top + (compact ? 1 : 6), bottom - hgt - 2))}px`;
+      s.innerHTML = `<b>${ROMAN[g] || g + 1}</b>${!compact && r.minYear != null ? `<span>ab ${r.minYear}</span>` : ''}`;
+      genLabels.appendChild(s);
+    });
   }
 
-  function getYearLabel(birthDate, deathDate) {
-    const birth = birthDate ? birthDate.substring(0, 4) : '?';
-    if (deathDate) return `* ${birth}  \u2020 ${deathDate.substring(0, 4)}`;
-    if (birthDate) return `* ${birth}`;
-    return '';
+  function attachMinimap() {
+    const box = document.createElement('div');
+    box.className = 'tree-minimap';
+    const ms = el('svg', { class: 'tree-minimap-svg' });
+    const shapes = el('g'); const view = el('rect', { class: 'tree-minimap-view' });
+    ms.append(shapes, view);
+    box.appendChild(ms);
+    container.appendChild(box);
+    minimap = { box, svg: ms, shapes, view };
+    let dragging = false;
+    const jump = e => {
+      const r = ms.getBoundingClientRect();
+      const fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
+      const mb = minimapBox();
+      const cx = mb.x + fx * mb.w, cy = mb.y + fy * mb.h;
+      vb.x = cx - vb.w / 2; vb.y = cy - vb.h / 2;
+      apply();
+    };
+    box.addEventListener('pointerdown', e => { dragging = true; try { box.setPointerCapture(e.pointerId); } catch { /* egal */ } jump(e); e.preventDefault(); e.stopPropagation(); });
+    box.addEventListener('pointermove', e => { if (dragging) jump(e); });
+    const end = () => { dragging = false; };
+    box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
+  }
+
+  function minimapBox() {
+    const m = 30;
+    return { x: bbox.x - m, y: bbox.y - m, w: bbox.w + 2 * m, h: bbox.h + 2 * m };
+  }
+
+  function updateMinimapShapes() {
+    if (!minimap) return;
+    minimap.shapes.innerHTML = '';
+    if (!units.size) { minimap.box.hidden = true; return; }
+    minimap.box.hidden = false;
+    const mb = minimapBox();
+    minimap.svg.setAttribute('viewBox', `${mb.x} ${mb.y} ${mb.w} ${mb.h}`);
+    // Seitenverhältnis der Tafel übernehmen (Breite fix, Höhe folgt, gedeckelt)
+    const W = 160, H = Math.max(36, Math.min(110, W * mb.h / mb.w));
+    minimap.box.style.width = `${W}px`; minimap.box.style.height = `${H}px`;
+    minimap.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    for (const u of units.values()) {
+      minimap.shapes.appendChild(el('rect', {
+        x: u.x - CARD_W / 2, y: u.y, width: CARD_W, height: u.h,
+        fill: involved && !involved.has(u.node.m.id) ? '#ddd' : (u.node.m.id === currentUserId ? '#e63946' : personColor(u.node.m)),
+      }));
+    }
+    updateMinimapView();
+  }
+
+  function updateMinimapView() {
+    if (!minimap || !units.size) return;
+    minimap.view.setAttribute('x', vb.x); minimap.view.setAttribute('y', vb.y);
+    minimap.view.setAttribute('width', vb.w); minimap.view.setAttribute('height', vb.h);
   }
 
   // ═══════════════════════════════════════════════════════════
-  //  PUBLIC API
+  //  HELFER
   // ═══════════════════════════════════════════════════════════
+
+  function el(tag, attrs = {}) {
+    const e = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined) e.setAttribute(k, v);
+    return e;
+  }
+  const f = v => (Math.round(v * 100) / 100).toString();
+
+  function getNodePosition(id) {
+    const u = units.get(id) || units.get(hostOf.get(id));
+    return u ? { x: u.x, y: u.y + u.h / 2 } : null;
+  }
 
   return {
-    init,
-    onNodeTap,
-    onBackgroundTap,
-    setCurrentUser,
-    render,
-    highlightConnection,
-    clearHighlight,
-    centerOn,
-    fitAll,
-    getZoom: () => (cy ? cy.zoom() : null),
+    init, onNodeTap, onBackgroundTap, setCurrentUser, render,
+    highlightConnection, clearHighlight, centerOn, fitAll,
+    getZoom: () => (svg && svg.clientWidth ? svg.clientWidth / vb.w : null),
     getCurrentUser: () => currentUserId,
-    // Effektives (LOD-abhängiges) Label eines Knotens — für Debugging/Tests
-    getEffectiveLabel: (id) => {
-      const n = cy && cy.getElementById(id);
-      return n && n.length ? n.style('label') : null;
-    },
     getNodePosition,
-    setViewMode,
-    getViewMode,
+    getTier: () => lodTier,
+    getRows: () => rows.map(r => ({ ...r })),
+    getBBox: () => ({ ...bbox }),
+    collapse: (id, on = true) => { if (on) collapsed.add(id); else collapsed.delete(id); layout(); draw(); apply(); },
+    isCollapsed: id => collapsed.has(id),
   };
 })();

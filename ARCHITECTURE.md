@@ -117,7 +117,7 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
 | `app.js` | Init, Supabase-Client, Auth-Listener, Views, Toasts, FABs, Legende |
 | `auth.js` | Login/Registrierung/Passwort-Reset, Fehler-Mapping (`mapAuthError`) |
 | `db.js` | Alle Supabase-Zugriffe + Offline-Fallback auf `LocalSnapshot` |
-| `tree.js` | Cytoscape-Baum (Layout, Semantic Zoom, Highlights) — Ansichten `generational`/`temporal` |
+| `tree.js` | **Stammtafel** (Ansicht `tree`): verdichtete Nachfahrentafel in reinem SVG — Kontur-Layout, gestapelte Geschwister, Partner unter der Person, Generationsbänder, Minimap, Ein-/Ausklappen. Seit Sept. 2026 ohne Cytoscape; `temporal` ist entfallen |
 | `fan.js` | **Fächer-Ansicht (Standard)**: radialer Nachkommen-Sunburst in reinem SVG, s.u. |
 | `gotha.js` | **Gotha-Verzeichnis**: eingerücktes, klappbares Textverzeichnis je Generation (`#gotha-container`), nutzt `Fan.buildFamiliesFrom` |
 | `article.js` | **Artikelseite** (`view-article`): Properties wie Notion + ausführliche Vita als Markdown; Editiermodus mit Toolbar. Quelle: `members.notes` |
@@ -132,31 +132,62 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
 | `search.js`, `qr.js`, `utils.js` | Suche, QR-Codes, Helfer |
 | `data-snapshot.js` | GENERIERT — nicht von Hand bearbeiten |
 
-## Baum-Visualisierung (`tree.js`)
+## Stammtafel (`tree.js`) — Ansicht `tree`
 
-- **Layout:** eigener Bottom-up-Tidy-Tree (Reingold-Tilford-Prinzip):
-  Kinder zuerst, Eltern zentriert darüber. Paare werden als Einheit mit
-  unsichtbarem Mittelpunktknoten (`couple-midpoint`) gelegt; Mehrfach-Ehen
-  über `multiCoupleMap`. Zwei Modi: `generational` (Reihen) und `temporal`
-  (Y ∝ Geburtsjahr), Umschalter in der Top-Bar.
-- **Semantic Zoom (LOD),** `applyLod()` mit Schwellen `LOD_MID = 0.55`,
-  `LOD_FAR = 0.28`: nah = Vor-+Nachname+Daten, mittel = Vorname+Geburtsjahr,
-  fern = nur Vorname (nie ganz ohne Label). Klassen `lod-mid`/`lod-far`
-  werden nur bei Stufenwechsel getauscht.
-- **Rahmen-Semantik:** durchgezogen = registriert, gestrichelt = Platzhalter,
-  grau = verstorben, rot/dick = Du / Auswahl / Verwandtschaftspfad.
-- **Tap auf Person:** sofortiges Zentrieren beim aktuellen Zoom
-  (`centerOn(id, null, false)` — `zoom=null` heißt „Zoom beibehalten"),
-  dann Profil. Wichtig: nicht animieren, der View-Wechsel würde die
-  Animation abbrechen.
-- Debug-Helfer: `Tree.getZoom()`, `Tree.getEffectiveLabel(id)`.
+Komplett neu geschrieben (Sept. 2026, Branch `feature/tree-v2`), ohne
+Cytoscape, gleiche Bau-Prinzipien wie der Fächer (viewBox-Pan/Zoom,
+Pointer-Capture, Tap-Ziel beim `pointerdown` merken, semantischer Zoom).
+Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
+
+- **Einheit = Blutsverwandter + Partner:** Personenkarte (104×40), darunter
+  je Partner eine schmalere Karte (∞ / ⚮ ehemalig, gestrichelt); Karten
+  sind einzeln antippbar (`data-id`) → eigenes Profil. Baum kommt aus
+  `Fan.buildFamiliesFrom` (aktiver Zweig, App liefert die Teilmenge).
+- **Verdichtung:** (1) kinderlose Geschwister werden zu **Spalten
+  gestapelt** (bis `MAX_COL_H` = 150 Einheiten, dann neue Spalte) und an
+  einer Sammel-Linie links mit Stichleitungen angebunden — nur Kinder mit
+  eigenen Nachkommen bekommen eigene Teilbäume; (2) **konturbasiertes
+  Tidy-Layout** (`layout → build`): je Knoten linke/rechte Kontur pro
+  Ebene, Slots rücken so weit zusammen, wie die Kontur des bisherigen
+  „Waldes" es auf allen Ebenen erlaubt (Teilbäume tucken unter breite
+  Nachbarn), Eltern mittig über erstem/letztem Slot; Slots nach Geburt des
+  ersten Mitglieds sortiert. Ergebnis Märkisch: ~3300 × 1170 Einheiten
+  statt der alten zehntausend Pixel Breite.
+- **Generationen:** feste Zeilen (`rows[g] = {y, h, minYear}`, Höhe = höchste
+  Einheit/Spalte der Generation), abwechselnd hinterlegte Bänder im SVG
+  und **bildschirmfixe Labels links** (`.tree-genlabels`, römisch + „ab
+  Jahr", bei schmalen Bändern nur die Ziffer, unter 18 px keine).
+- **Verbindungen:** orthogonal — Ableitung aus der Einheit, Sammelschiene
+  in der Zeilenlücke (`V_GAP` = 60), Abgänge zu den Slots.
+- **Ein-/Ausklappen:** Chip unter jeder Einheit mit Kindern (`data-toggle`,
+  „−" bzw. „+n" Nachkommen); `toggleCollapse` layoutet neu und hält die
+  Einheit optisch an Ort und Stelle. Pfad-Highlight und `centerOn` klappen
+  eingeklappte Vorfahren automatisch auf. Zustand nur in der Sitzung.
+- **Minimap** rechts oben (`.tree-minimap`, unter dem Familien-Umschalter
+  auf schmalen Screens): alle Einheiten als Rechtecke, roter Rahmen =
+  Ausschnitt, Klick/Ziehen springt.
+- **Semantic Zoom** nach px/Einheit: fern (< 0.55) Vorname, mittel
+  Vorname + Jahre bzw. „∞ Vorname (* Jahr)", nah (≥ 1.1) voller Name,
+  Geburtsname, Daten. Schrift schrumpft bis Minimum, dann Ellipse. Farben
+  wie im Fächer (Männer hellblau, Frauen rosa, Verstorbene blass; Partner
+  heller), Rahmen: registriert dunkel, Platzhalter ohne, Du rot.
+- **Pfad-Highlight:** beteiligte Einheiten `.tree-hl` (roter Rahmen),
+  Kanten dazwischen `.tree-edge.hl`, alle anderen `.tree-dim`; danach
+  `fitToHighlight` mit Platz fürs Panel (rechts Desktop / unten Mobil).
+- **API** (von App/Guest/Connection genutzt): `init, render, centerOn(id,
+  zoom, animate)` — `zoom`: `null` = beibehalten, `undefined` = 0.9
+  px/Einheit, Zahl = px/Einheit —, `fitAll, highlightConnection,
+  clearHighlight, setCurrentUser, onNodeTap, onBackgroundTap, collapse,
+  isCollapsed, getZoom, getTier, getRows, getBBox`. Mausrad zoomt,
+  Zwei-Finger-Wischen am Trackpad schiebt (deltaX ≠ 0).
 
 ## Fächer-Ansicht (`fan.js`) — Standardansicht
 
-- **Fünf Ansichten** über den Umschalter oben rechts (`btn-view-toggle`,
+- **Vier Ansichten** über den Umschalter oben rechts (`btn-view-toggle`,
   Zyklus Fächer (Geschlecht) → Fächer nach Geburtsjahr → **Gotha-
-  Verzeichnis** → Generationen → Zeit), gemerkt in
-  `localStorage.stammbaum_view` (`fan`, `fan-years`, `gotha`, …);
+  Verzeichnis** → **Stammtafel**), gemerkt in
+  `localStorage.stammbaum_view` (`fan`, `fan-years`, `gotha`, `tree`;
+  alte Werte `generational`/`temporal` werden auf `tree` gemappt);
   `Fan.setColorMode('gender'|'year')` tauscht nur Füllfarben (Skala je
   Familienzweig vom ältesten bis jüngsten Geburtsjahr, Blau → Orange;
   Legende mit Farbbalken, wird beim Zweigwechsel nachgezogen);
@@ -277,9 +308,9 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   in der Konsole gelistet (`[Fan] … nicht erreichbar`).
 - **Zwei Fallen, die schon einmal zugeschlagen haben:** (1) `#fan-container`
   muss ein *Geschwister* von `#tree-container` sein (Wrapper `#tree-area`),
-  nie ein Kind — Cytoscape bindet seine Maus-Listener an seinen Container
-  und würde jeden Fächer-Klick zusätzlich gegen die unsichtbaren
-  Baum-Knoten auswerten (falsches Profil / Profil schließt sofort).
+  nie ein Kind — der Baum darunter bindet seine Pointer-Listener an sein
+  eigenes SVG; als Kind würde jeder Fächer-Klick zusätzlich gegen die
+  Baum-Karten ausgewertet (falsches Profil / Profil schließt sofort).
   (2) Nach `setPointerCapture` ist `e.target` beim `pointerup` das `<svg>`;
   das getroffene Segment wird deshalb beim `pointerdown` gemerkt. Tests
   dafür immer mit **echten** Klicks (Computer-Tool) machen — synthetische
@@ -373,8 +404,9 @@ Widersprüche beim manuellen Anlegen räumt `cleanConflictingRelations` ab.
 
 - Lokal: statischer Server reicht (`python3 -m http.server -d .`);
   in Claude Code über `.claude/launch.json`-Eintrag `stammbaum`.
-- Kein Framework, kein Bundler, keine npm-Abhängigkeiten; Cytoscape & Co.
-  liegen als Vendor-Dateien bzw. CDN-frei im Repo. UI-Sprache: Deutsch.
+- Kein Framework, kein Bundler, keine npm-Abhängigkeiten, keine
+  Visualisierungs-Bibliothek mehr (Fächer, Stammtafel, Gotha sind reines
+  SVG/DOM). UI-Sprache: Deutsch.
 - Branches: `main` = live; `feature/multi-spouse` (gemerged-Stand prüfen),
   `feature/temporal-view` (nur lokal) sind historische Feature-Branches.
 - `gotha-data-extract.md` ist die Quell-Transkription (Gotha S. 293–306),

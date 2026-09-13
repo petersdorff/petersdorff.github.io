@@ -190,8 +190,8 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   Generation ein Ring (`RING`), Winkelbreite ∝ Zahl der
   Nachkommen-Blätter, Geschwister nach Geburtsjahr. Blutsverwandte
   bekommen Segmente; **Angeheiratete stehen als „∞ Name" im Segment des
-  Partners** (`hostOf`-Map) und sind dort als blauer Link antippbar →
-  eigenes Profil. Lücken: `SEG_GAP` (konstante Breite, je Radius in Winkel
+  Partners** (`hostOf`-Map) und sind dort als blauer Link antippbar
+  (Hover: rot) → eigenes Profil. Lücken: `SEG_GAP` (konstante Breite, je Radius in Winkel
   umgerechnet) und `RING_GAP`.
 - **Farben:** Männer hellblau, Frauen rosa, unbekannt grau, Verstorbene
   entsättigt; registrierte Profile dunkler Rand, aktueller Nutzer rot.
@@ -222,11 +222,15 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   Lesbarkeitsregel für den absoluten Winkel gilt; Chips, `centerOn`/
   `panTo` und Highlight-Anker rechnen mit `rotPt()`. Rotation wird nicht
   gespeichert. Nur in den Fächer-Ansichten sichtbar. `.fan-wheel` selbst
-  ist nur der unsichtbare Griffbereich (40 px, Touch 52 px), die sichtbare
-  Leiste (20 px, Touch 28 px) zeichnet `::before` — die Ausblend-Maske
-  muss auf `::before` liegen, weil Chrome maskierte Bereiche beim
-  Hit-Test ignoriert. Unter 768 px Breite sitzt das Rad im oberen
-  Drittel (`top: 15%`), damit es nicht mit dem FAB-Stapel kollidiert.
+  ist nur der unsichtbare Griffbereich (34 px, Touch 42 px — bewusst
+  knapp, alles darunter ist sonst unerreichbar), die sichtbare Leiste
+  (20 px, Touch 28 px) zeichnet `::before` — die Ausblend-Maske muss auf
+  `::before` liegen, weil Chrome maskierte Bereiche beim Hit-Test
+  ignoriert. Ein **Tipp ohne Ziehen** auf das Rad wird an das Element
+  darunter weitergereicht (`tapThrough`: Segment, Partner-Link, Chip),
+  damit das Rad nichts verdeckt. Unter 768 px Breite sitzt das Rad im
+  oberen Drittel (`top: 15%`), damit es nicht mit dem FAB-Stapel
+  kollidiert.
 - **Hover:** Kopie des Segments zuoberst mit 12-px-Rand in Segmentfarbe
   plus 1,5-px weißem Saum außen (`showHoverHalo`, `vector-effect:
   non-scaling-stroke`) — wirkt größer, verschiebt nichts; gedimmte

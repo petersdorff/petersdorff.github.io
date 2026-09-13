@@ -714,25 +714,43 @@ const Fan = (() => {
     wheel.setAttribute('aria-label', 'Fächer drehen');
     container.appendChild(wheel);
 
-    let drag = null;   // { y, phi0 }
+    let drag = null;   // { x, y, phi0, moved }
     wheel.addEventListener('pointerdown', e => {
       if (e.button !== undefined && e.button !== 0) return;
-      drag = { y: e.clientY, phi0: phi };
+      drag = { x: e.clientX, y: e.clientY, phi0: phi, moved: false };
       try { wheel.setPointerCapture(e.pointerId); } catch { /* synthetisch */ }
       wheel.classList.add('is-active');
       e.preventDefault();
     });
     wheel.addEventListener('pointermove', e => {
       if (!drag) return;
+      if (Math.abs(e.clientX - drag.x) > 4 || Math.abs(e.clientY - drag.y) > 4) drag.moved = true;
       phi = drag.phi0 + (e.clientY - drag.y) / WHEEL_PX_PER_TURN * 2 * Math.PI;
       applyRotation();
     });
     const end = e => {
       if (!drag) return;
+      const d = drag;
       drag = null;
       wheel.classList.remove('is-active');
       try { wheel.releasePointerCapture(e.pointerId); } catch { /* egal */ }
       if (highlight) drawHighlight();   // Anker für Einpassen neu berechnen
+      if (e.type === 'pointerup' && !d.moved) tapThrough(e);
+    };
+    /**
+     * Tipp aufs Rad ohne Ziehen hat keine Bedeutung — ihn an das Element
+     * darunter weiterreichen (Segment, Partner-Link, Chip), damit das
+     * Rad nichts verdeckt, was man antippen will.
+     */
+    const tapThrough = e => {
+      wheel.style.pointerEvents = 'none';
+      const under = document.elementFromPoint(e.clientX, e.clientY);
+      wheel.style.pointerEvents = '';
+      if (!under || !svg.contains(under)) return;
+      const init = { bubbles: true, cancelable: true, pointerId: e.pointerId + 1000, pointerType: e.pointerType,
+        isPrimary: true, clientX: e.clientX, clientY: e.clientY, button: 0 };
+      under.dispatchEvent(new PointerEvent('pointerdown', init));
+      under.dispatchEvent(new PointerEvent('pointerup', init));
     };
     wheel.addEventListener('pointerup', end);
     wheel.addEventListener('pointercancel', end);

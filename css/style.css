@@ -2039,7 +2039,7 @@ a {
   right: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 40px;                 /* Griffbereich */
+  width: 34px;                 /* Griffbereich: Leiste + 10 px Rand rechts + 4 px Spiel links */
   height: min(300px, 48vh);
   cursor: grab;
   touch-action: none;
@@ -2051,9 +2051,8 @@ a {
   content: '';
   position: absolute;
   top: 0; bottom: 0;
-  left: 50%;
+  right: 10px;
   width: 20px;                 /* sichtbare Leiste */
-  transform: translateX(-50%);
   border-radius: 10px;
   background-image: repeating-linear-gradient(to bottom, var(--trace-light) 0 1px, transparent 1px 7px);
   /* Rillen laufen oben/unten weich aus */
@@ -2069,10 +2068,12 @@ a {
 }
 .fan-wheel.is-active { cursor: grabbing; }
 
-/* Touch: breitere Leiste, Griffbereich ≥ 48 px */
+/* Touch: breitere Leiste. Der Griffbereich ragt bewusst nur wenig über
+   die Leiste hinaus — alles darunter wäre für Segmente/Partner-Links
+   unerreichbar (Leiste 28 + 8 rechts + 6 Spiel links = 42 px). */
 @media (pointer: coarse) {
-  .fan-wheel { width: 52px; }
-  .fan-wheel::before { width: 28px; border-radius: 14px; opacity: 0.95; }
+  .fan-wheel { width: 42px; }
+  .fan-wheel::before { width: 28px; right: 8px; border-radius: 14px; opacity: 0.95; }
 }
 /* Schmale Screens: Rad ins obere Drittel, damit es nicht hinter dem
    FAB-Stapel unten rechts verschwindet */
@@ -2086,7 +2087,8 @@ a {
 .fan-ghost:hover text { fill: #fff; }
 .fan-ghost text { pointer-events: none; }
 
-/* Partner-Namen im Segment: Hyperlink zum eigenen Profil */
+/* Partner-Namen im Segment: Hyperlink zum eigenen Profil; beim Hovern
+   rot, damit klar ist, welcher Link gerade gewählt ist */
 .fan-spouse-link {
   pointer-events: auto;
   cursor: pointer;
@@ -2094,6 +2096,7 @@ a {
   fill-opacity: 1;
   text-decoration: underline;
 }
+.fan-spouse-link:hover { fill: var(--red); }
 .fan-spouse-link:hover { fill: var(--red); }
 
 

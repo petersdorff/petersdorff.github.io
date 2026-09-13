@@ -280,8 +280,10 @@ der Familien-Umschalter oben wählt den gezeigten Zweig.
 
 `members.notes` ist die Markdown-Quelle der ausführlichen Vita (TEXT-
 Spalte, keine Migration). Profil-Seitenpanel zeigt nur den Auszug
-(`Markdown.excerpt`, erste Sätze ohne Überschriften) plus „Ganzen Artikel
-lesen"; das ⤢-Icon im Profil-Header öffnet `Article.show(id)`: Kopf mit
+(`Markdown.excerpt`, erste Sätze ohne Überschriften); darunter im
+Vita-Abschnitt der Button `#btn-profile-article` (⤢ „Weiterlesen", wenn
+mehr Text existiert, sonst „Ganze Seite öffnen") — kein Icon mehr im
+Profil-Header. Er öffnet `Article.show(id)`: Kopf mit
 Foto/Name, Property-Zeilen (Daten, Beruf, Wohnort, Kontakt, Status-Badges
 und Beziehungen mit **denselben `.rel-item`/`.rel-type-badge`-Styles wie im
 Profil**), darunter der gerenderte Artikel. „Vita bearbeiten" (gleiche

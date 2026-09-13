@@ -81,8 +81,8 @@ const Profile = (() => {
     // Vita: nur die ersten Sätze; der ganze Markdown-Artikel steht auf der Seite
     const ex = Markdown.excerpt(member.notes || '', 220);
     notesEl.textContent = ex.text || '—';
-    const more = document.getElementById('profile-notes-more');
-    more.classList.toggle('hidden', !ex.truncated && !(member.notes || '').includes('\n'));
+    const hasMore = ex.truncated || (member.notes || '').includes('\n');
+    document.getElementById('btn-profile-article-label').textContent = hasMore ? 'Weiterlesen' : 'Ganze Seite öffnen';
 
     // Badges
     badgesEl.innerHTML = '';

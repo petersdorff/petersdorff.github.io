@@ -1067,8 +1067,7 @@ a {
 #view-profile.side-panel #btn-profile-back .icon-back { display: none; }
 #view-profile.side-panel #btn-profile-back .icon-close { display: block; }
 #view-profile.side-panel .profile-header { flex-direction: row-reverse; }
-/* im Seitenpanel: X ganz rechts, dann Expand, dann Stift (row-reverse) */
-#view-profile.side-panel #btn-profile-expand { margin-right: auto; }
+/* im Seitenpanel: X ganz rechts, Stift links (row-reverse) */
 #btn-edit-cancel .icon-close { display: none; }
 #view-edit.side-panel #btn-edit-cancel .icon-back { display: none; }
 #view-edit.side-panel #btn-edit-cancel .icon-close { display: block; }
@@ -2356,11 +2355,12 @@ a {
 .article-hint { font-size: 11px; color: var(--text-muted); margin-top: 8px; line-height: 1.6; }
 .article-hint code { background: var(--bg-secondary); padding: 1px 4px; border-radius: 3px; }
 
-.profile-notes-more {
-  display: inline-block;
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--blue);
+/* „Ganze Seite öffnen" / „Weiterlesen" unter dem Vita-Auszug */
+.profile-article-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
 }
 
 @media (max-width: 480px) {

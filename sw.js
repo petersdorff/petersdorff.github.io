@@ -3,7 +3,7 @@
    Basic caching for PWA offline support
    ═══════════════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'stammbaum-v88';
+const CACHE_NAME = 'stammbaum-v89';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

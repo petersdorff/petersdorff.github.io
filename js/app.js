@@ -233,8 +233,7 @@ const App = (() => {
     document.getElementById('btn-profile-edit').addEventListener('click', () => {
       Profile.edit(Profile.getCurrentProfileId());
     });
-    document.getElementById('btn-profile-expand').addEventListener('click', () => Article.show(Profile.getCurrentProfileId()));
-    document.getElementById('profile-notes-more').addEventListener('click', (e) => { e.preventDefault(); Article.show(Profile.getCurrentProfileId()); });
+    document.getElementById('btn-profile-article').addEventListener('click', () => Article.show(Profile.getCurrentProfileId()));
     document.getElementById('btn-show-connection').addEventListener('click', Connection.showConnectionToMe);
     document.getElementById('btn-show-qr').addEventListener('click', () => {
       const profileId = Profile.getCurrentProfileId();

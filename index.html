@@ -11,7 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=32">
+  <link rel="stylesheet" href="css/style.css?v=33">
 </head>
 <body>
 
@@ -487,11 +487,6 @@
             <path d="M18 6L6 18M6 6l12 12"/>
           </svg>
         </button>
-        <button id="btn-profile-expand" class="icon-btn" aria-label="Als Seite öffnen" title="Als ganze Seite öffnen">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
-          </svg>
-        </button>
         <button id="btn-profile-edit" class="icon-btn">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
@@ -546,7 +541,13 @@
       <div class="profile-section">
         <h3>Vita</h3>
         <p id="profile-notes" class="profile-notes">—</p>
-        <a href="#" id="profile-notes-more" class="profile-notes-more hidden">Ganzen Artikel lesen →</a>
+        <!-- Öffnet die Artikelseite (Vollseite mit Eigenschaften + ganzer Vita) -->
+        <button id="btn-profile-article" class="btn btn-small btn-secondary profile-article-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+          </svg>
+          <span id="btn-profile-article-label">Ganze Seite öffnen</span>
+        </button>
       </div>
 
       <!-- Existing Relationships Section -->
@@ -831,7 +832,7 @@
   <script src="js/guest.js?v=5"></script>
   <script src="js/connection.js?v=11"></script>
   <script src="js/relations.js?v=15"></script>
-  <script src="js/profile.js?v=33"></script>
-  <script src="js/app.js?v=56"></script>
+  <script src="js/profile.js?v=34"></script>
+  <script src="js/app.js?v=57"></script>
 </body>
 </html>

@@ -2004,8 +2004,14 @@ a {
 
 .fan-svg:active { cursor: grabbing; }
 
-.fan-seg { cursor: pointer; }
-.fan-seg:hover path, .fan-seg:hover circle { filter: brightness(0.94); }
+.fan-seg {
+  cursor: pointer;
+  transform-box: fill-box;          /* transform-origin wird je Segment per JS auf den Mittelpunkt gelegt */
+  transition: transform 140ms ease-out;
+}
+.fan-seg:hover { transform: scale(1.035); }   /* leichter Pop radial nach außen */
+.fan-seg:hover path, .fan-seg:hover circle { filter: brightness(0.92); }
+.fan-seg.fan-dim:hover { transform: none; }   /* gedimmte (nicht am Pfad) bleiben ruhig */
 
 .fan-hl, .fan-hl * {
   pointer-events: none;

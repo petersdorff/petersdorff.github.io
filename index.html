@@ -11,7 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=9">
 </head>
 <body>
 
@@ -265,7 +265,10 @@
     </header>
 
     <!-- Tree Container -->
-    <div id="tree-container"></div>
+    <div id="tree-container">
+      <!-- Fan-Chart-Overlay (radiale Ansicht), umschaltbar per FAB -->
+      <div id="fan-container" class="hidden"></div>
+    </div>
 
     <!-- Offline / read-only banner -->
     <div id="offline-banner" class="offline-banner hidden">
@@ -292,6 +295,14 @@
       <button id="fab-center" class="fab fab-small" aria-label="Auf mich zentrieren">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+        </svg>
+      </button>
+      <button id="fab-fan" class="fab fab-small" aria-label="Fächer-Ansicht" title="Fächer-Ansicht (radial) umschalten">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="2.5"/>
+          <path d="M12 3a9 9 0 0 1 9 9M12 3a9 9 0 0 0-9 9"/>
+          <path d="M12 7.5a4.5 4.5 0 0 1 4.5 4.5M12 7.5a4.5 4.5 0 0 0-4.5 4.5"/>
+          <path d="M12 12v9"/>
         </svg>
       </button>
       <button id="fab-legend" class="fab fab-small" aria-label="Zeichenerklärung" title="Was bedeuten die Rahmen?">
@@ -643,7 +654,8 @@
   <script src="js/db.js?v=25"></script>
   <script src="js/auth.js?v=30"></script>
   <script src="js/relationship.js?v=28"></script>
-  <script src="js/tree.js?v=81"></script>
+  <script src="js/tree.js?v=82"></script>
+  <script src="js/fan.js?v=1"></script>
   <script src="js/qr.js?v=23"></script>
   <script src="js/search.js?v=22"></script>
   <script src="js/admin.js?v=4"></script>
@@ -652,6 +664,6 @@
   <script src="js/connection.js?v=4"></script>
   <script src="js/relations.js?v=12"></script>
   <script src="js/profile.js?v=31"></script>
-  <script src="js/app.js?v=42"></script>
+  <script src="js/app.js?v=43"></script>
 </body>
 </html>

@@ -1658,3 +1658,43 @@ a {
   color: var(--text-muted);
   padding: 6px 0;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   FAN CHART (radiale Ansicht) — Overlay über dem Cytoscape-Baum
+   ═══════════════════════════════════════════════════════════ */
+
+#fan-container {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: var(--bg);
+  background-image: radial-gradient(circle, var(--trace-faint) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+#fan-container.hidden { display: none; }
+
+.fan-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+  font-family: var(--font);
+}
+
+.fan-svg:active { cursor: grabbing; }
+
+.fan-seg { cursor: pointer; }
+.fan-seg:hover path, .fan-seg:hover circle { filter: brightness(0.94); }
+
+.fan-label {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#fab-fan.active {
+  background: var(--trace);
+  color: var(--bg);
+}

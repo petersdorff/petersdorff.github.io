@@ -1735,6 +1735,7 @@ const Tree = (() => {
     centerOn,
     fitAll,
     getZoom: () => (cy ? cy.zoom() : null),
+    getCurrentUser: () => currentUserId,
     // Effektives (LOD-abhängiges) Label eines Knotens — für Debugging/Tests
     getEffectiveLabel: (id) => {
       const n = cy && cy.getElementById(id);

@@ -23,6 +23,8 @@ const App = (() => {
     DB.init(supabaseClient);
     Search.init();
     Tree.init('tree-container');
+    Fan.init('fan-container');
+    Fan.onTap((memberId) => Profile.show(memberId));
     Admin.initEmailJS();
 
     // Register auth state listener BEFORE Auth.init()
@@ -176,6 +178,11 @@ const App = (() => {
     document.getElementById('fab-add').addEventListener('click', () => Profile.edit(null));
     document.getElementById('fab-myqr').addEventListener('click', showMyQR);
     document.getElementById('fab-center').addEventListener('click', centerOnMe);
+    document.getElementById('fab-fan').addEventListener('click', () => {
+      const on = Fan.toggle();
+      if (on) Fan.render(cachedMembers, cachedRelationships);
+      document.getElementById('fab-fan').classList.toggle('active', on);
+    });
     document.getElementById('fab-legend').addEventListener('click', () => {
       document.getElementById('legend-panel').classList.toggle('hidden');
     });
@@ -341,6 +348,7 @@ const App = (() => {
 
   function renderTree() {
     Tree.render(cachedMembers, cachedRelationships);
+    if (Fan.isActive()) Fan.render(cachedMembers, cachedRelationships);
   }
 
   // ─── Offline banner & read-only UI ───
@@ -537,6 +545,10 @@ const App = (() => {
 
   function centerOnMe() {
     const member = Auth.getMember();
+    if (Fan.isActive()) {
+      member ? Fan.centerOn(member.id) : Fan.fit();
+      return;
+    }
     if (member) {
       Tree.centerOn(member.id);
     } else {

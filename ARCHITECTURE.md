@@ -288,8 +288,8 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   es wird lauter und wilder (nur ein milder Kompressor gegen Clipping).
   Standard ist die Aufnahme `assets/sounds/baby-cry.mp3` (Kais WAV
   „baby cries at birth #4", auf 1 s mono 96 kbit/s ≈ 13 KB gewandelt;
-  ein- oder zweimal hintereinander → 1–2 s, Tonhöhe je Person
-  deterministisch leicht anders, im SW-Precache). Fällt das Laden aus,
+  **genau einmal je Geburt** (~1 s), Tonhöhe je Person deterministisch
+  leicht anders, im SW-Precache). Fällt das Laden aus,
   springt ein synthetisches „wäh-wäh" ein (Sägezahn + Rechteck,
   Tonhöhenbogen, Vibrato, Formant-/Peaking-Filter, Atemrauschen).
   iOS: Stummschalter dämpft Web Audio.

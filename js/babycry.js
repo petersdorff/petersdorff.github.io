@@ -5,7 +5,7 @@
    Schreien (1–2 s). Jeder Ruf ist eine eigene Stimme, Überlagerungen
    werden nicht abgebrochen — es wird einfach lauter und wilder.
    Standard ist die Aufnahme `assets/sounds/baby-cry.mp3` (~1 s, mono,
-   96 kbit/s; ein- oder zweimal abgespielt, Tonhöhe leicht zufällig).
+   96 kbit/s; genau einmal je Geburt, Tonhöhe leicht zufällig).
    Fehlt sie oder lässt sie sich nicht laden, springt ein synthetisches
    „wäh-wäh" aus Oszillatoren + Formantfilter ein. Alles offline-fähig.
    ═══════════════════════════════════════════════════════════ */
@@ -66,26 +66,19 @@ const BabyCry = (() => {
     if (sample) playSample(c, t0, rand, done); else playSynth(c, t0, rand, done);
   }
 
-  /** Aufnahme (~1 s): einmal oder zweimal hintereinander (→ 1–2 s),
-      Tonhöhe je Baby leicht anders. */
+  /** Aufnahme (~1 s): genau einmal je Geburt, Tonhöhe je Baby leicht anders. */
   function playSample(c, t0, rand, done) {
-    const rate = 0.9 + rand() * 0.25;   // jedes Baby klingt etwas anders
-    const one = Math.min(sample.duration / rate, 2.0);
-    const reps = rand() < 0.5 ? 2 : 1;
-    let t = t0;
-    for (let i = 0; i < reps; i++) {
-      const src = c.createBufferSource();
-      src.buffer = sample;
-      src.playbackRate.value = rate * (i ? 0.97 + rand() * 0.06 : 1);
-      const g = c.createGain();
-      g.gain.setValueAtTime(0.9, t);
-      g.gain.setValueAtTime(0.9, t + one - 0.12);
-      g.gain.linearRampToValueAtTime(0.0001, t + one);
-      src.connect(g); g.connect(master);
-      src.start(t); src.stop(t + one);
-      if (i === reps - 1) src.onended = done;
-      t += one * 0.92;
-    }
+    const src = c.createBufferSource();
+    src.buffer = sample;
+    src.playbackRate.value = 0.92 + rand() * 0.16;   // jedes Baby klingt etwas anders
+    const dur = sample.duration / src.playbackRate.value;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.9, t0);
+    g.gain.setValueAtTime(0.9, t0 + dur - 0.08);
+    g.gain.linearRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(g); g.connect(master);
+    src.start(t0); src.stop(t0 + dur);
+    src.onended = done;
   }
 
   /** Synthetisches Babygeschrei: 2–3 Silben „wäh", Tonhöhe steigt und

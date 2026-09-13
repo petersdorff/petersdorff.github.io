@@ -961,8 +961,13 @@ const Fan = (() => {
     // ein Jahr vor der ältesten Geburt beginnen: beim Abspielen „kommt" auch der Stammvater
     tlRange = years.length ? { min: Math.min(...years) - 1, max: Math.max(now, ...years) } : { min: now - 100, max: now };
     tlYear = wasAtEnd ? tlRange.max : Math.max(tlRange.min, Math.min(tlRange.max, tlYear));
-    // echte Geburten (mit Datum) für das Babygeschrei beim Abspielen
+    // echte Geburten (mit Datum) für das Babygeschrei beim Abspielen —
+    // nur Blutsverwandte (Segmente), Angeheiratete werden nicht „geboren"
+    const blood = new Set();
+    const walk = n => { if (!n) return; blood.add(n.m.id); n.children.forEach(walk); };
+    if (fam) walk(fam.root);
     tlBirths = pool
+      .filter(m => !fam || blood.has(m.id))
       .map(m => ({ id: m.id, year: m.birthDate ? parseInt(m.birthDate.substring(0, 4), 10) : NaN }))
       .filter(b => isFinite(b.year))
       .sort((a, b) => a.year - b.year);

@@ -281,7 +281,8 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
 - **Abspielen (Spaßfunktion):** Play/Pause-Taste links am Streifen
   (`startPlayback`/`stopPlayback`, rAF-Schleife, `TL_YEARS_PER_SEC` = 4;
   Play startet **immer von vorn**, Pause hält an; Ziehen, Mausrad,
-  Ansichts-/Familienwechsel und `Fan.hide()` stoppen). Jede echte Geburt (`tlBirths`, nur mit Datum) in
+  Ansichts-/Familienwechsel und `Fan.hide()` stoppen). Jede echte Geburt
+  (`tlBirths`: nur Blutsverwandte mit Datum, keine Angeheirateten) in
   (vorheriges, neues Stichjahr] löst `BabyCry.play(id, n·0.12 s)` aus.
   `js/babycry.js` (Web Audio, Kontext erst bei der Nutzergeste): jede
   Geburt ist eine eigene Stimme, Überlagerungen werden nie abgebrochen —

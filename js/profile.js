@@ -78,7 +78,11 @@ const Profile = (() => {
 
     locationEl.textContent = member.location || '—';
     contactEl.textContent = member.contact || member.email || '—';
-    notesEl.textContent = member.notes || '—';
+    // Vita: nur die ersten Sätze; der ganze Markdown-Artikel steht auf der Seite
+    const ex = Markdown.excerpt(member.notes || '', 220);
+    notesEl.textContent = ex.text || '—';
+    const more = document.getElementById('profile-notes-more');
+    more.classList.toggle('hidden', !ex.truncated && !(member.notes || '').includes('\n'));
 
     // Badges
     badgesEl.innerHTML = '';

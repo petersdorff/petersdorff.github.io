@@ -223,8 +223,13 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   `panTo` und Highlight-Anker rechnen mit `rotPt()`. Rotation wird nicht
   gespeichert. Nur in den Fächer-Ansichten sichtbar.
 - **Hover:** Kopie des Segments zuoberst mit 12-px-Rand in Segmentfarbe
-  (`showHoverHalo`, `vector-effect: non-scaling-stroke`) — wirkt größer,
-  verschiebt nichts; gedimmte Segmente bleiben ruhig.
+  plus 1,5-px weißem Saum außen (`showHoverHalo`, `vector-effect:
+  non-scaling-stroke`) — wirkt größer, verschiebt nichts; gedimmte
+  Segmente bleiben ruhig. Hover-Zustand (Halo + Chips) gilt für Segment,
+  Label inkl. Partner-Links und Chips derselben Person (`hoverIdOf`);
+  verlässt die Maus die Person in Leerraum, verschwinden Halo + Chips
+  nach 220 ms (Gnadenfrist zum Erreichen der Chips). Touch: Chips bleiben
+  an der zuletzt angetippten Person, Tipp auf Leerraum löscht sie.
 - **Interaktion:** Tippen zentriert die Person (Zoom bleibt) und öffnet das
   Profil; Rad/Pinch zoomt, Ziehen verschiebt; „Auf mich zentrieren" und
   „Im Stammbaum zeigen" respektieren die aktive Ansicht. Container
@@ -284,6 +289,15 @@ Rechte wie Kernfelder) öffnet Textarea + Toolbar (H1/H2/B/I/Listen/Zitat/
 Link/Trennlinie fügen Markdown am Cursor ein), „Vorschau", Speichern via
 `DB.updateMember`. Renderer unterstützt `#`–`###`, Absätze, `-`/`1.`-Listen,
 `>`, `---`, `**`, `*`, `[Text](https://…)`; alles andere wird escaped.
+
+## Verbindungsliste (`relations.js → sortedDisplayRelations`)
+
+Profil-Seitenpanel und Bearbeiten-Formular zeigen Verbindungen immer in
+fester Kategorie-Reihenfolge **Eltern → Partner → ehem. Partner → Kinder →
+Geschwister**, innerhalb der Kategorie nach Geburtsdatum (unbekannt
+zuletzt), dann Vorname — nie Geschwister und Eltern im Wechsel. Die
+Artikelseite (`article.js → renderRelations`) gruppiert nach denselben
+Kategorien in derselben Reihenfolge.
 
 ## Beziehungs-Automatik (`relations.js → propagateLogicalRelations`)
 

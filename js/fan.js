@@ -76,22 +76,41 @@ const Fan = (() => {
     svg.appendChild(hlLayer);
     svg.appendChild(labelLayer);
     svg.appendChild(ghostLayer);
-    // Hover (Maus): Plus-Chips für das Segment unter dem Zeiger
+    // Hover (Maus): Chips + Halo für das Segment unter dem Zeiger. Beim
+    // Verlassen in Leerraum verschwinden sie nach kurzer Toleranz — die
+    // Chips liegen knapp außerhalb des Segments und müssen erreichbar bleiben.
+    let ghostHideTimer = null;
+    const cancelHide = () => { if (ghostHideTimer) { clearTimeout(ghostHideTimer); ghostHideTimer = null; } };
+    const scheduleHide = () => {
+      cancelHide();
+      ghostHideTimer = setTimeout(() => { ghostHideTimer = null; showGhosts(null); clearHoverHalo(); }, 220);
+    };
+    // Zu welcher Person gehört ein Element? Segment, dessen Label (inkl.
+    // Partner-Links) oder ein Chip — alles zählt als „auf der Person".
+    const hoverIdOf = el => {
+      if (!el || !el.closest) return null;
+      const seg = el.closest('.fan-seg, .fan-label, .fan-ghost');
+      return seg ? seg.getAttribute('data-id') : null;
+    };
     svg.addEventListener('pointerover', e => {
       if (e.pointerType !== 'mouse') return;
-      const seg = e.target.closest && e.target.closest('.fan-seg');
-      if (seg && !seg.classList.contains('fan-hover')) {
-        showGhosts(seg.getAttribute('data-id'));
-        showHoverHalo(seg);
+      const id = hoverIdOf(e.target);
+      if (!id) return;
+      cancelHide();
+      if (id !== ghostFor) showGhosts(id);
+      if (!segLayer.querySelector(`.fan-hover[data-id="${id}"]`)) {
+        const seg = segLayer.querySelector(`.fan-seg[data-id="${id}"]:not(.fan-hover)`);
+        if (seg) showHoverHalo(seg);
       }
     });
     svg.addEventListener('pointerout', e => {
       if (e.pointerType !== 'mouse') return;
-      const seg = e.target.closest && e.target.closest('.fan-seg');
-      const to = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('.fan-seg') : null;
-      if (seg && !to) clearHoverHalo();
+      if (!hoverIdOf(e.target)) return;
+      if (!hoverIdOf(e.relatedTarget)) scheduleHide();
     });
-    svg.addEventListener('pointerleave', () => { if (!selectedId) showGhosts(null); });
+    svg.addEventListener('pointerleave', e => {
+      if (e.pointerType === 'mouse') { cancelHide(); showGhosts(null); clearHoverHalo(); }
+    });
     container.appendChild(svg);
     attachPanZoom();
     attachWheel();
@@ -460,7 +479,8 @@ const Fan = (() => {
 
   /**
    * Hover-Hervorhebung: Kopie des Segments zuoberst in segLayer — darunter
-   * ein dicker Rand in Segmentfarbe (pixelkonstant), darüber das Segment
+   * ein dünner weißer Saum, darauf ein dicker Rand in Segmentfarbe
+   * (beide pixelkonstant), darüber das Segment
    * mit seinem eigenen Rand. Wirkt wie „größer", ohne etwas zu verschieben.
    */
   function showHoverHalo(seg) {
@@ -469,13 +489,20 @@ const Fan = (() => {
     const shape = seg.querySelector('path, circle');
     if (!shape) return;
     const g = el('g', { class: 'fan-seg fan-hover', 'data-id': seg.getAttribute('data-id') });
-    const rim = shape.cloneNode(false);
-    rim.setAttribute('class', 'fan-hover-rim');
-    rim.setAttribute('stroke', shape.getAttribute('fill'));
-    rim.setAttribute('stroke-width', '12');   // px, dank vector-effect
-    rim.removeAttribute('fill');
+    const mkRim = (stroke, width) => {
+      const r = shape.cloneNode(false);
+      r.setAttribute('class', 'fan-hover-rim');
+      r.setAttribute('stroke', stroke);
+      r.setAttribute('stroke-width', String(width));   // px, dank vector-effect
+      r.removeAttribute('fill');
+      return r;
+    };
+    // Außen ein dünner weißer Saum (Begrenzung erkennbar), darüber der
+    // breite Rand in Segmentfarbe, zuoberst das Segment selbst.
+    const edge = mkRim('#fff', 15);
+    const rim = mkRim(shape.getAttribute('fill'), 12);
     const top = shape.cloneNode(false);
-    g.append(rim, top);
+    g.append(edge, rim, top);
     segLayer.appendChild(g);
   }
 
@@ -1027,6 +1054,10 @@ const Fan = (() => {
       if (!pts.has(e.pointerId)) return;
       pts.delete(e.pointerId);
       try { svg.releasePointerCapture(e.pointerId); } catch { /* egal */ }
+      if (pts.size === 0 && e.type === 'pointerup' && moved < 10 && !downTarget && e.pointerType !== 'mouse') {
+        // Tipp ins Leere (Touch): Auswahl und Chips wegräumen
+        selectedId = null; showGhosts(null); clearHoverHalo();
+      }
       if (pts.size === 0 && e.type === 'pointerup' && moved < 10 && downTarget) {
         let id = downTarget.getAttribute('data-id');
         const add = downTarget.getAttribute('data-add');
@@ -1042,8 +1073,10 @@ const Fan = (() => {
         } else if (add) {
           if (onAddCallback) onAddCallback(add, id);
         } else if (id && onTapCallback) {
-          selectedId = id;
-          showGhosts(id);          // Chips bleiben an der gewählten Person (Touch)
+          if (e.pointerType !== 'mouse') {
+            selectedId = id;
+            showGhosts(id);        // Touch: Chips bleiben an der gewählten Person
+          }
           onTapCallback(id);
         }
       }

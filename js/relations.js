@@ -29,6 +29,36 @@ const Relations = (() => {
     }
   }
 
+  /** Anzeigereihenfolge der Verbindungen: Eltern → Partner → ehem. Partner → Kinder → Geschwister. */
+  const DISPLAY_ORDER = ['parent', 'spouse', 'ex_spouse', 'child', 'sibling'];
+
+  /**
+   * Verbindungen einer Person für die Anzeige aufbereiten: Anzeigetyp aus
+   * Sicht von memberId bestimmen, nach Kategorie gruppiert (DISPLAY_ORDER)
+   * und innerhalb der Kategorie nach Geburtsdatum (unbekannt zuletzt).
+   * So stehen nie Geschwister und Eltern im Wechsel in der Liste.
+   */
+  function sortedDisplayRelations(memberId, rels, memberMap) {
+    const items = rels.map(r => {
+      const otherId = r.fromId === memberId ? r.toId : r.fromId;
+      let displayType;
+      if (r.type === 'parent_child') {
+        displayType = r.fromId === memberId ? 'child' : 'parent';
+      } else if (r.type === 'spouse' && r.isFormer) {
+        displayType = 'ex_spouse';
+      } else {
+        displayType = r.type;
+      }
+      return { r, otherId, other: memberMap.get(otherId), displayType };
+    });
+    const rank = t => { const i = DISPLAY_ORDER.indexOf(t); return i < 0 ? DISPLAY_ORDER.length : i; };
+    const born = it => (it.other && it.other.birthDate) || '9999';
+    items.sort((a, b) => rank(a.displayType) - rank(b.displayType)
+      || born(a).localeCompare(born(b))
+      || ((a.other && a.other.firstName) || '').localeCompare((b.other && b.other.firstName) || ''));
+    return items;
+  }
+
   /**
    * Render the relationships list in the profile view (read-only).
    */
@@ -51,19 +81,8 @@ const Relations = (() => {
       memberMap.set(m.id, m);
     }
 
-    for (const r of rels) {
-      const otherId = r.fromId === memberId ? r.toId : r.fromId;
-      const other = memberMap.get(otherId);
+    for (const { otherId, other, displayType } of sortedDisplayRelations(memberId, rels, memberMap)) {
       const otherName = other ? `${other.firstName} ${other.lastName}` : 'Unbekannt';
-
-      let displayType;
-      if (r.type === 'parent_child') {
-        displayType = r.fromId === memberId ? 'child' : 'parent';
-      } else if (r.type === 'spouse' && r.isFormer) {
-        displayType = 'ex_spouse';
-      } else {
-        displayType = r.type;
-      }
 
       const label = other ? Utils.genderedRelLabel(displayType, other.gender) : REL_LABELS[displayType];
       const badge = Utils.createEl('span', { className: `rel-type-badge ${displayType}`, textContent: label });
@@ -99,19 +118,8 @@ const Relations = (() => {
       memberMap.set(m.id, m);
     }
 
-    for (const r of rels) {
-      const otherId = r.fromId === memberId ? r.toId : r.fromId;
-      const other = memberMap.get(otherId);
+    for (const { r, other, displayType } of sortedDisplayRelations(memberId, rels, memberMap)) {
       const otherName = other ? `${other.firstName} ${other.lastName}` : 'Unbekannt';
-
-      let displayType;
-      if (r.type === 'parent_child') {
-        displayType = r.fromId === memberId ? 'child' : 'parent';
-      } else if (r.type === 'spouse' && r.isFormer) {
-        displayType = 'ex_spouse';
-      } else {
-        displayType = r.type;
-      }
 
       const label = other ? Utils.genderedRelLabel(displayType, other.gender) : REL_LABELS[displayType];
       const badge = Utils.createEl('span', { className: `rel-type-badge ${displayType}`, textContent: label });
@@ -592,6 +600,7 @@ const Relations = (() => {
     createRelationByType,
     renderProfileRelations,
     renderEditRelations,
+    sortedDisplayRelations,
     searchForRelation,
     addRelation,
     presetRelation,

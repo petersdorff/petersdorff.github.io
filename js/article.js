@@ -109,7 +109,7 @@ const Article = (() => {
     for (const label of ['Eltern', 'Partner', 'Ehemalige Partner', 'Kinder', 'Geschwister']) {
       const list = groups.get(label); if (!list) continue;
       const val = Utils.createEl('div', { className: 'article-prop-val article-rels' });
-      for (const p of list.sort((a, b) => (a.birthDate || '').localeCompare(b.birthDate || ''))) {
+      for (const p of list.sort((a, b) => (a.birthDate || '9999').localeCompare(b.birthDate || '9999') || (a.firstName || '').localeCompare(b.firstName || ''))) {
         const t = typeOf[label];
         const badge = Utils.createEl('span', { className: `rel-type-badge ${t}`, textContent: Utils.genderedRelLabel(t, p.gender) });
         const name = Utils.createEl('span', { className: 'rel-name', textContent: `${p.firstName} ${p.lastName}` });

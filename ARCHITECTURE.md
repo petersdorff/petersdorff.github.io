@@ -231,6 +231,21 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   damit das Rad nichts verdeckt. Unter 768 px Breite sitzt das Rad im
   oberen Drittel (`top: 15%`), damit es nicht mit dem FAB-Stapel
   kollidiert.
+- **Zeitstrahl (nur Geburtsjahr-Ansicht):** horizontales Rändelrad unten
+  mittig (`.fan-timeline`, `attachTimeline`): Streifen mit einem Strich je
+  Jahr (Dekaden höher + beschriftet) läuft unter einer festen roten Marke
+  mit Jahreszahl durch; ziehen (6 px/Jahr), Mausrad (3 Jahre/Raste) oder
+  Antippen (springt zum angetippten Jahr). Personen mit Geburtsjahr nach
+  dem Stichjahr bekommen `.fan-future` (Segment + Label: `opacity: 0`,
+  Partner-Zeile: `visibility: hidden`) — die Geometrie bleibt, der Fächer
+  „wächst" beim Vorwärtsscrollen (`applyTimeline`, auch nach jedem
+  Label-Neubau). Fehlende Geburtsjahre werden geschätzt (`computeYearOf`:
+  Partner, sonst ältestes Kind − 28, sonst jüngster Elternteil + 30,
+  iterativ), damit niemand grundlos ewig sichtbar/unsichtbar ist. Bereich
+  je Familienzweig: ältestes Geburtsjahr bis heute (`computeTimelineRange`);
+  Start = heute (alles sichtbar), Stichjahr bleibt beim Wechsel der
+  Ansicht/Familie erhalten (geklemmt). Unter 600 px sitzt der Streifen
+  höher (über Waisen-Ablage/Gast-Hinweis, neben dem FAB-Stapel).
 - **Hover:** Kopie des Segments zuoberst mit 12-px-Rand in Segmentfarbe
   plus 1,5-px weißem Saum außen (`showHoverHalo`, `vector-effect:
   non-scaling-stroke`) — wirkt größer, verschiebt nichts; gedimmte

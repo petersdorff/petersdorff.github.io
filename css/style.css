@@ -2055,16 +2055,23 @@ a {
   width: 20px;                 /* sichtbare Leiste */
   border-radius: 10px;
   background-image: repeating-linear-gradient(to bottom, var(--trace-light) 0 1px, transparent 1px 7px);
+  background-position-y: var(--wheel-y, 0px);   /* läuft mit dem Fingerweg */
   /* Rillen laufen oben/unten weich aus */
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
   mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
   opacity: 0.85;
   transition: opacity var(--transition);
 }
-.fan-wheel:hover::before,
 .fan-wheel.is-active::before {
   opacity: 1;
   background-image: repeating-linear-gradient(to bottom, var(--trace) 0 1px, transparent 1px 7px);
+}
+/* Hover nur mit echter Maus — auf Touch bleibt :hover nach dem Tipp kleben */
+@media (hover: hover) {
+  .fan-wheel:hover::before {
+    opacity: 1;
+    background-image: repeating-linear-gradient(to bottom, var(--trace) 0 1px, transparent 1px 7px);
+  }
 }
 .fan-wheel.is-active { cursor: grabbing; }
 
@@ -2080,6 +2087,106 @@ a {
 @media (max-width: 768px) {
   .fan-wheel { top: 15%; transform: none; height: min(260px, 34vh); }
 }
+
+/* Zeitstrahl (Geburtsjahr-Modus): horizontales Rändelrad unten mittig.
+   Streifen mit Jahresstrichen läuft unter einer festen roten Marke durch;
+   Personen mit Geburtsjahr nach der Marke sind ausgeblendet (.fan-future). */
+.fan-timeline {
+  position: absolute;
+  left: 50%;
+  bottom: 62px;
+  transform: translateX(-50%);
+  width: min(460px, calc(100% - 180px));
+  height: 34px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 60;
+}
+.fan-timeline[hidden] { display: none; }
+.fan-timeline.is-active { cursor: grabbing; }
+.fan-timeline-window {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 14%, #000 86%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 14%, #000 86%, transparent);
+}
+.fan-timeline-strip {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  height: 100%;
+  will-change: transform;
+}
+.tl-tick {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 7px;
+  background: var(--trace-light);
+}
+.tl-half { height: 10px; }
+.tl-decade { height: 15px; background: var(--trace); opacity: 0.55; }
+.tl-label {
+  position: absolute;
+  top: 1px;
+  transform: translateX(-50%);
+  font-size: 9px;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.fan-timeline.is-active .tl-tick { background: var(--trace); }
+.fan-timeline-marker {
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  bottom: -2px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--red);
+  pointer-events: none;
+}
+.fan-timeline-year {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--bg);
+  border: 1.5px solid var(--red);
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+}
+@media (pointer: coarse) {
+  .fan-timeline { height: 40px; }
+}
+@media (max-width: 600px) {
+  /* über Waisen-Ablage (links unten) und Gast-Hinweis, neben dem FAB-Stapel */
+  .fan-timeline { bottom: 104px; width: calc(100% - 176px); }
+}
+
+.legend-swatch-timeline {
+  background: repeating-linear-gradient(to right, var(--trace-light) 0 1px, transparent 1px 4px);
+  position: relative;
+}
+.legend-swatch-timeline::after {
+  content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: var(--red);
+}
+
+/* Vom Zeitstrahl ausgeblendete Personen: Platz bleibt, Fläche verschwindet */
+.fan-seg, .fan-label { transition: opacity 0.25s ease; }
+.fan-seg.fan-future, .fan-label.fan-future { opacity: 0; pointer-events: none; }
+.fan-label.fan-future .fan-spouse-link { pointer-events: none; }
+.fan-label tspan.fan-future { visibility: hidden; }
 
 /* Plus-Chips (Kind/Geschwister anlegen) */
 .fan-ghost { cursor: pointer; }

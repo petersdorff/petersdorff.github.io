@@ -38,6 +38,12 @@ const Fan = (() => {
   let canEdit = false;      // nur online mit Schreibrecht
   let colorMode = 'gender'; // 'gender' | 'year' (Geburtsjahr-Skala)
   let yearRange = { min: 1800, max: 2030 };
+  // Zeitstrahl (nur Geburtsjahr-Modus): Personen mit Geburtsjahr > tlYear
+  // werden ausgeblendet, so lässt sich der Fächer „wachsen" sehen.
+  let timeline = null;      // { root, strip, year } HTML-Overlay unten
+  let tlYear = null;        // aktuelles Jahr (kontinuierlich), null = noch nicht initialisiert
+  let tlRange = { min: 1800, max: 2030 };
+  let yearOf = new Map();   // id → Geburtsjahr (bei fehlendem Datum geschätzt)
   let onAddCallback = null;
   let onConnectCallback = null;   // „Wie sind wir verwandt?"-Chip
   let selectedId = null;    // zuletzt angetippte Person (Chips bleiben bis zur nächsten Auswahl)
@@ -114,6 +120,7 @@ const Fan = (() => {
     container.appendChild(svg);
     attachPanZoom();
     attachWheel();
+    attachTimeline();
     // Wird der Container erst sichtbar (0 → Breite), einpassen; sonst nur
     // das Seitenverhältnis nachziehen (z.B. Rotation des Handys).
     let lastW = 0;
@@ -297,6 +304,8 @@ const Fan = (() => {
     activeFamilyId = pickFamily();
     const fam = families.find(f => f.rootId === activeFamilyId);
     computeYearRange(fam);
+    computeYearOf();
+    computeTimelineRange(fam);
     const root = fam.root;
     rootId = root.m.id;
 
@@ -335,6 +344,7 @@ const Fan = (() => {
     if (highlight) drawHighlight();
     if (active) { highlight && hlAnchors.length ? fitToHighlight() : fit(); }
     renderLabels(true);
+    applyTimeline();
   }
 
   function drawSegment({ node, a0, a1 }, familyName, isMe) {
@@ -663,6 +673,7 @@ const Fan = (() => {
       }
       labelLayer.appendChild(text);
     }
+    applyTimeline();
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -697,8 +708,9 @@ const Fan = (() => {
       if (spec) t.setAttribute('transform', labelTransform(spec));
     }
     if (ghostFor) renderGhosts();
-    // Rillen des Rads laufen 1:1 mit dem Fingerweg
-    if (wheel) wheel.style.backgroundPositionY = `${(phi / (2 * Math.PI) * WHEEL_PX_PER_TURN).toFixed(1)}px`;
+    // Rillen des Rads laufen 1:1 mit dem Fingerweg (Leiste ist ::before →
+    // Position über Custom Property durchreichen)
+    if (wheel) wheel.style.setProperty('--wheel-y', `${(phi / (2 * Math.PI) * WHEEL_PX_PER_TURN).toFixed(1)}px`);
   }
 
   /**
@@ -778,6 +790,7 @@ const Fan = (() => {
     if (!ghostFor) return;
     const seg = segById.get(ghostFor);
     if (!seg) return;
+    if (segLayer.querySelector(`.fan-seg.fan-future[data-id="${ghostFor}"]`)) return;   // ausgeblendet (Zeitstrahl)
     const me = (typeof Tree !== 'undefined' && Tree.getCurrentUser) ? Tree.getCurrentUser() : null;
     const showConnect = !!onConnectCallback && ghostFor !== me;
     if (!canEdit && !showConnect) return;
@@ -897,6 +910,171 @@ const Fan = (() => {
         if (shape) shape.setAttribute('fill', segColor(spec.m, depth));
       }
     }
+    updateTimelineVisibility();
+    applyTimeline();
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  ZEITSTRAHL (Geburtsjahr-Modus): horizontales Rändelrad unten
+  // ═══════════════════════════════════════════════════════════
+
+  const TL_PX_PER_YEAR = 6;   // Fingerweg je Jahr
+
+  /** Geburtsjahr je Person; ohne Datum geschätzt (Partner, sonst ältestes
+      Kind − 28, sonst jüngster Elternteil + 30), iterativ über Ketten. */
+  function computeYearOf() {
+    yearOf = new Map();
+    const own = m => { const y = m.birthDate ? parseInt(m.birthDate.substring(0, 4), 10) : NaN; return isFinite(y) ? y : null; };
+    for (const m of members) { const y = own(m); if (y != null) yearOf.set(m.id, y); }
+    const push = (map, k, v) => { if (!map.has(k)) map.set(k, []); map.get(k).push(v); };
+    const parents = new Map(), children = new Map(), spouses = new Map();
+    for (const r of relationships) {
+      if (r.type === 'parent_child') { push(children, r.fromId, r.toId); push(parents, r.toId, r.fromId); }
+      else if (r.type === 'spouse') { push(spouses, r.fromId, r.toId); push(spouses, r.toId, r.fromId); }
+    }
+    const known = ids => (ids || []).map(id => yearOf.get(id)).filter(y => y != null);
+    const estimate = id => {
+      const sp = known(spouses.get(id)); if (sp.length) return Math.min(...sp);
+      const ch = known(children.get(id)); if (ch.length) return Math.min(...ch) - 28;
+      const pa = known(parents.get(id)); if (pa.length) return Math.max(...pa) + 30;
+      return null;
+    };
+    for (let pass = 0, changed = true; changed && pass < 6; pass++) {
+      changed = false;
+      for (const m of members) {
+        if (yearOf.has(m.id)) continue;
+        const y = estimate(m.id);
+        if (y != null) { yearOf.set(m.id, y); changed = true; }
+      }
+    }
+  }
+
+  /** Bereich des Zeitstrahls: ältestes Geburtsjahr des Zweigs bis heute. */
+  function computeTimelineRange(fam) {
+    const pool = fam ? members.filter(m => fam.assigned.has(m.id)) : members;
+    const years = pool.map(m => yearOf.get(m.id)).filter(y => y != null);
+    const now = new Date().getFullYear();
+    const wasAtEnd = tlYear == null || tlYear >= tlRange.max - 0.5;
+    tlRange = years.length ? { min: Math.min(...years), max: Math.max(now, ...years) } : { min: now - 100, max: now };
+    tlYear = wasAtEnd ? tlRange.max : Math.max(tlRange.min, Math.min(tlRange.max, tlYear));
+    buildTimelineStrip();
+  }
+
+  function attachTimeline() {
+    const root = document.createElement('div');
+    root.className = 'fan-timeline';
+    root.hidden = true;
+    root.setAttribute('role', 'slider');
+    root.setAttribute('aria-label', 'Zeitstrahl: Personen bis Geburtsjahr einblenden');
+    root.setAttribute('title', 'Ziehen: durch die Zeit scrollen');
+    const win = document.createElement('div'); win.className = 'fan-timeline-window';
+    const strip = document.createElement('div'); strip.className = 'fan-timeline-strip';
+    win.appendChild(strip);
+    const marker = document.createElement('div'); marker.className = 'fan-timeline-marker';
+    const year = document.createElement('span'); year.className = 'fan-timeline-year';
+    marker.appendChild(year);
+    root.append(win, marker);
+    container.appendChild(root);
+    timeline = { root, strip, year };
+
+    let drag = null;   // { x, year0, moved }
+    root.addEventListener('pointerdown', e => {
+      if (e.button !== undefined && e.button !== 0) return;
+      drag = { x: e.clientX, year0: tlYear, moved: false };
+      try { root.setPointerCapture(e.pointerId); } catch { /* synthetisch */ }
+      root.classList.add('is-active');
+      e.preventDefault();
+    });
+    root.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x;
+      if (Math.abs(dx) > 4) drag.moved = true;
+      // Streifen folgt dem Finger: nach links ziehen = vorwärts in der Zeit
+      setTimelineYear(drag.year0 - dx / TL_PX_PER_YEAR);
+    });
+    const end = e => {
+      if (!drag) return;
+      const d = drag; drag = null;
+      root.classList.remove('is-active');
+      try { root.releasePointerCapture(e.pointerId); } catch { /* egal */ }
+      if (e.type === 'pointerup' && !d.moved) {
+        // Tipp ohne Ziehen: zum angetippten Jahr springen
+        const r = root.getBoundingClientRect();
+        setTimelineYear(Math.round(tlYear + (e.clientX - (r.left + r.width / 2)) / TL_PX_PER_YEAR));
+      }
+    };
+    root.addEventListener('pointerup', end);
+    root.addEventListener('pointercancel', end);
+    root.addEventListener('wheel', e => {
+      e.preventDefault(); e.stopPropagation();
+      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      setTimelineYear(tlYear + delta * 0.03);
+    }, { passive: false });
+  }
+
+  /** Streifen neu bauen: ein Strich je Jahr, Dekaden höher + beschriftet. */
+  function buildTimelineStrip() {
+    if (!timeline) return;
+    const { strip } = timeline;
+    strip.innerHTML = '';
+    strip.style.width = `${(tlRange.max - tlRange.min) * TL_PX_PER_YEAR}px`;
+    const frag = document.createDocumentFragment();
+    for (let y = tlRange.min; y <= tlRange.max; y++) {
+      const x = (y - tlRange.min) * TL_PX_PER_YEAR;
+      const t = document.createElement('i');
+      t.className = y % 10 === 0 ? 'tl-tick tl-decade' : y % 5 === 0 ? 'tl-tick tl-half' : 'tl-tick';
+      t.style.left = `${x}px`;
+      frag.appendChild(t);
+      if (y % 10 === 0) {
+        const l = document.createElement('span');
+        l.className = 'tl-label'; l.textContent = y; l.style.left = `${x}px`;
+        frag.appendChild(l);
+      }
+    }
+    strip.appendChild(frag);
+    updateTimelineStrip();
+  }
+
+  function updateTimelineStrip() {
+    if (!timeline || tlYear == null) return;
+    timeline.strip.style.transform = `translateX(${(-(tlYear - tlRange.min) * TL_PX_PER_YEAR).toFixed(1)}px)`;
+    timeline.year.textContent = Math.round(tlYear);
+  }
+
+  function updateTimelineVisibility() {
+    if (timeline) timeline.root.hidden = colorMode !== 'year';
+  }
+
+  function setTimelineYear(y) {
+    if (!isFinite(y)) return;
+    const next = Math.max(tlRange.min, Math.min(tlRange.max, y));
+    const changed = tlYear == null || Math.round(next) !== Math.round(tlYear);
+    tlYear = next;
+    updateTimelineStrip();
+    if (changed) applyTimeline();
+  }
+
+  /** Personen nach dem Stichjahr ausblenden (Segment, Label, Partner-Zeile). */
+  function applyTimeline() {
+    if (!segLayer) return;
+    const on = colorMode === 'year' && tlYear != null;
+    const cutoff = on ? Math.round(tlYear) : Infinity;
+    const future = id => { const y = yearOf.get(id); return y != null && y > cutoff; };
+    for (const g of segLayer.children) g.classList.toggle('fan-future', future(g.getAttribute('data-id')));
+    for (const t of labelLayer.children) {
+      t.classList.toggle('fan-future', future(t.getAttribute('data-id')));
+      for (const link of t.querySelectorAll('.fan-spouse-link')) {
+        const f = future(link.getAttribute('data-id'));
+        link.classList.toggle('fan-future', f);
+        const glyph = link.previousSibling;   // „∞ " / „⚮ " vor dem Namen
+        if (glyph && glyph.classList) glyph.classList.toggle('fan-future', f);
+      }
+    }
+    if (ghostFor && future(ghostFor)) { showGhosts(null); clearHoverHalo(); }
+  }
+
+  function getTimeline() {
+    return { year: tlYear == null ? null : Math.round(tlYear), min: tlRange.min, max: tlRange.max, active: colorMode === 'year' };
   }
 
   function getYearScale() {
@@ -1112,6 +1290,7 @@ const Fan = (() => {
   return { init, onTap, onAddRelative, onConnect, setCanEdit, isActive, show, hide, toggle, render, fit, centerOn, panTo, highlightConnection, clearHighlight,
            getFamilies, setFamily, familyOf, buildFamiliesFrom,
            setColorMode, getColorMode: () => colorMode, getYearScale,
+           getTimeline, setTimelineYear,
            setPreferredFamily: (id) => { preferredFamilyId = id; },
            onFamilyChange: (cb) => { onFamilyChangeCallback = cb; },
            getUnreachable: () => unreachable.slice(),

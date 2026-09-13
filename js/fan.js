@@ -32,6 +32,9 @@ const Fan = (() => {
   let highlight = null;     // { fromId, toId } — Verwandtschaftspfad
   let labelSpecs = [];      // Geometrie je Segment, Labels werden je Zoomstufe neu gesetzt
   let ghostLayer = null;    // Plus-Chips „Kind / Geschwister anlegen"
+  let ringLayer = null;     // Dreh-Ring mit Griff (außen um den Fächer)
+  let phi = 0;              // Rotation des Fächers (rad), per Ring-Drag
+  let rotating = null;      // { startAngle, phi0 } während eines Ring-Drags
   let ghostFor = null;      // Segment-ID, für die Chips gezeigt werden (Hover/Auswahl)
   let canEdit = false;      // nur online mit Schreibrecht
   let colorMode = 'gender'; // 'gender' | 'year' (Geburtsjahr-Skala)
@@ -70,6 +73,8 @@ const Fan = (() => {
     hlLayer = el('g', { class: 'fan-hl' });
     labelLayer = el('g', { class: 'fan-labels' });
     ghostLayer = el('g', { class: 'fan-ghosts' });
+    ringLayer = el('g', { class: 'fan-ring' });
+    svg.appendChild(ringLayer);
     svg.appendChild(segLayer);
     svg.appendChild(hlLayer);
     svg.appendChild(labelLayer);
@@ -292,6 +297,8 @@ const Fan = (() => {
     drawCenter(root, familyName, root.m.id === currentUserId);
     deferred.forEach(g => segLayer.appendChild(g));
 
+    drawRing();
+    applyRotation();
     if (highlight) drawHighlight();
     if (active) { highlight && hlAnchors.length ? fitToHighlight() : fit(); }
     renderLabels(true);
@@ -316,12 +323,9 @@ const Fan = (() => {
     const arcLen = span * rm - 2 * SEG_GAP;
     const tangential = arcLen > thick * 1.15;
     const theta = a0 + span / 2;
-    let rot = (tangential ? theta + Math.PI / 2 : theta) * 180 / Math.PI;
-    rot = ((rot + 90) % 360 + 360) % 360 - 90;   // lesbar: (-90, 90]
-    if (rot > 90) rot -= 180;
     labelSpecs.push({
       m, spouses: node.spouses, familyName, isMe,
-      x: rm * Math.cos(theta), y: rm * Math.sin(theta), rot,
+      theta, rm, tangential,
       along: (tangential ? arcLen : thick) - 12,
       across: (tangential ? thick : arcLen) - 6,
       lineH: 1.25,
@@ -342,7 +346,8 @@ const Fan = (() => {
     }));
     labelSpecs.push({
       m, spouses: root.spouses, familyName, isMe, center: true,
-      x: 0, y: 0, rot: 0, along: CENTER_R * 2 - 24, across: CENTER_R * 2 - 24, lineH: 1.3,
+      theta: 0, rm: 0, tangential: false,
+      along: CENTER_R * 2 - 24, across: CENTER_R * 2 - 24, lineH: 1.3,
     });
     segLayer.appendChild(g);
     segById.set(m.id, { x: 0, y: 0, shape: { r: CENTER_R }, r0: 0, r1: CENTER_R, a0: -Math.PI / 2, a1: Math.PI * 1.5, theta: -Math.PI / 2, center: true, spouses: root.spouses.length });
@@ -377,7 +382,8 @@ const Fan = (() => {
       if (!segId) continue;
       if (anchors.length && anchors[anchors.length - 1].id === segId) continue;
       const seg = segById.get(segId);
-      anchors.push({ id: segId, x: seg.x, y: seg.y, shape: seg.shape });
+      const p = rotPt(seg.x, seg.y);
+      anchors.push({ id: segId, x: p.x, y: p.y, shape: seg.shape });
     }
     return anchors;
   }
@@ -568,7 +574,7 @@ const Fan = (() => {
       const dim = involved && !involved.has(spec.m.id);
       const text = el('text', {
         class: 'fan-label' + (dim ? ' fan-dim' : ''), 'data-id': spec.m.id, 'text-anchor': 'middle',
-        transform: `translate(${spec.x.toFixed(2)},${spec.y.toFixed(2)}) rotate(${spec.rot.toFixed(2)})`,
+        transform: labelTransform(spec),
         fill: spec.m.isDeceased ? '#6b7280' : '#1a1a1a',
       });
       let cy = -h / 2;
@@ -590,6 +596,78 @@ const Fan = (() => {
       }
       labelLayer.appendChild(text);
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  ROTATION (Ring außen, Griff-Knopf)
+  // ═══════════════════════════════════════════════════════════
+
+  const RING_OFFSET = 26;   // Abstand des Dreh-Rings vom äußersten Ring (Einheiten)
+
+  /** Punkt (x,y) um phi gedreht. */
+  function rotPt(x, y) {
+    const c = Math.cos(phi), s = Math.sin(phi);
+    return { x: x * c - y * s, y: x * s + y * c };
+  }
+
+  /** Label-Transform je Pose, mit aktueller Rotation und Lesbarkeitsregel. */
+  function labelTransform(spec) {
+    if (spec.center) return 'translate(0,0)';
+    const a = spec.theta + phi;
+    const x = spec.rm * Math.cos(a), y = spec.rm * Math.sin(a);
+    let rot = (spec.tangential ? a + Math.PI / 2 : a) * 180 / Math.PI;
+    rot = ((rot + 90) % 360 + 360) % 360 - 90;   // lesbar: (-90, 90]
+    if (rot > 90) rot -= 180;
+    return `translate(${x.toFixed(2)},${y.toFixed(2)}) rotate(${rot.toFixed(2)})`;
+  }
+
+  function applyRotation() {
+    const deg = (phi * 180 / Math.PI).toFixed(3);
+    segLayer.setAttribute('transform', `rotate(${deg})`);
+    hlLayer.setAttribute('transform', `rotate(${deg})`);
+    for (const t of labelLayer.children) {
+      const spec = labelSpecs.find(x => x.m.id === t.getAttribute('data-id'));
+      if (spec) t.setAttribute('transform', labelTransform(spec));
+    }
+    updateRing();
+    if (ghostFor) renderGhosts();
+  }
+
+  function drawRing() {
+    ringLayer.innerHTML = '';
+    const R = chartRadius + RING_OFFSET;
+    ringLayer.appendChild(el('circle', { class: 'fan-rotor-track', r: R, fill: 'none', stroke: '#d0d0d0' }));
+    ringLayer.appendChild(el('circle', { class: 'fan-rotor fan-rotor-hit', r: R, fill: 'none', stroke: 'rgba(0,0,0,0)', 'pointer-events': 'stroke' }));
+    const knob = el('g', { class: 'fan-rotor fan-rotor-knob' });
+    knob.appendChild(el('circle', { fill: '#ffffff', stroke: '#1a1a1a' }));
+    const t = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', fill: '#1a1a1a', 'font-weight': 600 });
+    t.textContent = '⟳';
+    knob.appendChild(t);
+    const tt = el('title'); tt.textContent = 'Ziehen zum Drehen'; knob.appendChild(tt);
+    ringLayer.appendChild(knob);
+    updateRing();
+  }
+
+  /** Ring-Strichstärken und Knopfgröße in Bildschirm-Pixeln konstant halten. */
+  function updateRing() {
+    if (!ringLayer.childElementCount) return;
+    const k = (svg.clientWidth || 1) / vb.w;
+    const R = chartRadius + RING_OFFSET;
+    ringLayer.querySelector('.fan-rotor-track').setAttribute('stroke-width', (1.5 / k).toFixed(3));
+    ringLayer.querySelector('.fan-rotor-hit').setAttribute('stroke-width', (28 / k).toFixed(3));
+    const knob = ringLayer.querySelector('.fan-rotor-knob');
+    const a = -Math.PI / 2 + phi;
+    knob.setAttribute('transform', `translate(${(R * Math.cos(a)).toFixed(2)},${(R * Math.sin(a)).toFixed(2)})`);
+    knob.querySelector('circle').setAttribute('r', (14 / k).toFixed(3));
+    knob.querySelector('circle').setAttribute('stroke-width', (1.6 / k).toFixed(3));
+    knob.querySelector('text').setAttribute('font-size', (16 / k).toFixed(3));
+  }
+
+  /** Winkel (rad) des Zeigers um den Fächer-Mittelpunkt, in Bildschirmkoordinaten. */
+  function pointerAngle(clientX, clientY) {
+    const ctm = svg.getScreenCTM();
+    const c = new DOMPoint(0, 0).matrixTransform(ctm);
+    return Math.atan2(clientY - c.y, clientX - c.x);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -623,32 +701,35 @@ const Fan = (() => {
       ghostLayer.appendChild(g);
     };
     const rm = (seg.r0 + seg.r1) / 2;
+    const theta = seg.theta + phi, a0 = seg.a0 + phi, a1 = seg.a1 + phi;   // mit Rotation
     if (canEdit) {
       // Kind: außen an der Segmentmitte
       const rc = seg.r1 + off;
-      chip(rc * Math.cos(seg.theta), rc * Math.sin(seg.theta), 'child', 'Kind anlegen');
+      chip(rc * Math.cos(theta), rc * Math.sin(theta), 'child', 'Kind anlegen');
       if (!seg.center) {
         // Geschwister: seitlich am Ende des Segments
-        const a = seg.a1 + off / rm;
+        const a = a1 + off / rm;
         chip(rm * Math.cos(a), rm * Math.sin(a), 'sibling', 'Geschwister anlegen');
         // Partner: innen an der Segmentmitte — nur, wenn noch keiner eingetragen ist
         if (!seg.spouses) {
           const ri = seg.r0 - off;
-          chip(ri * Math.cos(seg.theta), ri * Math.sin(seg.theta), 'spouse', 'Partner anlegen', '∞');
+          chip(ri * Math.cos(theta), ri * Math.sin(theta), 'spouse', 'Partner anlegen', '∞');
         }
       } else if (!seg.spouses) {
         // Wurzel ohne Partner: Chip unten am Kreis
-        chip(0, seg.r1 + off, 'spouse', 'Partner anlegen', '∞');
+        const p = rotPt(0, seg.r1 + off);
+        chip(p.x, p.y, 'spouse', 'Partner anlegen', '∞');
       }
     }
     if (showConnect) {
       // „Wie sind wir verwandt?": an der Anfangskante des Segments (die noch
       // freie Seite), bei der Wurzel links am Kreis
       if (!seg.center) {
-        const a = seg.a0 - off / rm;
+        const a = a0 - off / rm;
         chip(rm * Math.cos(a), rm * Math.sin(a), 'connect', 'Wie sind wir verwandt?', '?');
       } else {
-        chip(-(seg.r1 + off), 0, 'connect', 'Wie sind wir verwandt?', '?');
+        const p = rotPt(-(seg.r1 + off), 0);
+        chip(p.x, p.y, 'connect', 'Wie sind wir verwandt?', '?');
       }
     }
   }
@@ -759,6 +840,7 @@ const Fan = (() => {
     svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
     renderLabels();
     if (ghostFor) renderGhosts();
+    updateRing();
   }
 
   function unitsPerPx() { return vb.w / (svg.clientWidth || 1); }
@@ -774,7 +856,7 @@ const Fan = (() => {
   function fit() {
     const cw = container.clientWidth || 1, ch = container.clientHeight || 1;
     // Mindestens Platz für zwei Ringe, sonst füllt eine Ein-Personen-Familie den Bildschirm
-    const R = Math.max(chartRadius, CENTER_R + 2 * RING) + PAD;
+    const R = Math.max(chartRadius, CENTER_R + 2 * RING) + RING_OFFSET + PAD;
     let w = 2 * R, h = 2 * R;
     if (cw >= ch) w = h * cw / ch; else h = w * ch / cw;
     vb = { x: -w / 2, y: -h / 2, w, h };
@@ -803,7 +885,8 @@ const Fan = (() => {
     if (!s) { fit(); return; }
     const cw = container.clientWidth || 1, ch = container.clientHeight || 1;
     const w = RING * 5.5, h = w * ch / cw;
-    vb = { x: s.x - w / 2, y: s.y - h / 2, w, h };
+    const p = rotPt(s.x, s.y);
+    vb = { x: p.x - w / 2, y: p.y - h / 2, w, h };
     apply();
   }
 
@@ -837,8 +920,9 @@ const Fan = (() => {
     ensureFamilyFor(memberId);
     const s = segById.get(memberId) || segById.get(hostOf.get(memberId));
     if (!s) return;
-    vb.x = s.x - vb.w / 2;
-    vb.y = s.y - vb.h / 2;
+    const p = rotPt(s.x, s.y);
+    vb.x = p.x - vb.w / 2;
+    vb.y = p.y - vb.h / 2;
     apply();
   }
 
@@ -860,6 +944,10 @@ const Fan = (() => {
         moved = 0;
         downTarget = e.target.closest ? e.target.closest('[data-id]') : null;
         downPt = { x: e.clientX, y: e.clientY };
+        // Am Dreh-Ring angefasst → Rotation statt Verschieben
+        rotating = (e.target.closest && e.target.closest('.fan-rotor'))
+          ? { startAngle: pointerAngle(e.clientX, e.clientY), phi0: phi } : null;
+        svg.classList.toggle('is-rotating', !!rotating);
       } else {
         downTarget = null;   // zweiter Finger → Pinch, kein Tap
       }
@@ -874,7 +962,10 @@ const Fan = (() => {
       moved += Math.abs(dx) + Math.abs(dy);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-      if (pts.size === 1) {
+      if (pts.size === 1 && rotating) {
+        phi = rotating.phi0 + (pointerAngle(e.clientX, e.clientY) - rotating.startAngle);
+        applyRotation();
+      } else if (pts.size === 1) {
         const s = unitsPerPx();
         vb.x -= dx * s; vb.y -= dy * s;
         apply();
@@ -896,6 +987,13 @@ const Fan = (() => {
       if (!pts.has(e.pointerId)) return;
       pts.delete(e.pointerId);
       try { svg.releasePointerCapture(e.pointerId); } catch { /* egal */ }
+      if (pts.size === 0 && rotating) {
+        rotating = null;
+        svg.classList.remove('is-rotating');
+        if (highlight) drawHighlight();   // Anker für Einpassen neu berechnen
+        downTarget = null;
+        return;
+      }
       if (pts.size === 0 && e.type === 'pointerup' && moved < 10 && downTarget) {
         let id = downTarget.getAttribute('data-id');
         const add = downTarget.getAttribute('data-add');
@@ -933,6 +1031,7 @@ const Fan = (() => {
            setPreferredFamily: (id) => { preferredFamilyId = id; },
            onFamilyChange: (cb) => { onFamilyChangeCallback = cb; },
            getUnreachable: () => unreachable.slice(),
+           getRotation: () => phi, setRotation: (r) => { phi = r; applyRotation(); },
            getTier: () => lodTier,
            _spec: (id) => labelSpecs.find(x => x.m.id === id) };
 })();

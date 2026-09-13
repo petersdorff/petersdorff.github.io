@@ -636,31 +636,35 @@ const Fan = (() => {
   function drawRing() {
     ringLayer.innerHTML = '';
     const R = chartRadius + RING_OFFSET;
-    ringLayer.appendChild(el('circle', { class: 'fan-rotor-track', r: R, fill: 'none', stroke: '#d0d0d0' }));
+    ringLayer.appendChild(el('circle', { class: 'fan-rotor-track', r: R, fill: 'none', stroke: '#c4c4c4' }));
     ringLayer.appendChild(el('circle', { class: 'fan-rotor fan-rotor-hit', r: R, fill: 'none', stroke: 'rgba(0,0,0,0)', 'pointer-events': 'stroke' }));
-    const knob = el('g', { class: 'fan-rotor fan-rotor-knob' });
-    knob.appendChild(el('circle', { fill: '#ffffff', stroke: '#1a1a1a' }));
-    const t = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', fill: '#1a1a1a', 'font-weight': 600 });
-    t.textContent = '⟳';
-    knob.appendChild(t);
-    const tt = el('title'); tt.textContent = 'Ziehen zum Drehen'; knob.appendChild(tt);
-    ringLayer.appendChild(knob);
+    // Pfeilpaar oben auf dem Ring: ◀ linksherum, ▶ rechtsherum (Hinweis: hier drehen)
+    for (const dir of [-1, 1]) {
+      const g = el('g', { class: 'fan-rotor fan-rotor-arrow', 'data-dir': dir });
+      g.appendChild(el('path', { d: 'M-7,-6 L6,0 L-7,6 Z', fill: '#1a1a1a' }));
+      const tt = el('title'); tt.textContent = 'Ziehen zum Drehen'; g.appendChild(tt);
+      ringLayer.appendChild(g);
+    }
     updateRing();
   }
 
-  /** Ring-Strichstärken und Knopfgröße in Bildschirm-Pixeln konstant halten. */
+  /** Ring-Strichstärken und Pfeile in Bildschirm-Pixeln konstant halten. */
   function updateRing() {
     if (!ringLayer.childElementCount) return;
     const k = (svg.clientWidth || 1) / vb.w;
     const R = chartRadius + RING_OFFSET;
-    ringLayer.querySelector('.fan-rotor-track').setAttribute('stroke-width', (1.5 / k).toFixed(3));
-    ringLayer.querySelector('.fan-rotor-hit').setAttribute('stroke-width', (28 / k).toFixed(3));
-    const knob = ringLayer.querySelector('.fan-rotor-knob');
-    const a = -Math.PI / 2 + phi;
-    knob.setAttribute('transform', `translate(${(R * Math.cos(a)).toFixed(2)},${(R * Math.sin(a)).toFixed(2)})`);
-    knob.querySelector('circle').setAttribute('r', (14 / k).toFixed(3));
-    knob.querySelector('circle').setAttribute('stroke-width', (1.6 / k).toFixed(3));
-    knob.querySelector('text').setAttribute('font-size', (16 / k).toFixed(3));
+    ringLayer.querySelector('.fan-rotor-track').setAttribute('stroke-width', (3 / k).toFixed(3));
+    ringLayer.querySelector('.fan-rotor-hit').setAttribute('stroke-width', (30 / k).toFixed(3));
+    // Pfeile sitzen fest oben (der Ring dreht sich nicht mit), leicht links/rechts der Spitze
+    const gapRad = 14 / k / R;   // ~14 px Abstand von der Spitze
+    for (const g of ringLayer.querySelectorAll('.fan-rotor-arrow')) {
+      const dir = +g.getAttribute('data-dir');
+      const a = -Math.PI / 2 + dir * gapRad;
+      const x = R * Math.cos(a), y = R * Math.sin(a);
+      // Pfeilspitze tangential: rechtsherum = a + 90°, linksherum = a − 90°
+      const rot = (a + dir * Math.PI / 2) * 180 / Math.PI;
+      g.setAttribute('transform', `translate(${x.toFixed(2)},${y.toFixed(2)}) rotate(${rot.toFixed(2)}) scale(${(1 / k).toFixed(4)})`);
+    }
   }
 
   /** Winkel (rad) des Zeigers um den Fächer-Mittelpunkt, in Bildschirmkoordinaten. */

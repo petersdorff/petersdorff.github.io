@@ -2021,11 +2021,9 @@ a {
   -webkit-user-select: none;
 }
 
-/* Dreh-Ring: Ziehen am Ring/Knopf rotiert den Fächer */
+/* Dreh-Ring: Ziehen am Ring rotiert den Fächer */
 .fan-rotor { cursor: grab; }
-.fan-rotor-knob text { pointer-events: none; }
-.fan-rotor-knob:hover circle { fill: var(--red); stroke: var(--red); }
-.fan-rotor-knob:hover text { fill: #fff; }
+.fan-rotor-arrow:hover path { fill: var(--red); }
 .fan-svg.is-rotating, .fan-svg.is-rotating .fan-rotor { cursor: grabbing; }
 
 /* Plus-Chips (Kind/Geschwister anlegen) */

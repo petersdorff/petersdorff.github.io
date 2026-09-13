@@ -205,6 +205,7 @@ const Utils = (() => {
     parent: 'Elternteil',
     child: 'Kind',
     spouse: 'Partner',
+    ex_spouse: 'Ehemalige/r Partner/in',
     sibling: 'Geschwister',
   });
 
@@ -219,7 +220,10 @@ const Utils = (() => {
       return gender === 'm' ? 'Sohn' : gender === 'f' ? 'Tochter' : 'Kind';
     }
     if (relType === 'spouse') {
-      return 'Partner';
+      return gender === 'm' ? 'Partner' : gender === 'f' ? 'Partnerin' : 'Partner';
+    }
+    if (relType === 'ex_spouse') {
+      return gender === 'm' ? 'Ex-Partner' : gender === 'f' ? 'Ex-Partnerin' : 'Ehemalige/r Partner/in';
     }
     return REL_LABELS[relType] || relType;
   }

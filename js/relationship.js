@@ -13,6 +13,7 @@ const Relationship = (() => {
     const parentOf = new Map();  // parentId -> [childId, ...]
     const childOf = new Map();   // childId -> [parentId, ...]
     const spouseOf = new Map();  // personId -> [spouseId, ...]
+    const formerCouples = new Set(); // "a~b" für getrennte/geschiedene Paare
     const siblingOf = new Map(); // personId -> [siblingId, ...]
 
     for (const m of members) {
@@ -30,13 +31,14 @@ const Relationship = (() => {
       } else if (r.type === 'spouse') {
         if (spouseOf.has(r.fromId)) spouseOf.get(r.fromId).push(r.toId);
         if (spouseOf.has(r.toId)) spouseOf.get(r.toId).push(r.fromId);
+        if (r.isFormer) { formerCouples.add(`${r.fromId}~${r.toId}`); formerCouples.add(`${r.toId}~${r.fromId}`); }
       } else if (r.type === 'sibling') {
         if (siblingOf.has(r.fromId)) siblingOf.get(r.fromId).push(r.toId);
         if (siblingOf.has(r.toId)) siblingOf.get(r.toId).push(r.fromId);
       }
     }
 
-    return { parentOf, childOf, spouseOf, siblingOf };
+    return { parentOf, childOf, spouseOf, siblingOf, formerCouples };
   }
 
   /**
@@ -223,6 +225,9 @@ const Relationship = (() => {
 
     // ─── Special case: direct spouse ───
     if (edges.length === 1 && edges[0] === 'spouse') {
+      if (graph.formerCouples && graph.formerCouples.has(`${fromId}~${toId}`)) {
+        return { term: genderTerm(gender, 'Ehemaliger Partner', 'Ehemalige Partnerin', 'Ehemalige/r Partner/in'), degree: 0, path };
+      }
       return { term: genderTerm(gender, 'Ehemann', 'Ehefrau', 'Ehepartner'), degree: 0, path };
     }
 

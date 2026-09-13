@@ -98,9 +98,14 @@ const Connection = (() => {
     const byId = new Map(members.map(m => [m.id, m]));
     const myMember = Auth.getMember();
 
+    const isFormerCouple = (a, b) => relationships.some(r =>
+      r.type === 'spouse' && r.isFormer && ((r.fromId === a && r.toId === b) || (r.fromId === b && r.toId === a)));
     const hopLabel = (edgeType, person, prev) => {
       const g = person.gender;
       const prevName = prev.firstName;
+      if (edgeType === 'spouse' && isFormerCouple(person.id, prev.id)) {
+        return `${g === 'm' ? 'ehemaliger Partner' : g === 'f' ? 'ehemalige Partnerin' : 'ehemalige/r Partner/in'} von ${prevName}`;
+      }
       switch (edgeType) {
         case 'parent':
           return `${g === 'm' ? 'Vater' : g === 'f' ? 'Mutter' : 'Elternteil'} von ${prevName}`;

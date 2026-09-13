@@ -158,7 +158,7 @@ const Tree = (() => {
 
     for (const r of relationships) {
       if (r.type === 'spouse') {
-        spouseEdges.push({ from: r.fromId, to: r.toId, id: r.id });
+        spouseEdges.push({ from: r.fromId, to: r.toId, id: r.id, former: !!r.isFormer });
         if (spouseOf.has(r.fromId)) spouseOf.get(r.fromId).push(r.toId);
         if (spouseOf.has(r.toId)) spouseOf.get(r.toId).push(r.fromId);
       } else if (r.type === 'parent_child') {
@@ -628,10 +628,10 @@ const Tree = (() => {
       const couplesTo = inCouple.get(se.to) || [];
       const coupleId = couplesFrom.find(c => couplesTo.includes(c));
       if (coupleId) {
-        elements.push({ group: 'edges', data: { id: `e-spouse-${se.from}-${coupleId}`, source: se.from, target: coupleId, relType: 'spouse', spouseHalf: 'a' }, classes: 'spouse-edge' });
-        elements.push({ group: 'edges', data: { id: `e-spouse-${coupleId}-${se.to}`, source: coupleId, target: se.to, relType: 'spouse', spouseHalf: 'b' }, classes: 'spouse-edge' });
+        elements.push({ group: 'edges', data: { id: `e-spouse-${se.from}-${coupleId}`, source: se.from, target: coupleId, relType: 'spouse', spouseHalf: 'a' }, classes: 'spouse-edge' + (se.former ? ' former' : '') });
+        elements.push({ group: 'edges', data: { id: `e-spouse-${coupleId}-${se.to}`, source: coupleId, target: se.to, relType: 'spouse', spouseHalf: 'b' }, classes: 'spouse-edge' + (se.former ? ' former' : '') });
       } else {
-        elements.push({ group: 'edges', data: { id: `e-${se.id}`, source: se.from, target: se.to, relType: 'spouse' }, classes: 'spouse-edge' });
+        elements.push({ group: 'edges', data: { id: `e-${se.id}`, source: se.from, target: se.to, relType: 'spouse' }, classes: 'spouse-edge' + (se.former ? ' former' : '') });
       }
     }
 
@@ -1413,6 +1413,10 @@ const Tree = (() => {
           'transition-property': 'line-color, width, opacity',
           'transition-duration': '300ms', 'z-index': 5,
         },
+      },
+      {
+        selector: 'edge.spouse-edge.former',
+        style: { 'line-style': 'dashed', 'line-dash-pattern': [6, 4], 'line-color': COLORS.textMuted },
       },
       {
         selector: 'edge.sibling-edge',

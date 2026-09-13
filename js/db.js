@@ -113,7 +113,7 @@ const DB = (() => {
    */
   function missingColumn(error) {
     const msg = (error && error.message) || '';
-    const m = msg.match(/column members\.(\w+) does not exist/i)
+    const m = msg.match(/column \w+\.(\w+) does not exist/i)
            || msg.match(/Could not find the '(\w+)' column/i);
     return m ? m[1] : null;
   }
@@ -193,10 +193,10 @@ const DB = (() => {
       .eq('rel_type', type)
       .limit(1);
 
-    if (existing && existing.length > 0) return existing[0].id;
-
-    // Check reverse for spouse or sibling (bidirectional)
-    if (type === 'spouse' || type === 'sibling') {
+    // Bestehende Kante (auch Gegenrichtung bei spouse/sibling): nur das
+    // „ehemalig"-Flag nachziehen, statt zu duplizieren
+    let found = existing && existing.length > 0 ? existing[0].id : null;
+    if (!found && (type === 'spouse' || type === 'sibling')) {
       const { data: reverse } = await supabase
         .from('relationships')
         .select('id')
@@ -204,7 +204,14 @@ const DB = (() => {
         .eq('to_id', fromId)
         .eq('rel_type', type)
         .limit(1);
-      if (reverse && reverse.length > 0) return reverse[0].id;
+      if (reverse && reverse.length > 0) found = reverse[0].id;
+    }
+    if (found) {
+      if (type === 'spouse' && metadata.isFormer !== undefined) {
+        await writeWithColumnFallback({ is_former: !!metadata.isFormer }, r =>
+          supabase.from('relationships').update(r).eq('id', found));
+      }
+      return found;
     }
 
     const row = {
@@ -214,13 +221,10 @@ const DB = (() => {
     };
     if (metadata.marriageDate) row.marriage_date = metadata.marriageDate;
     if (metadata.divorceDate) row.divorce_date = metadata.divorceDate;
+    if (type === 'spouse' && metadata.isFormer) row.is_former = true;
 
-    const { data, error } = await supabase
-      .from('relationships')
-      .insert(row)
-      .select()
-      .single();
-    if (error) throw error;
+    const data = await writeWithColumnFallback(row, r =>
+      supabase.from('relationships').insert(r).select().single());
     return data.id;
   }
 
@@ -520,6 +524,7 @@ const DB = (() => {
       type: row.rel_type,
       marriageDate: row.marriage_date,
       divorceDate: row.divorce_date,
+      isFormer: !!row.is_former,
       createdAt: row.created_at,
     };
   }

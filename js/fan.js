@@ -138,6 +138,8 @@ const Fan = (() => {
       else if (r.type === 'spouse') { push(spousesOf, r.fromId, r.toId); push(spousesOf, r.toId, r.fromId); }
     }
     const byBirth = (a, b) => (a.birthDate || '9999').localeCompare(b.birthDate || '9999');
+    const formerKey = new Set(relationships.filter(r => r.type === 'spouse' && r.isFormer)
+      .flatMap(r => [`${r.fromId}~${r.toId}`, `${r.toId}~${r.fromId}`]));
 
     const candidates = members.filter(m => !parentsOf.has(m.id) && childrenOf.has(m.id)).sort(byBirth);
     const heads = candidates.filter(m => !(spousesOf.get(m.id) || []).some(id => parentsOf.has(id)));
@@ -166,7 +168,8 @@ const Fan = (() => {
     // deren Partner als Untertitel. Kinder hängen am ersten erreichten Elternteil.
     function makeNode(m, depth, branch, assigned) {
       const spouses = (spousesOf.get(m.id) || []).map(id => byId.get(id))
-        .filter(sp => sp && !assigned.has(sp.id)).sort(byBirth);
+        .filter(sp => sp && !assigned.has(sp.id)).sort(byBirth)
+        .map(sp => ({ ...sp, former: formerKey.has(`${m.id}~${sp.id}`) }));
       spouses.forEach(sp => assigned.add(sp.id));
       const kids = (childrenOf.get(m.id) || []).map(id => byId.get(id))
         .filter(k => k && !assigned.has(k.id)).sort(byBirth);
@@ -443,10 +446,14 @@ const Fan = (() => {
 
   /** Zeilen für ein Segment je Zoomstufe. Partner werden mitgeführt:
       fern gar nicht, mittel als Vornamen, nah mit Geburtsnamen. */
-  function labelLines(spec, tier) {
+  function labelLines(spec, tier, k = 1) {
     const { m, spouses, familyName, isMe, along, center } = spec;
     const lines = [];
     const me = isMe ? '➤ ' : '';
+    // Nahe Stufe: Größe in Einheiten, aber nie größer als `px` auf dem
+    // Bildschirm — so bleibt beim Reinzoomen die Schrift konstant, während
+    // das Segment weiter wächst, bis alle Zeilen Platz haben.
+    const cap = (units, px) => Math.min(units, px / k);
     // Zentrum (Stammvater) folgt demselben Muster wie die Segmente:
     // Vorname groß, Nachname eigene Zeile — nur nie ganz ohne Nachname.
     // Übersicht (fern/mittel): nur Vorname — Nachnamen erst auf der nahen Stufe
@@ -460,16 +467,16 @@ const Fan = (() => {
     } else {
       // nah: voller Name — Nachname als eigene Zeile, damit er in die
       // Ringbreite passt; Geburtsname zuletzt (niedrigste Priorität)
-      lines.push({ ...fitText(me + m.firstName, along, 11, 6.5), weight: 600 });
+      lines.push({ ...fitText(me + m.firstName, along, cap(11, 15), cap(6.5, 11)), weight: 600 });
       // Nachname darf etwas dichter an den Rand und kleiner werden,
       // damit „von Petersdorff-Campen" auch radial in die Ringbreite passt
-      if (m.lastName) lines.push({ ...fitText(m.lastName, along + 6, 8.5, 5.5), weight: 500 });
-      if (spouses.length) lines.push(spouseLine(spouses, along, 8.5, 6, spouseName));
+      if (m.lastName) lines.push({ ...fitText(m.lastName, along + 6, cap(8.5, 12), cap(5.5, 10)), weight: 500 });
+      if (spouses.length) lines.push(spouseLine(spouses, along, cap(8.5, 12), cap(6, 10), spouseName));
       const yr = yearLabel(m);
-      if (yr) lines.push({ ...fitText(yr, along, 8, 6), weight: 400, dim: true });
+      if (yr) lines.push({ ...fitText(yr, along, cap(8, 11), cap(6, 10)), weight: 400, dim: true });
       if (m.birthName) {
         const geb = /^geb\./i.test(m.birthName) ? m.birthName : `geb. ${m.birthName}`;
-        lines.push({ ...fitText(geb, along, 7.5, 6), weight: 400, dim: true });
+        lines.push({ ...fitText(geb, along, cap(7.5, 11), cap(6, 10)), weight: 400, dim: true });
       }
     }
     return lines;
@@ -479,38 +486,45 @@ const Fan = (() => {
       ID und öffnet beim Antippen das eigene Profil. Passt Schriftgröße
       an und kürzt notfalls den letzten Namen. */
   function spouseLine(spouses, along, fs, minFs, nameFn) {
-    const names = spouses.map(sp => ({ text: nameFn(sp), id: sp.id }));
-    const full = '∞ ' + names.map(n => n.text).join(' · ');
+    // ∞ = Partner/in, ⚮ = ehemalige/r Partner/in (getrennt/geschieden)
+    const names = spouses.map(sp => ({ text: nameFn(sp), id: sp.id, glyph: sp.former ? '⚮ ' : '∞ ' }));
+    const full = names.map(n => n.glyph + n.text).join(' · ');
     const fit = fitText(full, along, fs, minFs);
     const maxChars = Math.max(1, Math.floor(along / (CHAR_W * fit.fs)));
-    const parts = [{ text: '∞ ' }];
-    let used = 2;
+    const parts = [];
+    let used = 0;
     for (let i = 0; i < names.length; i++) {
       const sep = i > 0 ? ' · ' : '';
+      const prefix = sep + names[i].glyph;
       let text = names[i].text;
-      if (used + sep.length + text.length > maxChars) {
-        const room = maxChars - used - sep.length - 1;
+      if (used + prefix.length + text.length > maxChars) {
+        const room = maxChars - used - prefix.length - 1;
         if (room < 2) break;
         text = text.slice(0, room) + '…';
-        if (sep) parts.push({ text: sep });
+        parts.push({ text: prefix });
         parts.push({ text, id: names[i].id });
         break;
       }
-      if (sep) parts.push({ text: sep });
+      parts.push({ text: prefix });
       parts.push({ text, id: names[i].id });
-      used += sep.length + text.length;
+      used += prefix.length + text.length;
     }
     return { fs: fit.fs, weight: 400, dim: true, parts };
   }
 
+  let labelK = 0;   // Zoom (px/Einheit), für den die Labels zuletzt gebaut wurden
+
   function renderLabels(force = false) {
     if (!svg) return;
     const tier = currentTier();
-    if (!force && tier === lodTier) return;
-    lodTier = tier;
+    const k = (svg.clientWidth || 1) / vb.w;
+    // Nahe Stufe: Schriftdeckel hängt vom Zoom ab → bei >4 % Änderung neu bauen
+    const zoomChanged = tier === 'full' && Math.abs(k - labelK) / (labelK || 1) > 0.04;
+    if (!force && tier === lodTier && !zoomChanged) return;
+    lodTier = tier; labelK = k;
     labelLayer.innerHTML = '';
     for (const spec of labelSpecs) {
-      const lines = labelLines(spec, tier);
+      const lines = labelLines(spec, tier, k);
       // Zeilen greedy einpassen: Name zuerst, dann Partner, dann Jahre
       const kept = [];
       let h = 0;
@@ -725,7 +739,8 @@ const Fan = (() => {
     const rect = svg.getBoundingClientRect();
     const sx = vb.x + (client.x - rect.left) / rect.width * vb.w;
     const sy = vb.y + (client.y - rect.top) / rect.height * vb.h;
-    const minW = RING * 2.5, maxW = (chartRadius + PAD) * 6;
+    // Weit genug rein, dass auch schmale Außensegmente alle Zeilen zeigen
+    const minW = RING * 0.4, maxW = (chartRadius + PAD) * 6;
     const nw = Math.min(maxW, Math.max(minW, vb.w / f));
     const rf = vb.w / nw;
     vb.x = sx - (sx - vb.x) / rf;
@@ -749,13 +764,18 @@ const Fan = (() => {
   function spouseLinkNear(segId, pt, pad) {
     const label = labelLayer.querySelector(`.fan-label[data-id="${segId}"]`);
     if (!label) return null;
+    // Bei mehreren Partnern in einer Zeile den NÄCHSTEN Link nehmen, nicht
+    // den ersten in Reichweite (sonst gewinnt bei „Karoline · Roswitha"
+    // immer Karoline).
+    let best = null, bestDist = Infinity;
     for (const link of label.querySelectorAll('.fan-spouse-link')) {
       const r = link.getBoundingClientRect();
-      if (pt.x >= r.left - pad && pt.x <= r.right + pad && pt.y >= r.top - pad && pt.y <= r.bottom + pad) {
-        return link.getAttribute('data-id');
-      }
+      const dx = Math.max(r.left - pt.x, 0, pt.x - r.right);
+      const dy = Math.max(r.top - pt.y, 0, pt.y - r.bottom);
+      const d = Math.hypot(dx, dy);
+      if (d <= pad && d < bestDist) { best = link.getAttribute('data-id'); bestDist = d; }
     }
-    return null;
+    return best;
   }
 
   /** Person in die Bildmitte holen, ohne den Zoom zu ändern. */

@@ -21,7 +21,9 @@ const Relations = (() => {
     } else if (relType === 'child') {
       await DB.addRelationship(toId, fromId, Utils.REL_TYPES.PARENT_CHILD);
     } else if (relType === 'spouse') {
-      await DB.addRelationship(fromId, toId, Utils.REL_TYPES.SPOUSE);
+      await DB.addRelationship(fromId, toId, Utils.REL_TYPES.SPOUSE, { isFormer: false });
+    } else if (relType === 'ex_spouse') {
+      await DB.addRelationship(fromId, toId, Utils.REL_TYPES.SPOUSE, { isFormer: true });
     } else if (relType === 'sibling') {
       await DB.addRelationship(fromId, toId, Utils.REL_TYPES.SIBLING);
     }
@@ -57,6 +59,8 @@ const Relations = (() => {
       let displayType;
       if (r.type === 'parent_child') {
         displayType = r.fromId === memberId ? 'child' : 'parent';
+      } else if (r.type === 'spouse' && r.isFormer) {
+        displayType = 'ex_spouse';
       } else {
         displayType = r.type;
       }
@@ -103,6 +107,8 @@ const Relations = (() => {
       let displayType;
       if (r.type === 'parent_child') {
         displayType = r.fromId === memberId ? 'child' : 'parent';
+      } else if (r.type === 'spouse' && r.isFormer) {
+        displayType = 'ex_spouse';
       } else {
         displayType = r.type;
       }
@@ -362,7 +368,7 @@ const Relations = (() => {
     const queue = [];
     if (relType === 'parent') queue.push({ f: fromId, t: toId, type: PC });
     else if (relType === 'child') queue.push({ f: toId, t: fromId, type: PC });
-    else if (relType === 'spouse') queue.push({ f: fromId, t: toId, type: SP });
+    else if (relType === 'spouse' || relType === 'ex_spouse') queue.push({ f: fromId, t: toId, type: SP });
     else if (relType === 'sibling') queue.push({ f: fromId, t: toId, type: SIB });
     for (const r of all) queue.push({ f: r.fromId, t: r.toId, type: r.type });
 
@@ -425,6 +431,8 @@ const Relations = (() => {
       let existingType;
       if (r.type === 'parent_child') {
         existingType = r.fromId === memberId ? 'parent_of' : 'child_of';
+      } else if (r.type === 'spouse' && r.isFormer) {
+        existingType = 'ex_spouse';
       } else {
         existingType = r.type;
       }
@@ -445,6 +453,9 @@ const Relations = (() => {
         ['parent_of', 'spouse'],
         ['child_of', 'spouse'],
         ['sibling', 'spouse'],
+        ['parent_of', 'ex_spouse'],
+        ['child_of', 'ex_spouse'],
+        ['sibling', 'ex_spouse'],
       ];
 
       if (existingType === newType) {

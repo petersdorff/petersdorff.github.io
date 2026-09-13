@@ -102,7 +102,12 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
 `relationships`: gerichtete Kanten `from_id → to_id` mit `rel_type`:
 - `parent_child` (Eltern → Kind; **hartes Limit: max. 2 Eltern pro Kind**)
 - `spouse` (ungerichtet gespeichert, dedupe in beide Richtungen;
-  bedeutet generisch „Partner", nicht zwingend verheiratet)
+  bedeutet generisch „Partner", nicht zwingend verheiratet). **`is_former`**
+  (Migration 006) markiert getrennte/geschiedene Partnerschaften — der
+  Typ bleibt `spouse` (Layout, Pfadsuche, Regel-Engine unverändert); UI-
+  Typ `ex_spouse` → `addRelationship(…, 'spouse', { isFormer: true })`,
+  bestehende Kante wird nur umgeflaggt. Anzeige: Fächer ⚮ statt ∞, Baum
+  gestrichelt, Begriff „Ehemalige/r Partner/in".
 - `sibling` (ungerichtet; wird meist automatisch gepflegt)
 
 ## Modulstruktur (js/)
@@ -180,8 +185,12 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   entsättigt; registrierte Profile dunkler Rand, aktueller Nutzer rot.
 - **Semantic Zoom** nach Pixel pro SVG-Einheit (`LOD_MID`/`LOD_FULL`):
   fern = Vorname groß, mittel = Vorname + Partner-Vornamen, nah = Name +
-  Partner mit Geburtsname + Jahre. Labels liegen in eigener Ebene über
-  Segmenten und Highlight und werden nur bei Stufenwechsel neu gebaut.
+  Partner mit Geburtsname + Jahre. Auf der nahen Stufe sind Schriftgrößen
+  in Einheiten, aber **mit Pixel-Deckel** (`cap(units, px)`, z.B. Name
+  max. 15 px): beim Reinzoomen wächst das Segment weiter, der Text nicht →
+  irgendwann passen alle Zeilen auch in schmale Außensegmente. Labels
+  werden bei Stufenwechsel und auf der nahen Stufe bei >4 % Zoomänderung
+  neu gebaut; Maximal-Zoom `minW = RING * 0.4`.
 - **Verwandtschaftspfad:** `Fan.highlightConnection` (wird von
   `connection.js` parallel zu `Tree.highlightConnection` gerufen) umrandet
   Beteiligte rot und dimmt alle anderen (`.fan-dim`) — keine Linie, kein

@@ -46,13 +46,14 @@ Gotha-Datenbasis). Vanilla HTML/CSS/JS ohne Build-Schritt, PCB-Ästhetik
 - Tabellen: `members`, `relationships`, `user_approvals`; Storage-Bucket
   `photos`. Schema: `supabase-schema.sql`, dann
   `supabase-migration-approvals.sql`, `migrations/002…`, `migrations/003…`.
-- **Migration 002 fehlt im laufenden Projekt (Stand Sept. 2026):** die
-  Spalte `members.occupation` existiert nicht (und vermutlich die
-  Storage-Policies für Fotos auch nicht). `db.js` lässt beim Speichern
-  genau die fehlende Spalte weg (`writeWithColumnFallback`, Warnung in
-  der Konsole) — „Beruf" geht dadurch verloren, bis 002 im SQL-Editor
-  eingespielt ist. Früher flog dabei auch `gender` mit raus (stiller
-  Datenverlust) — nie wieder pauschal Spalten verwerfen.
+- **Migrationen 002 + 004 eingespielt (13.09.2026, verifiziert):**
+  `members.occupation` existiert, Foto-Policies gesetzt, `is_admin()`
+  vorhanden, Status-Constraint aktiv, anonymes Lesen von `user_approvals`
+  liefert `[]`. `db.js` behält den Fallback `writeWithColumnFallback`
+  (lässt bei „Spalte fehlt" GENAU diese Spalte weg, Warnung in der
+  Konsole) — nie wieder pauschal Spalten verwerfen, das hatte `gender`
+  still verschluckt. Nach einem Neuaufbau des Projekts alle Migrationen
+  in Reihenfolge 002 → 003 → 004 erneut ausführen.
 - **Zugriffsmodell (4 Stufen):** Gast/Familientag (Snapshot, nur lesen) ·
   registriert-wartend (nichts, Warteseite) · Mitglied `approved` (alles
   lesen, Personen/Beziehungen anlegen und ändern, Kernfelder beanspruchter
@@ -65,13 +66,12 @@ Gotha-Datenbasis). Vanilla HTML/CSS/JS ohne Build-Schritt, PCB-Ästhetik
   Ablehnen / Sperren / Entsperren / Profil-Verknüpfung lösen
   (`DB.setApprovalStatus`, `DB.unclaimMember`). Konten löschen nur im
   Supabase-Dashboard (Service-Rolle).
-- **Migration 004 (`migrations/004_user_management_and_policy_fixes.sql`)
-  MUSS eingespielt werden:** die ursprünglichen Policies erlaubten anonymes
-  Lesen aller registrierten E-Mails und die Selbst-Freigabe per REST
-  (`USING (true)`). 004 ersetzt sie (eigene Zeile bzw. Admin), ergänzt
-  `revoked`, spiegelt den Kernfeld-Schutz in RLS und beschränkt Löschen
-  auf Platzhalter. Stand 13.09.2026: 5 Konten (Kai, Tabea, Stephan, Lea
-  Sophia, Anne), 3 Profile verknüpft.
+- **Migration 004 (`migrations/004_user_management_and_policy_fixes.sql`,
+  eingespielt 13.09.2026):** ersetzt die ursprünglichen `USING (true)`-
+  Policies (anonymes Lesen aller E-Mails, Selbst-Freigabe per REST) durch
+  „eigene Zeile bzw. Admin", ergänzt `revoked`, spiegelt den Kernfeld-
+  Schutz in RLS und beschränkt Löschen auf Platzhalter. Stand 13.09.2026:
+  5 Konten (Kai, Tabea, Stephan, Lea Sophia, Anne), 3 Profile verknüpft.
 - **Serverseitige Freigabe-Prüfung** (Migration 003) ist eingespielt —
   verifiziert September 2026: RLS-Policies laufen über `public.is_approved()`,
   nicht freigegebene Konten lesen nichts. Prüfen per

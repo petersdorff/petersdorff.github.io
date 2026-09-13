@@ -37,6 +37,7 @@ const Fan = (() => {
   let colorMode = 'gender'; // 'gender' | 'year' (Geburtsjahr-Skala)
   let yearRange = { min: 1800, max: 2030 };
   let onAddCallback = null;
+  let onConnectCallback = null;   // „Wie sind wir verwandt?"-Chip
   let selectedId = null;    // zuletzt angetippte Person (Chips bleiben bis zur nächsten Auswahl)
   let unreachable = [];     // IDs, die in keiner Familie vorkommen (Waisen-Ablage)
   let families = [];        // [{ rootId, name, short, root, assigned, size }]
@@ -75,7 +76,7 @@ const Fan = (() => {
     svg.appendChild(ghostLayer);
     // Hover (Maus): Plus-Chips für das Segment unter dem Zeiger
     svg.addEventListener('pointerover', e => {
-      if (e.pointerType !== 'mouse' || !canEdit) return;
+      if (e.pointerType !== 'mouse') return;
       const seg = e.target.closest && e.target.closest('.fan-seg');
       if (seg) showGhosts(seg.getAttribute('data-id'));
     });
@@ -101,6 +102,7 @@ const Fan = (() => {
 
   function onTap(cb) { onTapCallback = cb; }
   function onAddRelative(cb) { onAddCallback = cb; }
+  function onConnect(cb) { onConnectCallback = cb; }
   function setCanEdit(v) { canEdit = !!v; if (!canEdit) showGhosts(null); }
   function isActive() { return active; }
 
@@ -452,8 +454,12 @@ const Fan = (() => {
     const me = isMe ? '➤ ' : '';
     // Nahe Stufe: Größe in Einheiten, aber nie größer als `px` auf dem
     // Bildschirm — so bleibt beim Reinzoomen die Schrift konstant, während
-    // das Segment weiter wächst, bis alle Zeilen Platz haben.
-    const cap = (units, px) => Math.min(units, px / k);
+    // das Segment weiter wächst, bis alle Zeilen Platz haben. Ab dem Zoom
+    // kFit (alles passt) wird die Größe in Einheiten eingefroren, damit
+    // die Schrift danach wieder mit dem Segment mitwächst.
+    if (spec.kFit === undefined) spec.kFit = computeKFit(spec);
+    const kEff = Math.min(k, spec.kFit);
+    const cap = (units, px) => Math.min(units, px / kEff);
     // Zentrum (Stammvater) folgt demselben Muster wie die Segmente:
     // Vorname groß, Nachname eigene Zeile — nur nie ganz ohne Nachname.
     // Übersicht (fern/mittel): nur Vorname — Nachnamen erst auf der nahen Stufe
@@ -467,10 +473,10 @@ const Fan = (() => {
     } else {
       // nah: voller Name — Nachname als eigene Zeile, damit er in die
       // Ringbreite passt; Geburtsname zuletzt (niedrigste Priorität)
-      lines.push({ ...fitText(me + m.firstName, along, cap(11, 15), cap(6.5, 11)), weight: 600 });
+      lines.push({ ...fitText(center ? `${m.firstName} ${m.lastName}` : me + m.firstName, along, cap(11, 15), cap(6.5, 11)), weight: 600 });
       // Nachname darf etwas dichter an den Rand und kleiner werden,
       // damit „von Petersdorff-Campen" auch radial in die Ringbreite passt
-      if (m.lastName) lines.push({ ...fitText(m.lastName, along + 6, cap(8.5, 12), cap(5.5, 10)), weight: 500 });
+      if (m.lastName && !center) lines.push({ ...fitText(m.lastName, along + 6, cap(8.5, 12), cap(5.5, 10)), weight: 500 });
       if (spouses.length) lines.push(spouseLine(spouses, along, cap(8.5, 12), cap(6, 10), spouseName));
       const yr = yearLabel(m);
       if (yr) lines.push({ ...fitText(yr, along, cap(8, 11), cap(6, 10)), weight: 400, dim: true });
@@ -480,6 +486,47 @@ const Fan = (() => {
       }
     }
     return lines;
+  }
+
+  /**
+   * Zoom (px/Einheit), ab dem auf der nahen Stufe ALLE Zeilen eines
+   * Segments ungekürzt passen — mit denselben Pixel-Deckeln wie in
+   * labelLines. Darüber werden die Schriftgrößen eingefroren.
+   */
+  function computeKFit(spec) {
+    const { m, spouses, isMe, along, across, lineH, center } = spec;
+    const me = isMe ? '➤ ' : '';
+    const items = [];
+    if (center) {
+      items.push({ text: `${m.firstName} ${m.lastName}`, px: 15, along });
+    } else {
+      items.push({ text: me + m.firstName, px: 15, along });
+      if (m.lastName) items.push({ text: m.lastName, px: 12, along: along + 6 });
+    }
+    if (spouses.length) {
+      items.push({ text: spouses.map(sp => (sp.former ? '⚮ ' : '∞ ') + spouseName(sp)).join(' · '), px: 12, along });
+    }
+    const yr = yearLabel(m);
+    if (yr) items.push({ text: yr, px: 11, along });
+    if (m.birthName) {
+      items.push({ text: /^geb\./i.test(m.birthName) ? m.birthName : `geb. ${m.birthName}`, px: 11, along });
+    }
+    let k = 0;
+    for (const it of items) k = Math.max(k, it.text.length * CHAR_W * it.px / Math.max(1, it.along));
+    const stackPx = items.reduce((sum, it) => sum + it.px * lineH, 0);
+    k = Math.max(k, stackPx / Math.max(1, across));
+    // 8 % Reserve gegen Rundung (Zeilenpackung / Zeichenzahl an der Grenze)
+    return Math.max(k * 1.08, 0.01);
+  }
+
+  /** Größtes kFit aller Segmente — bis dahin muss man zoomen können. */
+  function maxKFit() {
+    let mx = 0;
+    for (const sp of labelSpecs) {
+      if (sp.kFit === undefined) sp.kFit = computeKFit(sp);
+      mx = Math.max(mx, sp.kFit);
+    }
+    return mx;
   }
 
   /** „∞ Name · Name" als klickbare Teile: jeder Partner-Name trägt seine
@@ -518,8 +565,12 @@ const Fan = (() => {
     if (!svg) return;
     const tier = currentTier();
     const k = (svg.clientWidth || 1) / vb.w;
-    // Nahe Stufe: Schriftdeckel hängt vom Zoom ab → bei >4 % Änderung neu bauen
-    const zoomChanged = tier === 'full' && Math.abs(k - labelK) / (labelK || 1) > 0.04;
+    // Nahe Stufe: Schriftdeckel hängt vom Zoom ab → bei >4 % Änderung neu
+    // bauen — aber nur, solange noch ein Segment unter seinem kFit liegt
+    // (darüber sind alle Größen eingefroren, Neubau wäre Verschwendung).
+    const kAll = maxKFit();
+    const zoomChanged = tier === 'full' && Math.abs(k - labelK) / (labelK || 1) > 0.04
+      && !(k >= kAll && labelK >= kAll);
     if (!force && tier === lodTier && !zoomChanged) return;
     lodTier = tier; labelK = k;
     labelLayer.innerHTML = '';
@@ -573,9 +624,12 @@ const Fan = (() => {
 
   function renderGhosts() {
     ghostLayer.innerHTML = '';
-    if (!canEdit || !ghostFor) return;
+    if (!ghostFor) return;
     const seg = segById.get(ghostFor);
     if (!seg) return;
+    const me = (typeof Tree !== 'undefined' && Tree.getCurrentUser) ? Tree.getCurrentUser() : null;
+    const showConnect = !!onConnectCallback && ghostFor !== me;
+    if (!canEdit && !showConnect) return;
     // Chips in Bildschirm-Pixeln konstant halten (unabhängig vom Zoom)
     const k = (svg.clientWidth || 1) / vb.w;   // px pro Einheit
     const r = 12 / k, off = 15 / k;
@@ -588,22 +642,34 @@ const Fan = (() => {
       const tt = el('title'); tt.textContent = title; g.appendChild(tt);
       ghostLayer.appendChild(g);
     };
-    // Kind: außen an der Segmentmitte
-    const rc = seg.r1 + off;
-    chip(rc * Math.cos(seg.theta), rc * Math.sin(seg.theta), 'child', 'Kind anlegen');
-    if (!seg.center) {
-      const rm = (seg.r0 + seg.r1) / 2;
-      // Geschwister: seitlich am Ende des Segments
-      const a = seg.a1 + off / rm;
-      chip(rm * Math.cos(a), rm * Math.sin(a), 'sibling', 'Geschwister anlegen');
-      // Partner: innen an der Segmentmitte — nur, wenn noch keiner eingetragen ist
-      if (!seg.spouses) {
-        const ri = seg.r0 - off;
-        chip(ri * Math.cos(seg.theta), ri * Math.sin(seg.theta), 'spouse', 'Partner anlegen', '∞');
+    const rm = (seg.r0 + seg.r1) / 2;
+    if (canEdit) {
+      // Kind: außen an der Segmentmitte
+      const rc = seg.r1 + off;
+      chip(rc * Math.cos(seg.theta), rc * Math.sin(seg.theta), 'child', 'Kind anlegen');
+      if (!seg.center) {
+        // Geschwister: seitlich am Ende des Segments
+        const a = seg.a1 + off / rm;
+        chip(rm * Math.cos(a), rm * Math.sin(a), 'sibling', 'Geschwister anlegen');
+        // Partner: innen an der Segmentmitte — nur, wenn noch keiner eingetragen ist
+        if (!seg.spouses) {
+          const ri = seg.r0 - off;
+          chip(ri * Math.cos(seg.theta), ri * Math.sin(seg.theta), 'spouse', 'Partner anlegen', '∞');
+        }
+      } else if (!seg.spouses) {
+        // Wurzel ohne Partner: Chip unten am Kreis
+        chip(0, seg.r1 + off, 'spouse', 'Partner anlegen', '∞');
       }
-    } else if (!seg.spouses) {
-      // Wurzel ohne Partner: Chip unten am Kreis
-      chip(0, seg.r1 + off, 'spouse', 'Partner anlegen', '∞');
+    }
+    if (showConnect) {
+      // „Wie sind wir verwandt?": an der Anfangskante des Segments (die noch
+      // freie Seite), bei der Wurzel links am Kreis
+      if (!seg.center) {
+        const a = seg.a0 - off / rm;
+        chip(rm * Math.cos(a), rm * Math.sin(a), 'connect', 'Wie sind wir verwandt?', '?');
+      } else {
+        chip(-(seg.r1 + off), 0, 'connect', 'Wie sind wir verwandt?', '?');
+      }
     }
   }
 
@@ -739,8 +805,10 @@ const Fan = (() => {
     const rect = svg.getBoundingClientRect();
     const sx = vb.x + (client.x - rect.left) / rect.width * vb.w;
     const sy = vb.y + (client.y - rect.top) / rect.height * vb.h;
-    // Weit genug rein, dass auch schmale Außensegmente alle Zeilen zeigen
-    const minW = RING * 0.4, maxW = (chartRadius + PAD) * 6;
+    // Weit genug rein, dass JEDES Segment sein kFit erreicht (alle Zeilen
+    // sichtbar) — mindestens aber bis ein knapper halber Ring den Bildschirm füllt
+    const minW = Math.min(RING * 0.4, (svg.clientWidth || 1) / (maxKFit() * 1.15));
+    const maxW = (chartRadius + PAD) * 6;
     const nw = Math.min(maxW, Math.max(minW, vb.w / f));
     const rf = vb.w / nw;
     vb.x = sx - (sx - vb.x) / rf;
@@ -852,7 +920,9 @@ const Fan = (() => {
           if (near) id = near;
         }
         downTarget = null;
-        if (add) {
+        if (add === 'connect') {
+          if (onConnectCallback) onConnectCallback(id);
+        } else if (add) {
           if (onAddCallback) onAddCallback(add, id);
         } else if (id && onTapCallback) {
           selectedId = id;
@@ -871,11 +941,12 @@ const Fan = (() => {
     }, { passive: false });
   }
 
-  return { init, onTap, onAddRelative, setCanEdit, isActive, show, hide, toggle, render, fit, centerOn, panTo, highlightConnection, clearHighlight,
+  return { init, onTap, onAddRelative, onConnect, setCanEdit, isActive, show, hide, toggle, render, fit, centerOn, panTo, highlightConnection, clearHighlight,
            getFamilies, setFamily, familyOf,
            setColorMode, getColorMode: () => colorMode, getYearScale,
            setPreferredFamily: (id) => { preferredFamilyId = id; },
            onFamilyChange: (cb) => { onFamilyChangeCallback = cb; },
            getUnreachable: () => unreachable.slice(),
-           getTier: () => lodTier };
+           getTier: () => lodTier,
+           _spec: (id) => labelSpecs.find(x => x.m.id === id) };
 })();

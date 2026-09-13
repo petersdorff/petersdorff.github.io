@@ -11,12 +11,16 @@ const Connection = (() => {
   let pendingConnectId = null;
 
   async function showConnectionToMe() {
-    const profileId = Profile.getCurrentProfileId();
+    return showConnectionTo(Profile.getCurrentProfileId());
+  }
+
+  /** Verwandtschaft zwischen mir und targetId anzeigen (Profil-Button, „?"-Chip). */
+  async function showConnectionTo(targetId) {
     const myMember = Auth.getMember();
-    if (!profileId) return;
+    if (!targetId) return;
     if (!myMember) {
       // No identity yet (guest without selection) → let them pick first
-      pendingConnectId = profileId;
+      pendingConnectId = targetId;
       if (Guest.isActive()) {
         App.toast('Wähle zuerst, wer du bist', 'info');
         Guest.showIdentityPicker();
@@ -25,9 +29,10 @@ const Connection = (() => {
       }
       return;
     }
+    if (targetId === myMember.id) { App.toast('Das bist du selbst', 'info'); return; }
 
     App.showView('view-main');
-    await showOverlay(myMember.id, profileId);
+    await showOverlay(myMember.id, targetId);
   }
 
   async function showOverlay(fromId, toId) {
@@ -279,6 +284,7 @@ const Connection = (() => {
 
   return {
     showConnectionToMe,
+    showConnectionTo,
     showOverlay,
     closeOverlay,
     handleQRScanned,

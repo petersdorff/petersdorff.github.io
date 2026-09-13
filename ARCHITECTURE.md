@@ -188,9 +188,14 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   Partner mit Geburtsname + Jahre. Auf der nahen Stufe sind Schriftgrößen
   in Einheiten, aber **mit Pixel-Deckel** (`cap(units, px)`, z.B. Name
   max. 15 px): beim Reinzoomen wächst das Segment weiter, der Text nicht →
-  irgendwann passen alle Zeilen auch in schmale Außensegmente. Labels
-  werden bei Stufenwechsel und auf der nahen Stufe bei >4 % Zoomänderung
-  neu gebaut; Maximal-Zoom `minW = RING * 0.4`.
+  irgendwann passen alle Zeilen auch in schmale Außensegmente. Je Segment
+  wird `kFit` (Zoom, ab dem alles ungekürzt passt, +8 % Reserve) berechnet;
+  **darüber sind die Größen in Einheiten eingefroren** (`kEff = min(k,
+  kFit)`), die Schrift wächst dann wieder mit dem Segment. Labels werden bei
+  Stufenwechsel und auf der nahen Stufe bei >4 % Zoomänderung neu gebaut
+  (nicht mehr, sobald alle Segmente über ihrem kFit sind). Maximal-Zoom
+  `minW = min(RING*0.4, Breite / (max kFit · 1.15))` — jedes Segment ist
+  erreichbar. `Fan._spec(id)` liefert die Label-Geometrie zum Debuggen.
 - **Verwandtschaftspfad:** `Fan.highlightConnection` (wird von
   `connection.js` parallel zu `Tree.highlightConnection` gerufen) umrandet
   Beteiligte rot und dimmt alle anderen (`.fan-dim`) — keine Linie, kein
@@ -202,9 +207,11 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   „Im Stammbaum zeigen" respektieren die aktive Ansicht. Container
   bekommt erst Größe, wenn `view-main` sichtbar ist — der ResizeObserver
   passt beim Sichtbarwerden ein.
-- **Plus-Chips (nur mit Schreibrecht, `Fan.setCanEdit`):** bei Maus-Hover
-  bzw. an der zuletzt angetippten Person erscheinen „+ Kind" (außen),
-  „+ Geschwister" (seitlich) und „∞ Partner" (innen; nur ohne
+- **Hover-Chips:** bei Maus-Hover bzw. an der zuletzt angetippten Person
+  erscheint „?" (Anfangskante; „Wie sind wir verwandt?" →
+  `Connection.showConnectionTo`, auch im Gastmodus mit Identität, nie am
+  eigenen Segment) und — nur mit Schreibrecht (`Fan.setCanEdit`) — „+ Kind"
+  (außen), „+ Geschwister" (Endkante) und „∞ Partner" (innen; nur ohne
   eingetragenen Partner). Klick → `App.addRelative(relType, id)` öffnet
   „Neue Person anlegen" als Seitenpanel mit vorbelegter Beziehung
   (`Relations.presetRelation`) und Nachname; die Regel-Engine ergänzt

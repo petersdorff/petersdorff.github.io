@@ -30,6 +30,7 @@ const App = (() => {
       Profile.show(memberId);
     });
     Fan.onAddRelative(addRelative);
+    Fan.onConnect((memberId) => Connection.showConnectionTo(memberId));
     Fan.onFamilyChange((rootId) => {
       try { localStorage.setItem('stammbaum_family', rootId); } catch { /* privat/blockiert */ }
       updateFamilySwitch();

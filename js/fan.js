@@ -469,7 +469,7 @@ const Fan = (() => {
       lines.push({ ...fitText(me + m.firstName, along, 18, 6.5), weight: 600 });
     } else if (tier === 'mid') {
       lines.push({ ...fitText(first, along, 13, 6.5), weight: 600 });
-      if (spouses.length) lines.push(spouseLine(spouses, along, 9.5, 6, sp => sp.firstName));
+      if (spouses.length) lines.push(...spouseLines(spouses, along, 9.5, 6, sp => sp.firstName));
     } else {
       // nah: voller Name — Nachname als eigene Zeile, damit er in die
       // Ringbreite passt; Geburtsname zuletzt (niedrigste Priorität)
@@ -477,7 +477,7 @@ const Fan = (() => {
       // Nachname darf etwas dichter an den Rand und kleiner werden,
       // damit „von Petersdorff-Campen" auch radial in die Ringbreite passt
       if (m.lastName && !center) lines.push({ ...fitText(m.lastName, along + 6, cap(8.5, 12), cap(5.5, 10)), weight: 500 });
-      if (spouses.length) lines.push(spouseLine(spouses, along, cap(8.5, 12), cap(6, 10), spouseName));
+      if (spouses.length) lines.push(...spouseLines(spouses, along, cap(8.5, 12), cap(6, 10), spouseName));
       const yr = yearLabel(m);
       if (yr) lines.push({ ...fitText(yr, along, cap(8, 11), cap(6, 10)), weight: 400, dim: true });
       if (m.birthName) {
@@ -503,9 +503,7 @@ const Fan = (() => {
       items.push({ text: me + m.firstName, px: 15, along });
       if (m.lastName) items.push({ text: m.lastName, px: 12, along: along + 6 });
     }
-    if (spouses.length) {
-      items.push({ text: spouses.map(sp => (sp.former ? '⚮ ' : '∞ ') + spouseName(sp)).join(' · '), px: 12, along });
-    }
+    for (const sp of spouses) items.push({ text: (sp.former ? '⚮ ' : '∞ ') + spouseName(sp), px: 12, along });
     const yr = yearLabel(m);
     if (yr) items.push({ text: yr, px: 11, along });
     if (m.birthName) {
@@ -529,34 +527,16 @@ const Fan = (() => {
     return mx;
   }
 
-  /** „∞ Name · Name" als klickbare Teile: jeder Partner-Name trägt seine
-      ID und öffnet beim Antippen das eigene Profil. Passt Schriftgröße
-      an und kürzt notfalls den letzten Namen. */
-  function spouseLine(spouses, along, fs, minFs, nameFn) {
-    // ∞ = Partner/in, ⚮ = ehemalige/r Partner/in (getrennt/geschieden)
-    const names = spouses.map(sp => ({ text: nameFn(sp), id: sp.id, glyph: sp.former ? '⚮ ' : '∞ ' }));
-    const full = names.map(n => n.glyph + n.text).join(' · ');
-    const fit = fitText(full, along, fs, minFs);
-    const maxChars = Math.max(1, Math.floor(along / (CHAR_W * fit.fs)));
-    const parts = [];
-    let used = 0;
-    for (let i = 0; i < names.length; i++) {
-      const sep = i > 0 ? ' · ' : '';
-      const prefix = sep + names[i].glyph;
-      let text = names[i].text;
-      if (used + prefix.length + text.length > maxChars) {
-        const room = maxChars - used - prefix.length - 1;
-        if (room < 2) break;
-        text = text.slice(0, room) + '…';
-        parts.push({ text: prefix });
-        parts.push({ text, id: names[i].id });
-        break;
-      }
-      parts.push({ text: prefix });
-      parts.push({ text, id: names[i].id });
-      used += prefix.length + text.length;
-    }
-    return { fs: fit.fs, weight: 400, dim: true, parts };
+  /** Eine Zeile je Partner/in: „∞ Name" bzw. „⚮ Name" (ehemalig), der
+      Name ist klickbar (eigenes Profil). Gekürzt wird nur innerhalb des
+      eigenen Namens — so bleibt jede Partnerin einzeln erreichbar. */
+  function spouseLines(spouses, along, fs, minFs, nameFn) {
+    return spouses.map(sp => {
+      const glyph = sp.former ? '⚮ ' : '∞ ';
+      const fit = fitText(glyph + nameFn(sp), along, fs, minFs);
+      const name = fit.text.slice(glyph.length);
+      return { fs: fit.fs, weight: 400, dim: true, parts: [{ text: glyph }, { text: name, id: sp.id }] };
+    });
   }
 
   let labelK = 0;   // Zoom (px/Einheit), für den die Labels zuletzt gebaut wurden
@@ -832,16 +812,22 @@ const Fan = (() => {
   function spouseLinkNear(segId, pt, pad) {
     const label = labelLayer.querySelector(`.fan-label[data-id="${segId}"]`);
     if (!label) return null;
-    // Bei mehreren Partnern in einer Zeile den NÄCHSTEN Link nehmen, nicht
-    // den ersten in Reichweite (sonst gewinnt bei „Karoline · Roswitha"
-    // immer Karoline).
+    // Im LOKALEN (ungedrehten) Koordinatensystem des Labels testen: bei
+    // schräg gedrehtem Text überlappen sich die Bildschirm-Bounding-Boxen
+    // benachbarter Links, und der erste („Karoline") gewann fälschlich.
+    const ctm = label.getScreenCTM();
+    if (!ctm) return null;
+    const p = new DOMPoint(pt.x, pt.y).matrixTransform(ctm.inverse());
+    const scale = Math.hypot(ctm.a, ctm.b) || 1;   // px je lokaler Einheit
+    const padLocal = pad / scale;
     let best = null, bestDist = Infinity;
     for (const link of label.querySelectorAll('.fan-spouse-link')) {
-      const r = link.getBoundingClientRect();
-      const dx = Math.max(r.left - pt.x, 0, pt.x - r.right);
-      const dy = Math.max(r.top - pt.y, 0, pt.y - r.bottom);
+      let b;
+      try { b = link.getBBox(); } catch { continue; }
+      const dx = Math.max(b.x - p.x, 0, p.x - (b.x + b.width));
+      const dy = Math.max(b.y - p.y, 0, p.y - (b.y + b.height));
       const d = Math.hypot(dx, dy);
-      if (d <= pad && d < bestDist) { best = link.getAttribute('data-id'); bestDist = d; }
+      if (d <= padLocal && d < bestDist) { best = link.getAttribute('data-id'); bestDist = d; }
     }
     return best;
   }

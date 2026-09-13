@@ -30,6 +30,12 @@ const App = (() => {
       Profile.show(memberId);
     });
     Fan.onAddRelative(addRelative);
+    Fan.onFamilyChange((rootId) => {
+      try { localStorage.setItem('stammbaum_family', rootId); } catch { /* privat/blockiert */ }
+      updateFamilySwitch();
+      updateOrphanTray();
+    });
+    try { Fan.setPreferredFamily(localStorage.getItem('stammbaum_family')); } catch { /* egal */ }
     Admin.initEmailJS();
 
     // Register auth state listener BEFORE Auth.init()
@@ -361,12 +367,34 @@ const App = (() => {
       Tree.render(cachedMembers, cachedRelationships);
       setFanMode(name === 'fan');
       updateToggleButton();
+      updateFamilySwitch();
       updateOrphanTray();
       return;
     }
     Tree.render(cachedMembers, cachedRelationships);
     if (Fan.isActive()) Fan.render(cachedMembers, cachedRelationships);
+    updateFamilySwitch();
     updateOrphanTray();
+  }
+
+  // ─── Familienzweige (Fächer) ───
+
+  function updateFamilySwitch() {
+    const sw = document.getElementById('family-switch');
+    if (!sw) return;
+    const fams = Fan.isActive() ? Fan.getFamilies() : [];
+    sw.classList.toggle('hidden', fams.length < 2);
+    sw.innerHTML = '';
+    for (const f of fams) {
+      const b = document.createElement('button');
+      b.className = 'family-btn' + (f.active ? ' active' : '');
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', String(f.active));
+      b.textContent = f.short;
+      b.title = `${f.name} · ${f.size} Personen`;
+      b.addEventListener('click', () => Fan.setFamily(f.rootId));
+      sw.appendChild(b);
+    }
   }
 
   // ─── Waisen-Ablage: Profile ohne Anbindung an den Stammbaum ───
@@ -470,7 +498,7 @@ const App = (() => {
     }
     document.getElementById('legend-tree').classList.toggle('hidden', on);
     document.getElementById('legend-fan').classList.toggle('hidden', !on);
-    if (cachedMembers.length) updateOrphanTray();
+    if (cachedMembers.length) { updateFamilySwitch(); updateOrphanTray(); }
   }
 
   // ─── Offline banner & read-only UI ───

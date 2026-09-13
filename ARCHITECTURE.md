@@ -130,8 +130,19 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   Zyklus Fächer → Generationen → Zeit), gemerkt in `localStorage.stammbaum_view`;
   ohne Eintrag ist der Fächer Standard. `App.applyView(name)` ist die
   zentrale Stelle (Fan-Overlay ein/aus, Tree-Modus, Legende, Button-Icon).
-- **Layout:** Sunburst. Wurzel = ältester Elternlose mit Kindern (Hans
-  Leo), jede Generation ein Ring (`RING`), Winkelbreite ∝ Zahl der
+- **Familienzweige:** `buildFamilies()` erkennt Wurzeln automatisch:
+  Person ohne Eltern mit Kindern, die nicht in eine dokumentierte Linie
+  eingeheiratet ist (Partner hat Eltern); ein Stammelternpaar = eine
+  Familie (ältester Partner ist Wurzel). Jede Familie bekommt ihren
+  eigenen Fächer; Umschalter `#family-switch` oben (nur bei ≥2), Auswahl
+  in `localStorage.stammbaum_family`. Namen per `FAMILY_NAMES` nach
+  Nachname der Wurzel („…-Campen" → Märkische, „Petersdorff" → Pommersche,
+  sonst „Familie <Nachname>"). `centerOn`/`panTo`/`highlightConnection`
+  wechseln bei Bedarf automatisch in die Familie der Person. Heiraten
+  zwischen Zweigen erscheinen in beiden Fächern als „∞"-Partner.
+  Waisen-Ablage = in keiner Familie erreichbar.
+- **Layout:** Sunburst. Wurzel = Stammvater der aktiven Familie, jede
+  Generation ein Ring (`RING`), Winkelbreite ∝ Zahl der
   Nachkommen-Blätter, Geschwister nach Geburtsjahr. Blutsverwandte
   bekommen Segmente; **Angeheiratete stehen als „∞ Name" im Segment des
   Partners** (`hostOf`-Map) und sind dort als blauer Link antippbar →
@@ -160,7 +171,7 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
   „Neue Person anlegen" als Seitenpanel mit vorbelegter Beziehung
   (`Relations.presetRelation`) und Nachname; die Regel-Engine ergänzt
   beim Speichern zweites Elternteil/Geschwister.
-- **Waisen-Ablage** (`#orphan-tray`, `App.updateOrphanTray`): Pill oben
+- **Waisen-Ablage** (`#orphan-tray`, `App.updateOrphanTray`): Pill unten
   links mit allen Profilen, die im Fächer nicht über die Wurzel erreichbar
   sind (im Baum: ohne jede Verbindung); Klick öffnet das Profil.
 - Desktop: Profil UND Bearbeiten-Formular öffnen als Seitenpanel

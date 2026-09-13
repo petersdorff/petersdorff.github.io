@@ -36,7 +36,21 @@ const Fan = (() => {
   let canEdit = false;      // nur online mit Schreibrecht
   let onAddCallback = null;
   let selectedId = null;    // zuletzt angetippte Person (Chips bleiben bis zur nächsten Auswahl)
-  let unreachable = [];     // IDs, die nicht über die Wurzel erreichbar sind (Waisen-Ablage)
+  let unreachable = [];     // IDs, die in keiner Familie vorkommen (Waisen-Ablage)
+  let families = [];        // [{ rootId, name, short, root, assigned, size }]
+  let activeFamilyId = null;
+  let preferredFamilyId = null;
+  let onFamilyChangeCallback = null;
+
+  // Anzeigenamen der Familienzweige nach Nachname der Wurzel
+  const FAMILY_NAMES = [
+    { test: ln => /campen/i.test(ln), name: 'Märkische Familie (von Petersdorff-Campen)', short: 'Märkische Familie' },
+    { test: ln => /petersdorff/i.test(ln), name: 'Pommersche Familie (von Petersdorff)', short: 'Pommersche Familie' },
+  ];
+  function familyLabel(root) {
+    const hit = FAMILY_NAMES.find(f => f.test(root.lastName || ''));
+    return hit ? { name: hit.name, short: hit.short } : { name: `Familie ${root.lastName}`, short: `Familie ${root.lastName}` };
+  }
   let hlAnchors = [];       // Ankerpunkte des aktiven Pfads (für fitToHighlight)
   let involved = null;      // Set der beteiligten Segment-IDs; alle anderen werden gedimmt
   let lodTier = null;
@@ -106,7 +120,13 @@ const Fan = (() => {
   //  DATENMODELL → BAUM
   // ═══════════════════════════════════════════════════════════
 
-  function buildTree() {
+  /**
+   * Familienzweige erkennen. Wurzel-Kandidat = keine Eltern, aber Kinder.
+   * Angeheiratete (Partner hat dokumentierte Eltern) sind keine Wurzel;
+   * ein Stammelternpaar (beide ohne Eltern) bildet EINE Familie mit dem
+   * älteren Partner als Wurzel. Jede Familie bekommt ihren eigenen Baum.
+   */
+  function buildFamilies() {
     const byId = new Map(members.map(m => [m.id, m]));
     const parentsOf = new Map(), childrenOf = new Map(), spousesOf = new Map();
     const push = (mp, k, v) => { if (!mp.has(k)) mp.set(k, []); mp.get(k).push(v); };
@@ -117,38 +137,83 @@ const Fan = (() => {
     }
     const byBirth = (a, b) => (a.birthDate || '9999').localeCompare(b.birthDate || '9999');
 
-    // Wurzel: ältester Elternlose mit Kindern (Stammvater)
-    const roots = members.filter(m => !parentsOf.has(m.id) && childrenOf.has(m.id)).sort(byBirth);
-    if (!roots.length) return null;
-    const rootMember = roots[0];
-    rootId = rootMember.id;
+    const candidates = members.filter(m => !parentsOf.has(m.id) && childrenOf.has(m.id)).sort(byBirth);
+    const heads = candidates.filter(m => !(spousesOf.get(m.id) || []).some(id => parentsOf.has(id)));
+    const used = new Set();
+    const roots = [];
+    for (const h of heads) {
+      if (used.has(h.id)) continue;
+      used.add(h.id);
+      for (const sp of (spousesOf.get(h.id) || [])) used.add(sp);
+      roots.push(h);
+    }
 
-    // Jede Person genau einmal: Blutsverwandte als Segment, deren
-    // Partner als Untertitel. Kinder hängen am ersten erreichten Elternteil.
-    const assigned = new Set([rootMember.id]);
-    function makeNode(m, depth, branch) {
+    // Jede Person genau einmal je Familie: Blutsverwandte als Segment,
+    // deren Partner als Untertitel. Kinder hängen am ersten erreichten Elternteil.
+    function makeNode(m, depth, branch, assigned) {
       const spouses = (spousesOf.get(m.id) || []).map(id => byId.get(id))
-        .filter(s => s && !assigned.has(s.id)).sort(byBirth);
-      spouses.forEach(s => assigned.add(s.id));
+        .filter(sp => sp && !assigned.has(sp.id)).sort(byBirth);
+      spouses.forEach(sp => assigned.add(sp.id));
       const kids = (childrenOf.get(m.id) || []).map(id => byId.get(id))
         .filter(k => k && !assigned.has(k.id)).sort(byBirth);
       kids.forEach(k => assigned.add(k.id));
       const node = { m, depth, branch, spouses, children: [] };
-      node.children = kids.map((k, i) => makeNode(k, depth + 1, depth === 0 ? i : branch));
+      node.children = kids.map((k, i) => makeNode(k, depth + 1, depth === 0 ? i : branch, assigned));
       node.weight = node.children.length
-        ? node.children.reduce((s, c) => s + c.weight, 0)
+        ? node.children.reduce((sum, c) => sum + c.weight, 0)
         : 1;
       return node;
     }
-    const root = makeNode(rootMember, 0, 0);
 
-    const unassigned = members.filter(m => !assigned.has(m.id));
+    families = roots.map(rootMember => {
+      const assigned = new Set([rootMember.id]);
+      const root = makeNode(rootMember, 0, 0, assigned);
+      return { rootId: rootMember.id, ...familyLabel(rootMember), root, assigned, size: assigned.size };
+    }).sort((a, b) => b.size - a.size);
+
+    const union = new Set();
+    families.forEach(f => f.assigned.forEach(id => union.add(id)));
+    const unassigned = members.filter(m => !union.has(m.id));
     unreachable = unassigned.map(m => m.id);
     if (unassigned.length) {
-      console.info(`[Fan] ${unassigned.length} Personen nicht über ${rootMember.firstName} erreichbar:`,
+      console.info(`[Fan] ${unassigned.length} Personen in keiner Familie erreichbar:`,
         unassigned.map(m => `${m.firstName} ${m.lastName}`).join(', '));
     }
-    return root;
+  }
+
+  /** Aktive Familie wählen: bisherige → gewünschte → die des Nutzers → größte. */
+  function pickFamily() {
+    const valid = id => id && families.some(f => f.rootId === id);
+    if (valid(activeFamilyId)) return activeFamilyId;
+    if (valid(preferredFamilyId)) return preferredFamilyId;
+    const me = (typeof Tree !== 'undefined' && Tree.getCurrentUser) ? Tree.getCurrentUser() : null;
+    const mine = me && families.find(f => f.assigned.has(me));
+    return mine ? mine.rootId : families[0].rootId;
+  }
+
+  function familyOf(memberId) {
+    const f = families.find(x => x.assigned.has(memberId));
+    return f ? f.rootId : null;
+  }
+
+  function getFamilies() {
+    return families.map(f => ({ rootId: f.rootId, name: f.name, short: f.short, size: f.size, active: f.rootId === activeFamilyId }));
+  }
+
+  function setFamily(rootId) {
+    if (!families.some(f => f.rootId === rootId) || rootId === activeFamilyId) return false;
+    activeFamilyId = rootId;
+    ghostFor = null;
+    if (members.length) render(members, relationships);
+    if (onFamilyChangeCallback) onFamilyChangeCallback(rootId);
+    return true;
+  }
+
+  /** Vor dem Zentrieren/Markieren ggf. in die Familie der Person wechseln. */
+  function ensureFamilyFor(memberId) {
+    if (segById.has(memberId) || hostOf.has(memberId)) return;
+    const fid = familyOf(memberId);
+    if (fid && fid !== activeFamilyId) setFamily(fid);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -162,8 +227,11 @@ const Fan = (() => {
     segById = new Map(); hostOf = new Map(); labelSpecs = []; lodTier = null;
     ghostLayer.innerHTML = ''; ghostFor = null;
 
-    const root = buildTree();
-    if (!root) return;
+    buildFamilies();
+    if (!families.length) return;
+    activeFamilyId = pickFamily();
+    const root = families.find(f => f.rootId === activeFamilyId).root;
+    rootId = root.m.id;
 
     let maxDepth = 0;
     const currentUserId = (typeof Tree !== 'undefined' && Tree.getCurrentUser) ? Tree.getCurrentUser() : null;
@@ -260,6 +328,7 @@ const Fan = (() => {
   function highlightConnection(fromId, toId) {
     highlight = { fromId, toId };
     if (!members.length) return;
+    ensureFamilyFor(toId);   // ggf. in die Familie der Zielperson wechseln (rendert neu)
     drawHighlight();
     if (active) fitToHighlight();
   }
@@ -590,6 +659,7 @@ const Fan = (() => {
   }
 
   function centerOn(memberId) {
+    ensureFamilyFor(memberId);
     const s = segById.get(memberId) || segById.get(hostOf.get(memberId));
     if (!s) { fit(); return; }
     const cw = container.clientWidth || 1, ch = container.clientHeight || 1;
@@ -600,6 +670,7 @@ const Fan = (() => {
 
   /** Person in die Bildmitte holen, ohne den Zoom zu ändern. */
   function panTo(memberId) {
+    ensureFamilyFor(memberId);
     const s = segById.get(memberId) || segById.get(hostOf.get(memberId));
     if (!s) return;
     vb.x = s.x - vb.w / 2;
@@ -684,6 +755,9 @@ const Fan = (() => {
   }
 
   return { init, onTap, onAddRelative, setCanEdit, isActive, show, hide, toggle, render, fit, centerOn, panTo, highlightConnection, clearHighlight,
+           getFamilies, setFamily, familyOf,
+           setPreferredFamily: (id) => { preferredFamilyId = id; },
+           onFamilyChange: (cb) => { onFamilyChangeCallback = cb; },
            getUnreachable: () => unreachable.slice(),
            getTier: () => lodTier };
 })();

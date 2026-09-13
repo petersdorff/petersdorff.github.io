@@ -1586,7 +1586,7 @@ a {
 
 .orphan-tray {
   position: absolute;
-  top: 70px;
+  bottom: 60px;
   left: 12px;
   z-index: 90;
   max-width: min(280px, calc(100vw - 24px));
@@ -1617,7 +1617,10 @@ a {
 }
 
 .orphan-list {
-  margin-top: 6px;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 220px;
   background: var(--bg);
   border: 2px solid var(--trace);
   border-radius: var(--radius-lg);
@@ -1650,8 +1653,48 @@ a {
 .orphan-item:hover { background: var(--bg-secondary); color: var(--red); }
 .orphan-item small { color: var(--text-muted); margin-left: 6px; }
 
+@supports (padding: env(safe-area-inset-bottom)) {
+  .orphan-tray { bottom: max(60px, calc(env(safe-area-inset-bottom) + 48px)); }
+}
+
+/* ─── Familienzweig-Umschalter ─── */
+.family-switch {
+  position: absolute;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--bg);
+  border: 2px solid var(--trace-faint);
+  border-radius: 20px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  max-width: calc(100vw - 24px);
+}
+
+.family-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 11px;
+  padding: 5px 12px;
+  border-radius: 16px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.family-btn:hover { color: var(--text); }
+
+.family-btn.active {
+  background: var(--trace);
+  color: var(--bg);
+}
+
 @supports (padding: env(safe-area-inset-top)) {
-  .orphan-tray { top: max(70px, calc(env(safe-area-inset-top) + 62px)); }
+  .family-switch { top: max(70px, calc(env(safe-area-inset-top) + 62px)); }
 }
 
 /* ═══════════════════════════════════════════════════════════

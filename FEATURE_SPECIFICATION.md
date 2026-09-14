@@ -61,7 +61,7 @@
 - **Email:** EmailJS (free tier, client-side)
 - **QR:** QRCode.js for generation, html5-qrcode for scanning
 - **PWA:** Service Worker + Web App Manifest
-- **Hosting:** GitHub Pages (https://kaiman22.github.io/stammbaum/)
+- **Hosting:** GitHub Pages (https://petersdorff.github.io/ — Org-Site, Repo `petersdorff/petersdorff.github.io`)
 
 ### Module Structure
 | Module | File | Responsibility |

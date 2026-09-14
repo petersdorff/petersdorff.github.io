@@ -19,9 +19,16 @@ Gotha-Datenbasis). Vanilla HTML/CSS/JS ohne Build-Schritt, PCB-Ästhetik
 ## Hosting & Deployment
 
 - **GitHub Pages** direkt vom `main`-Branch, Root:
-  https://kaiman22.github.io/stammbaum/ (Repo: Kaiman22/stammbaum, öffentlich).
+  **https://petersdorff.github.io/** (Repo `petersdorff/petersdorff.github.io`,
+  öffentlich, Organisations-Site → Root von `main`). Seit 14.09.2026; vorher
+  `Kaiman22/stammbaum` unter kaiman22.github.io/stammbaum — dort liegt jetzt
+  nur noch ein Weiterleitungs-Repo (index.html + 404.html leiten inkl.
+  `#connect/…`-Deep-Links weiter, damit gedruckte QR-Codes weiter gehen).
 - Deploy = push auf `main`. Build-Status:
-  `gh api repos/Kaiman22/stammbaum/pages/builds/latest`.
+  `gh api repos/petersdorff/petersdorff.github.io/pages/builds/latest`.
+- Supabase-Auth: Site URL / Redirect URLs im Dashboard müssen
+  `https://petersdorff.github.io/**` enthalten (Passwort-Reset, Magic-Link);
+  die App baut `redirectTo` und QR-Links aus `window.location`.
 - **Cache-Busting ist Pflicht bei jeder Änderung:**
   1. Versionsquery der geänderten Dateien in `index.html` erhöhen
      (`js/app.js?v=42` → `?v=43` usw.).

@@ -247,7 +247,10 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   Nachkommen-Blätter, Geschwister nach Geburtsjahr. Blutsverwandte
   bekommen Segmente; **Angeheiratete stehen als „∞ Name" im Segment des
   Partners** (`hostOf`-Map) und sind dort als blauer Link antippbar
-  (Hover: rot) → eigenes Profil. Lücken: `SEG_GAP` (konstante Breite, je Radius in Winkel
+  (Hover: rot) → eigenes Profil — **nur bei präzisem Treffer auf den
+  Namens-tspan** (`.fan-spouse-link`, `pointer-events: auto`); der Rest
+  des Feldes inkl. Name/Daten führt zur Person. Eine frühere ±8-px-Toleranz
+  (`spouseLinkNear`) öffnete zu oft den Partner und ist entfernt. Lücken: `SEG_GAP` (konstante Breite, je Radius in Winkel
   umgerechnet) und `RING_GAP`.
 - **Farben:** Männer hellblau, Frauen rosa, unbekannt grau, Verstorbene
   entsättigt; registrierte Profile dunkler Rand, aktueller Nutzer rot.

@@ -321,7 +321,13 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   dekodiert; Rufe warten auf das Dekodieren, statt anders zu klingen —
   es gibt keinen synthetischen Ersatz mehr (der hatte auf der Live-Seite
   die ersten Geburten vor dem Laden der Datei anders klingen lassen).
-  iOS: Stummschalter dämpft Web Audio.
+  **iOS-Stummschalter:** Web Audio läuft in WebKits „Ambient"-Kategorie
+  und ist bei gesetztem Stummschalter lautlos. Deshalb startet die
+  Play-Taste zusätzlich ein stilles, loopendes HTML-`<audio>` (Data-URI,
+  `BabyCry.unlock()`, muss in der Nutzergeste passieren) — das schaltet
+  die Session auf „Playback", und Web Audio ist trotz Stummschalter
+  hörbar; `stopPlayback` → `release()` pausiert es wieder. Kontext wird
+  bei Zustand ≠ `running` (auch `interrupted`) erneut geweckt.
 - **Hover:** Kopie des Segments zuoberst mit 12-px-Rand in Segmentfarbe
   plus 1,5-px weißem Saum außen (`showHoverHalo`, `vector-effect:
   non-scaling-stroke`) — wirkt größer, verschiebt nichts; gedimmte

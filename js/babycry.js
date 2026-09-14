@@ -16,6 +16,31 @@ const BabyCry = (() => {
   let sample = null;         // dekodierter AudioBuffer
   let loading = null;        // Promise des laufenden Ladens/Dekodierens
   let voices = 0;
+  let unlocker = null;       // stilles <audio>, s. unlock()
+
+  /**
+   * iOS-Eigenheit: Web Audio läuft in der „Ambient"-Kategorie und ist bei
+   * gesetztem Stummschalter lautlos. Spielt gleichzeitig ein (stilles)
+   * HTML-<audio>, wechselt WebKit die Audio-Session auf „Playback" — dann
+   * ist auch Web Audio trotz Stummschalter hörbar. Muss innerhalb einer
+   * Nutzergeste gestartet werden; läuft in Schleife, bis release().
+   */
+  const SILENCE = 'data:audio/mpeg;base64,SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYxLjcuMTAwAAAAAAAAAAAAAAD/4zjAAAAAAAAAAAAASW5mbwAAAA8AAAAGAAACiABxcXFxcXFxcXFxcXFxcXFxjo6Ojo6Ojo6Ojo6Ojo6Ojo6qqqqqqqqqqqqqqqqqqqqqx8fHx8fHx8fHx8fHx8fHx8fj4+Pj4+Pj4+Pj4+Pj4+Pj4/////////////////////8AAAAATGF2YzYxLjE5AAAAAAAAAAAAAAAAJANwAAAAAAAAAoif1QtqAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/4xjEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVX/4xjEOwAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVX/4xjEdgAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/4xjEsQAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/4xjExAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/4xjExAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=';
+  function unlock() {
+    try {
+      if (!unlocker) {
+        unlocker = new Audio(SILENCE);
+        unlocker.loop = true;
+        unlocker.setAttribute('playsinline', '');
+        unlocker.preload = 'auto';
+      }
+      const p = unlocker.play();
+      if (p && p.catch) p.catch(() => {});
+    } catch { /* egal */ }
+  }
+  function release() {
+    if (unlocker) { try { unlocker.pause(); } catch { /* egal */ } }
+  }
 
   /** MP3 sofort vorholen (braucht keinen AudioContext). */
   function prefetch() {
@@ -42,7 +67,8 @@ const BabyCry = (() => {
       master.gain.value = 0.8;
       master.connect(comp); comp.connect(ctx.destination);
     }
-    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    // iOS meldet nach Unterbrechungen auch 'interrupted' → immer wecken
+    if (ctx.state !== 'running') { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); }
     return ctx;
   }
 
@@ -75,6 +101,7 @@ const BabyCry = (() => {
     const t0 = c.currentTime + Math.max(0, delay);
     const buf = await ensureSample();
     if (!buf) return;   // keine Aufnahme verfügbar → lieber still als anders
+    if (c.state !== 'running') { const p = c.resume(); if (p && p.catch) p.catch(() => {}); }
     const rand = rng(seed);
     voices++;
     const src = c.createBufferSource();
@@ -93,5 +120,6 @@ const BabyCry = (() => {
 
   prefetch();
 
-  return { play, ensureContext, prefetch, activeVoices: () => voices, hasSample: () => !!sample };
+  return { play, ensureContext, prefetch, unlock, release, activeVoices: () => voices, hasSample: () => !!sample,
+           state: () => (ctx ? ctx.state : 'none') };
 })();

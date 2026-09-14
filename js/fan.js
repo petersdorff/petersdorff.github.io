@@ -1046,7 +1046,7 @@ const Fan = (() => {
 
   function startPlayback() {
     if (!timeline || colorMode !== 'year' || tlYear == null) return;
-    if (typeof BabyCry !== 'undefined') BabyCry.ensureContext();   // Nutzergeste → Audio freischalten
+    if (typeof BabyCry !== 'undefined') { BabyCry.ensureContext(); BabyCry.unlock(); }   // Nutzergeste → Audio freischalten (iOS: auch bei Stummschalter)
     if (tlYear >= tlRange.max - 0.5) setTimelineYear(tlRange.min);   // am Ende: von vorn, sonst ab aktueller Stelle
     playing = { raf: 0, last: performance.now() };
     timeline.root.classList.add('is-playing');
@@ -1068,6 +1068,7 @@ const Fan = (() => {
     if (!playing) return;
     cancelAnimationFrame(playing.raf);
     playing = null;
+    if (typeof BabyCry !== 'undefined') BabyCry.release();
     if (timeline) timeline.root.classList.remove('is-playing');
   }
 

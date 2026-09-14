@@ -11,7 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=42">
+  <link rel="stylesheet" href="css/style.css?v=43">
 </head>
 <body>
 
@@ -223,32 +223,6 @@
         </svg>
         <input type="text" id="search-input" placeholder="Name suchen...">
       </div>
-      <button id="btn-view-toggle" class="icon-btn" aria-label="Ansicht wechseln" title="Fächer / Gotha / Stammtafel">
-        <!-- Fan icon (radial) -->
-        <svg class="icon-fan" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <circle cx="12" cy="12" r="2.5"/>
-          <path d="M12 3a9 9 0 0 1 9 9M12 3a9 9 0 0 0-9 9"/>
-          <path d="M12 7.5a4.5 4.5 0 0 1 4.5 4.5M12 7.5a4.5 4.5 0 0 0-4.5 4.5"/>
-          <path d="M12 12v9"/>
-        </svg>
-        <!-- Gotha: eingerücktes Verzeichnis -->
-        <svg class="icon-gotha" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <path d="M4 6h16M8 12h12M12 18h8"/>
-        </svg>
-        <!-- Fan by birth year (radial + Uhr) -->
-        <svg class="icon-fan-years" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <path d="M12 3a9 9 0 0 1 9 9M12 3a9 9 0 0 0-9 9" stroke-dasharray="3 2"/>
-          <circle cx="12" cy="14" r="5"/>
-          <path d="M12 11.5V14l1.8 1.2"/>
-        </svg>
-        <!-- Generational icon (tree/hierarchy) -->
-        <svg class="icon-gen" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="4" r="2"/><line x1="12" y1="6" x2="12" y2="10"/>
-          <line x1="6" y1="10" x2="18" y2="10"/>
-          <line x1="6" y1="10" x2="6" y2="14"/><circle cx="6" cy="16" r="2"/>
-          <line x1="18" y1="10" x2="18" y2="14"/><circle cx="18" cy="16" r="2"/>
-        </svg>
-      </button>
       <button id="btn-scan" class="icon-btn" aria-label="QR scannen">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
@@ -269,6 +243,38 @@
 
     <!-- Familienzweige (nur sichtbar, wenn es mehrere gibt) -->
     <div id="family-switch" class="family-switch hidden" role="tablist" aria-label="Familienzweig"></div>
+
+    <!-- Ansichten: Fächer · Fächer nach Geburtsjahr · Gotha · Stammtafel -->
+    <div id="view-switch" class="view-switch" role="tablist" aria-label="Ansicht">
+      <button class="view-btn" data-view="fan" role="tab" title="Fächer (Geschlecht)" aria-label="Fächer">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="2.5"/>
+          <path d="M12 3a9 9 0 0 1 9 9M12 3a9 9 0 0 0-9 9"/>
+          <path d="M12 7.5a4.5 4.5 0 0 1 4.5 4.5M12 7.5a4.5 4.5 0 0 0-4.5 4.5"/>
+          <path d="M12 12v9"/>
+        </svg>
+      </button>
+      <button class="view-btn" data-view="fan-years" role="tab" title="Fächer nach Geburtsjahr (mit Zeitstrahl)" aria-label="Fächer nach Geburtsjahr">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M12 3a9 9 0 0 1 9 9M12 3a9 9 0 0 0-9 9" stroke-dasharray="3 2"/>
+          <circle cx="12" cy="14" r="5"/>
+          <path d="M12 11.5V14l1.8 1.2"/>
+        </svg>
+      </button>
+      <button class="view-btn" data-view="gotha" role="tab" title="Gotha-Verzeichnis (Text, je Generation eingerückt)" aria-label="Gotha-Verzeichnis">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M4 6h16M8 12h12M12 18h8"/>
+        </svg>
+      </button>
+      <button class="view-btn" data-view="tree" role="tab" title="Stammtafel (klassischer Baum)" aria-label="Stammtafel">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="4" r="2"/><line x1="12" y1="6" x2="12" y2="10"/>
+          <line x1="6" y1="10" x2="18" y2="10"/>
+          <line x1="6" y1="10" x2="6" y2="14"/><circle cx="6" cy="16" r="2"/>
+          <line x1="18" y1="10" x2="18" y2="14"/><circle cx="18" cy="16" r="2"/>
+        </svg>
+      </button>
+    </div>
 
     <!-- Waisen-Ablage: Profile ohne Verbindung zum Stammbaum -->
     <div id="orphan-tray" class="orphan-tray hidden">
@@ -814,6 +820,6 @@
   <script src="js/connection.js?v=11"></script>
   <script src="js/relations.js?v=15"></script>
   <script src="js/profile.js?v=34"></script>
-  <script src="js/app.js?v=58"></script>
+  <script src="js/app.js?v=59"></script>
 </body>
 </html>

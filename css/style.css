@@ -1625,50 +1625,6 @@ a {
    VIEW MODE TOGGLE BUTTON
    ═══════════════════════════════════════════════════════════ */
 
-#btn-view-toggle {
-  position: relative;
-}
-
-#btn-view-toggle .icon-gen,
-#btn-view-toggle .icon-temp,
-#btn-view-toggle .icon-fan,
-#btn-view-toggle .icon-fan-years,
-#btn-view-toggle .icon-gotha {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  transition: opacity var(--transition);
-}
-
-#btn-view-toggle .icon-fan {
-  opacity: 0;
-}
-
-#btn-view-toggle.mode-fan .icon-gen {
-  opacity: 0;
-}
-
-#btn-view-toggle.mode-fan .icon-fan {
-  opacity: 1;
-}
-
-#btn-view-toggle .icon-fan-years,
-#btn-view-toggle .icon-gotha {
-  opacity: 0;
-}
-
-#btn-view-toggle.mode-gotha .icon-gen { opacity: 0; }
-#btn-view-toggle.mode-gotha .icon-gotha { opacity: 1; }
-
-#btn-view-toggle.mode-fan-years .icon-gen {
-  opacity: 0;
-}
-
-#btn-view-toggle.mode-fan-years .icon-fan-years {
-  opacity: 1;
-}
-
 /* Legende: Geburtsjahr-Skala */
 .legend-year { padding: 4px 0 6px; }
 .legend-year-bar {
@@ -1695,7 +1651,7 @@ a {
 
 .orphan-tray {
   position: absolute;
-  bottom: 60px;
+  bottom: 66px;
   left: 12px;
   z-index: 90;
   max-width: min(280px, calc(100vw - 24px));
@@ -1763,7 +1719,7 @@ a {
 .orphan-item small { color: var(--text-muted); margin-left: 6px; }
 
 @supports (padding: env(safe-area-inset-bottom)) {
-  .orphan-tray { bottom: max(60px, calc(env(safe-area-inset-bottom) + 48px)); }
+  .orphan-tray { bottom: max(66px, calc(env(safe-area-inset-bottom) + 58px)); }
 }
 
 /* ─── Familienzweig-Umschalter ─── */
@@ -1807,14 +1763,56 @@ a {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   OFFLINE / FAMILIENTAG BANNER
+   ANSICHTS-UMSCHALTER (unten mittig, 4 Icons)
+   ═══════════════════════════════════════════════════════════ */
+
+.view-switch {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--bg);
+  border: 2px solid var(--trace-faint);
+  border-radius: 22px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+.view-btn {
+  width: 40px;
+  height: 32px;
+  border: none;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.view-btn:hover { color: var(--text); }
+.view-btn.active { background: var(--trace); color: var(--bg); }
+/* Seitenpanel (Desktop) offen: in die freie linke Hälfte rücken */
+@media (min-width: 600px) {
+  body.side-panel-open .view-switch,
+  body.side-panel-open .offline-banner { left: calc((100% - min(400px, 50vw)) / 2); }
+}
+@supports (padding: env(safe-area-inset-bottom)) {
+  .view-switch { bottom: max(16px, calc(env(safe-area-inset-bottom) + 8px)); }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   OFFLINE / FAMILIENTAG BANNER (über dem Ansichts-Umschalter)
    ═══════════════════════════════════════════════════════════ */
 
 .offline-banner {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  bottom: 16px;
+  bottom: 66px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2193,9 +2191,11 @@ a {
   .fan-timeline { height: 40px; }
   .fan-timeline-play { width: 40px; height: 40px; }
 }
+/* Gast-/Offline-Pille sichtbar: Zeitstrahl darüber */
+body.has-status .fan-timeline { bottom: 112px; }
 @media (max-width: 600px) {
-  /* über Waisen-Ablage (links unten) und Gast-Hinweis, neben dem FAB-Stapel */
-  .fan-timeline { bottom: 104px; width: calc(100% - 176px); }
+  /* über Ansichts-Umschalter, Waisen-Ablage (links unten) und Gast-Hinweis, neben dem FAB-Stapel */
+  .fan-timeline, body.has-status .fan-timeline { bottom: 110px; width: calc(100% - 176px); }
 }
 
 .legend-swatch-timeline {

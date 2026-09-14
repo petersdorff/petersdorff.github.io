@@ -201,16 +201,23 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
 
 ## Fächer-Ansicht (`fan.js`) — Standardansicht
 
-- **Vier Ansichten** über den Umschalter oben rechts (`btn-view-toggle`,
-  Zyklus Fächer (Geschlecht) → Fächer nach Geburtsjahr → **Gotha-
-  Verzeichnis** → **Stammtafel**), gemerkt in
+- **Vier Ansichten** über den **Umschalter unten mittig** (`#view-switch`,
+  Pille mit 4 Icons — Fächer (Geschlecht), Fächer nach Geburtsjahr,
+  **Gotha-Verzeichnis**, **Stammtafel**; aktive Ansicht dunkel, gleiche
+  Optik wie der Familien-Umschalter oben; der alte Zyklus-Button in der
+  Top-Bar ist seit 14.09.2026 weg), gemerkt in
   `localStorage.stammbaum_view` (`fan`, `fan-years`, `gotha`, `tree`;
-  alte Werte `generational`/`temporal` werden auf `tree` gemappt);
+  alte Werte `generational`/`temporal` werden auf `tree` gemappt).
+  Stapel unten mittig von unten nach oben: Ansichts-Pille (16 px) →
+  Gast-/Offline-Pille (66 px, nur wenn sichtbar; `body.has-status`) →
+  Zeitstrahl (62 px, mit Status-Pille 112 px; Mobil 110 px). Offenes
+  Seitenpanel (Desktop, `body.side-panel-open`) schiebt Ansichts- und
+  Status-Pille in die Mitte der freien linken Hälfte;
   `Fan.setColorMode('gender'|'year')` tauscht nur Füllfarben (Skala je
   Familienzweig vom ältesten bis jüngsten Geburtsjahr, Blau → Orange;
   Legende mit Farbbalken, wird beim Zweigwechsel nachgezogen);
   ohne Eintrag ist der Fächer Standard. `App.applyView(name)` ist die
-  zentrale Stelle (Fan-Overlay ein/aus, Tree-Modus, Legende, Button-Icon).
+  zentrale Stelle (Fan-Overlay ein/aus, Gotha, Legende, `updateViewSwitch`).
 - **Familienzweige:** `buildFamilies()` erkennt Wurzeln automatisch:
   Person ohne Eltern mit Kindern, die nicht in eine dokumentierte Linie
   eingeheiratet ist (Partner hat Eltern); ein Stammelternpaar = eine

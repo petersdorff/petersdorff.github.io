@@ -200,9 +200,11 @@ const App = (() => {
 
     // Top bar
     document.getElementById('btn-menu').addEventListener('click', openMenu);
-    document.getElementById('btn-view-toggle').addEventListener('click', handleViewToggle);
+    document.querySelectorAll('#view-switch .view-btn').forEach(b => {
+      b.addEventListener('click', () => applyView(b.dataset.view));
+    });
     document.getElementById('btn-scan').addEventListener('click', openScanner);
-    updateToggleButton();
+    updateViewSwitch();
 
     // FABs
     document.getElementById('fab-add').addEventListener('click', () => Profile.edit(null));
@@ -226,6 +228,7 @@ const App = (() => {
       if (profileView.classList.contains('side-panel')) {
         profileView.classList.remove('side-panel', 'active');
         profileView.style.display = '';
+        document.body.classList.remove('side-panel-open');
         return;
       }
       showView('view-main');
@@ -350,6 +353,7 @@ const App = (() => {
       if (profileView.classList.contains('side-panel')) {
         profileView.classList.remove('side-panel', 'active');
         profileView.style.display = '';
+        document.body.classList.remove('side-panel-open');
       }
     });
   }
@@ -393,7 +397,7 @@ const App = (() => {
       setFanMode(isFan);
       Gotha.render(cachedMembers, cachedRelationships, { familyId: activeFamilyId });
       if (name === 'gotha') Gotha.show();
-      updateToggleButton();
+      updateViewSwitch();
       updateLegendBlocks();
       updateFamilySwitch();
       updateOrphanTray();
@@ -573,7 +577,7 @@ const App = (() => {
       setFanMode(false);
     }
     try { localStorage.setItem('stammbaum_view', name); } catch { /* privat/blockiert */ }
-    updateToggleButton();
+    updateViewSwitch();
     updateLegendBlocks();
   }
 
@@ -620,6 +624,8 @@ const App = (() => {
     } else {
       banner.classList.add('hidden');
     }
+    // Zeitstrahl u.a. weichen der Status-Pille aus
+    document.body.classList.toggle('has-status', !banner.classList.contains('hidden'));
   }
 
   /**
@@ -662,6 +668,7 @@ const App = (() => {
       const v = document.getElementById(id);
       if (v) { v.classList.remove('side-panel'); v.style.display = ''; }
     }
+    document.body.classList.remove('side-panel-open');
 
     if (SIDE_PANEL_VIEWS.includes(viewId) && isDesktop) {
       document.querySelectorAll('.view').forEach(v => {
@@ -671,6 +678,7 @@ const App = (() => {
       panel.classList.add('side-panel', 'active');
       panel.style.display = 'flex';
       document.getElementById('view-main').classList.add('active');
+      document.body.classList.add('side-panel-open');
       return;
     }
 
@@ -780,25 +788,14 @@ const App = (() => {
 
   // ─── View Toggle ───
 
-  function handleViewToggle() {
-    const current = getCurrentView();
-    const next = VIEW_ORDER[(VIEW_ORDER.indexOf(current) + 1) % VIEW_ORDER.length];
-    applyView(next);
-  }
-
-  function updateToggleButton() {
-    const btn = document.getElementById('btn-view-toggle');
-    if (!btn) return;
+  /** Aktive Ansicht im Umschalter unten markieren. */
+  function updateViewSwitch() {
     const mode = getCurrentView();
-    btn.classList.toggle('mode-fan', mode === 'fan');
-    btn.classList.toggle('mode-fan-years', mode === 'fan-years');
-    btn.classList.toggle('mode-gotha', mode === 'gotha');
-    btn.title = {
-      fan: 'Fächer (Geschlecht) aktiv – klicken für Fächer nach Geburtsjahr',
-      'fan-years': 'Fächer nach Geburtsjahr aktiv – klicken für Gotha-Verzeichnis',
-      gotha: 'Gotha-Verzeichnis aktiv – klicken für Stammtafel',
-      tree: 'Stammtafel aktiv – klicken für Fächer-Ansicht',
-    }[mode];
+    document.querySelectorAll('#view-switch .view-btn').forEach(b => {
+      const on = b.dataset.view === mode;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
   }
 
   function centerOnMe() {

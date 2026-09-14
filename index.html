@@ -11,7 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=41">
+  <link rel="stylesheet" href="css/style.css?v=42">
 </head>
 <body>
 
@@ -37,41 +37,12 @@
   <!-- ═══════════════════════════════════════ -->
   <div id="view-auth" class="view active">
     <div class="auth-container">
-      <div class="auth-logo">
-        <svg width="120" height="120" viewBox="0 0 120 120">
-          <!-- Central IC chip -->
-          <rect x="35" y="35" width="50" height="50" rx="4" fill="none" stroke="#1a1a1a" stroke-width="2"/>
-          <!-- Pins top -->
-          <line x1="48" y1="20" x2="48" y2="35" stroke="#1a1a1a" stroke-width="2"/>
-          <line x1="60" y1="15" x2="60" y2="35" stroke="#1a1a1a" stroke-width="2"/>
-          <line x1="72" y1="20" x2="72" y2="35" stroke="#1a1a1a" stroke-width="2"/>
-          <!-- Pins bottom -->
-          <line x1="48" y1="85" x2="48" y2="100" stroke="#1a1a1a" stroke-width="2"/>
-          <line x1="60" y1="85" x2="60" y2="105" stroke="#1a1a1a" stroke-width="2"/>
-          <line x1="72" y1="85" x2="72" y2="100" stroke="#1a1a1a" stroke-width="2"/>
-          <!-- Pins left -->
-          <line x1="20" y1="48" x2="35" y2="48" stroke="#1a1a1a" stroke-width="2"/>
-          <line x1="15" y1="60" x2="35" y2="60" stroke="#1a1a1a" stroke-width="2"/>
-          <line x1="20" y1="72" x2="35" y2="72" stroke="#1a1a1a" stroke-width="2"/>
-          <!-- Pins right -->
-          <line x1="85" y1="48" x2="100" y2="48" stroke="#1a1a1a" stroke-width="2"/>
-          <line x1="85" y1="60" x2="105" y2="60" stroke="#1a1a1a" stroke-width="2"/>
-          <line x1="85" y1="72" x2="100" y2="72" stroke="#1a1a1a" stroke-width="2"/>
-          <!-- Nodes at ends -->
-          <circle cx="48" cy="20" r="3" fill="#e63946"/>
-          <circle cx="72" cy="20" r="3" fill="#1a1a1a"/>
-          <circle cx="48" cy="100" r="3" fill="#1a1a1a"/>
-          <circle cx="72" cy="100" r="3" fill="#e63946"/>
-          <circle cx="20" cy="48" r="3" fill="#1a1a1a"/>
-          <circle cx="20" cy="72" r="3" fill="#e63946"/>
-          <circle cx="100" cy="48" r="3" fill="#e63946"/>
-          <circle cx="100" cy="72" r="3" fill="#1a1a1a"/>
-          <!-- Center text -->
-          <text x="60" y="64" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" font-weight="600" fill="#1a1a1a">STB</text>
-        </svg>
+      <div class="auth-logo auth-arms">
+        <img src="assets/img/wappen-petersdorff.png" alt="Wappen von Petersdorff" width="250" height="300">
+        <img src="assets/img/wappen-petersdorff-campen.png" alt="Wappen von Petersdorff-Campen" width="150" height="188">
       </div>
-      <h1 class="auth-title">Stammbaum</h1>
-      <p class="auth-subtitle">Familien-Netzwerk</p>
+      <h1 class="auth-title">Digitaler Stammbaum</h1>
+      <p class="auth-subtitle">Familien von Petersdorff und von Petersdorff-Campen</p>
 
       <!-- Login Form -->
       <div id="auth-login" class="auth-form">
@@ -141,6 +112,8 @@
         <button id="btn-register" class="btn btn-primary">Registrieren</button>
         <p class="auth-switch">Schon registriert? <a href="#" id="show-login">Anmelden</a></p>
       </div>
+
+      <p class="auth-footer">Feedback: <a href="mailto:kaivonpetersdorff@me.com">kaivonpetersdorff@me.com</a></p>
     </div>
   </div>
 

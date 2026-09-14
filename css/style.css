@@ -112,8 +112,10 @@ a {
    ═══════════════════════════════════════════════════════════ */
 
 #view-auth {
+  /* Spaltenlayout: vertikal über margin:auto der Karte zentrieren — mit
+     justify-content:center würde auf kleinen Screens oben abgeschnitten */
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 24px;
   overflow-y: auto;
 }
@@ -121,6 +123,7 @@ a {
 .auth-container {
   width: 100%;
   max-width: 360px;
+  margin: auto;
   text-align: center;
 }
 
@@ -128,20 +131,42 @@ a {
   margin-bottom: 16px;
 }
 
+/* Familienwappen (Pommern links, Mark rechts) nebeneinander über dem Titel */
+.auth-arms {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 28px;
+  margin-bottom: 20px;
+}
+.auth-arms img {
+  height: 120px;
+  width: auto;
+  image-rendering: auto;
+}
+
 .auth-title {
   font-size: 28px;
   font-weight: 600;
   letter-spacing: -0.5px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .auth-subtitle {
-  color: var(--text-muted);
-  font-size: 12px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  margin-bottom: 40px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  letter-spacing: 0.2px;
+  line-height: 1.6;
+  margin-bottom: 36px;
 }
+
+.auth-footer {
+  margin-top: 36px;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+}
+.auth-footer a { color: var(--text-secondary); text-decoration: underline; }
 
 .auth-form {
   text-align: left;

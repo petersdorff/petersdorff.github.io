@@ -36,6 +36,17 @@ Gotha-Datenbasis). Vanilla HTML/CSS/JS ohne Build-Schritt, PCB-Ästhetik
   Ohne beides sehen PWA-Nutzer die Änderung nicht (Service Worker cached
   alles; neue Version greift erst beim zweiten Öffnen).
 
+## Login-Seite (`#view-auth`)
+
+Kopf: beide Familienwappen nebeneinander (`assets/img/wappen-petersdorff.png`
+= Pommern, rot mit Muschelbalken; `wappen-petersdorff-campen.png` = Mark,
+schwarz mit Dreieck; beide im SW-Precache, 120 px hoch), Titel „Digitaler
+Stammbaum", Untertitel „Familien von Petersdorff und von
+Petersdorff-Campen", Fußzeile „Feedback: kaivonpetersdorff@me.com"
+(mailto). Die Karte zentriert sich über `margin: auto` im Spaltenlayout —
+nicht über `justify-content: center`, das schneidet auf kleinen Screens
+oben ab.
+
 ## Backend (Supabase)
 
 - Projekt-Ref `ixdcyoivtapglllmwvut` (eu-central-1), URL + anon key oben in

@@ -88,7 +88,7 @@ oben ab.
   (lässt bei „Spalte fehlt" GENAU diese Spalte weg, Warnung in der
   Konsole) — nie wieder pauschal Spalten verwerfen, das hatte `gender`
   still verschluckt. Nach einem Neuaufbau des Projekts alle Migrationen
-  in Reihenfolge 002 → 003 → 004 → 005 → 006 → 007 → 008 → 009 erneut ausführen.
+  in Reihenfolge 002 → 003 → 004 → 005 → 006 → 007 → 008 → 009 → 010 erneut ausführen.
 - **Zugriffsmodell (4 Stufen):** Gast/Familientag (nur mit Code, nur
   lesen, ohne Kontaktfelder) · registriert-wartend (nichts, Warteseite;
   mit Code sofort freigeschaltet) · Mitglied `approved` (alles
@@ -451,6 +451,32 @@ einem Button „Zweig … ansehen" statt der Schrittliste; DNA/Vorfahre „—",
 kein Pfad-Highlight, und **der aktive Zweig wird nicht umgeschaltet**
 (sonst würde `ensureFamilyFor(toId)` den fremden Zweig öffnen). Gleicher
 Zweig ohne Pfad (Waise): weiterhin „Keine Verbindung gefunden".
+
+## Sicherheit & Datenschutz — Stand nach Review 15.09.2026
+
+- **Wer sieht was:** Anonym: nichts (alle Tabellen RLS, anon-Probe liefert
+  `[]`/401). Gast mit Code: Baum ohne Kontakt/Telefon/E-Mail (`guest_graph`).
+  Mitglied `approved`: alles inkl. Kontaktfelder; ändern darf es Platzhalter
+  und unbeanspruchte Profile, eigene nur der Inhaber/Admin; **löschen**
+  darf jedes freigegebene Mitglied jedes unbeanspruchte Profil (Kaskade auf
+  Beziehungen) — bewusst kollaborativ, aber ohne Undo. Admin: alles.
+- **Fotos** (Bucket `photos`, öffentlich): Dateien sind per URL abrufbar
+  (`<member-id>.<ext>`, UUID nicht erratbar), seit Migration 010 aber nicht
+  mehr anonym **listbar**; hochladen/ändern/löschen nur freigegebene
+  Mitglieder (vorher jeder Eingeloggte, auch Wartende).
+- **Client-Härtung:** supabase-js von jsdelivr **exakt gepinnt + SRI**
+  (`integrity`), keine weiteren Fremdskripte; `<meta name="robots"
+  content="noindex, nofollow">` (Login-Seite soll nicht in Suchmaschinen);
+  Markdown-Renderer erlaubt nur `http(s)`-Links, Nutzertexte gehen über
+  `textContent`/`escapeHtml`; HTTPS erzwungen.
+- **Kein Backup im Free-Tier:** Supabase Free hat keine automatischen
+  Backups — `fetch-db.sh` regelmäßig laufen lassen (Export in den privaten
+  Ordner), bis ein Cron dafür eingerichtet ist.
+- **Offene Entscheidungen** (siehe Review-Notiz an Kai): Geburtsdaten
+  Lebender für Gäste nur als Jahr; Kontaktfelder nur vom Profil-Inhaber
+  editierbar; Löschrecht auf Ersteller/Admin beschränken; längerer
+  Familientag-Code gegen Durchprobieren (`invite_code_valid` ist anonym
+  aufrufbar, ohne Rate-Limit); Vita (`notes`) im Gastmodus.
 
 ## Nutzungsstatistik (Migration 009)
 

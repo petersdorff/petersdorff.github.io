@@ -88,7 +88,7 @@ oben ab.
   (lässt bei „Spalte fehlt" GENAU diese Spalte weg, Warnung in der
   Konsole) — nie wieder pauschal Spalten verwerfen, das hatte `gender`
   still verschluckt. Nach einem Neuaufbau des Projekts alle Migrationen
-  in Reihenfolge 002 → 003 → 004 → 005 → 006 → 007 → 008 erneut ausführen.
+  in Reihenfolge 002 → 003 → 004 → 005 → 006 → 007 → 008 → 009 erneut ausführen.
 - **Zugriffsmodell (4 Stufen):** Gast/Familientag (nur mit Code, nur
   lesen, ohne Kontaktfelder) · registriert-wartend (nichts, Warteseite;
   mit Code sofort freigeschaltet) · Mitglied `approved` (alles
@@ -451,6 +451,20 @@ einem Button „Zweig … ansehen" statt der Schrittliste; DNA/Vorfahre „—",
 kein Pfad-Highlight, und **der aktive Zweig wird nicht umgeschaltet**
 (sonst würde `ensureFamilyFor(toId)` den fremden Zweig öffnen). Gleicher
 Zweig ohne Pfad (Waise): weiterhin „Keine Verbindung gefunden".
+
+## Nutzungsstatistik (Migration 009)
+
+Tabelle `usage_events` (`created_at`, `user_uid` NULL = Gast, `kind`,
+`meta`), Schreiben nur über `log_event(kind, meta)` (SECURITY DEFINER,
+anon+authenticated), Lesen nur Admins. Ereignisse: `app_open` (einmal je
+Seitenaufruf mit Konto, Auth-Listener), `guest_open` (`Guest.enter`),
+`connection` (`Connection.showOverlay`), `member_create`/`member_update`
+(`DB.createMember`/`updateMember`), `relationship_add` (nur neue Kante).
+Keine Personen-IDs, keine Inhalte. `usage_stats(p_days)` (nur Admins)
+liefert Gesamtzahlen (Konten, freigegeben/offen, verknüpfte Profile,
+Personen, Beziehungen, aktive Konten im Zeitraum) und Tageszeilen (Berlin)
+— Nutzerverwaltung → Block „Nutzung" (`Admin.loadUsage`): Kacheln +
+Tabelle 14 Tage mit Summenzeile.
 
 ## Beziehungs-Automatik (`relations.js → propagateLogicalRelations`)
 

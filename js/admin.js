@@ -113,7 +113,7 @@ const Admin = (() => {
       box.appendChild(tileRow);
       const cols = [
         ['day', 'Tag'], ['app_open', 'App-Starts'], ['active_users', 'Konten'], ['guest_open', 'Gäste'],
-        ['connection', 'Verwandt-schaft'], ['member_create', 'Neue Personen'], ['member_update', 'Bearbei-tungen'], ['relationship_add', 'Bezie-hungen'],
+        ['connection', 'Abfragen'], ['member_create', 'Neue Pers.'], ['member_update', 'Änderungen'], ['relationship_add', 'Beziehungen'],
       ];
       const table = Utils.createEl('table', { className: 'usage-table' });
       const thead = Utils.createEl('thead'); const hr = Utils.createEl('tr');
@@ -136,7 +136,7 @@ const Admin = (() => {
       tbody.appendChild(tr);
       table.appendChild(tbody);
       box.appendChild(Utils.createEl('div', { className: 'usage-table-wrap' }, [table]));
-      box.appendChild(Utils.createEl('p', { className: 'admin-hint', textContent: 'App-Starts = Seitenaufrufe mit Konto (ein Eintrag je Aufruf); Konten = verschiedene Konten an dem Tag; Gäste = Familientag-Starts. Es werden nur Zähler gespeichert, keine Inhalte.' }));
+      box.appendChild(Utils.createEl('p', { className: 'admin-hint', textContent: 'App-Starts = Seitenaufrufe mit Konto; Konten = verschiedene Konten an dem Tag; Gäste = Familientag-Starts; Abfragen = Verwandtschaftsabfragen; Änderungen = gespeicherte Profil-Bearbeitungen. Es werden nur Zähler gespeichert, keine Inhalte.' }));
     } catch (err) {
       console.error('[Admin] usage:', err);
       box.innerHTML = '<p class="admin-hint">Nutzungsdaten nicht verfügbar (Migration 009 ausgeführt?).</p>';

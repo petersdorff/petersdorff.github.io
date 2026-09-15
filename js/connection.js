@@ -67,22 +67,53 @@ const Connection = (() => {
 
     const ancestorEl = document.getElementById('conn-ancestor');
 
-    relationEl.textContent = connection.term || 'Unbekannt';
-    dnaEl.textContent = connection.sharedDNA !== null && connection.sharedDNA !== undefined
+    // Verschiedene Familienzweige (z.B. Märkisch scannt Pommersch): keine
+    // dokumentierte Verwandtschaft — freundlich sagen, nichts umschalten.
+    const famA = App.familyInfo(fromId), famB = App.familyInfo(toId);
+    const crossBranch = !!(famA && famB && famA.rootId !== famB.rootId);
+
+    relationEl.textContent = crossBranch ? 'Verschiedene Zweige' : (connection.term || 'Unbekannt');
+    dnaEl.textContent = !crossBranch && connection.sharedDNA !== null && connection.sharedDNA !== undefined
       ? `~${connection.sharedDNA}%` : '—';
-    ancestorEl.textContent = connection.commonAncestor || '—';
+    ancestorEl.textContent = crossBranch ? '—' : (connection.commonAncestor || '—');
 
     // Step-by-step explanation of the path
-    renderSteps(fromId, toId, cachedMembers, cachedRelationships);
+    if (crossBranch) {
+      renderCrossBranch(memberA, memberB, famA, famB);
+    } else {
+      renderSteps(fromId, toId, cachedMembers, cachedRelationships);
+    }
 
     // Show overlay
     document.getElementById('connection-overlay').classList.remove('hidden');
 
+    if (crossBranch) {
+      // Ansicht bleibt beim eigenen Zweig; kein Pfad zum Hervorheben
+      Tree.clearHighlight(); Fan.clearHighlight(); Gotha.clearHighlight();
+      return;
+    }
     // Highlight path in tree and (if shown) in the fan chart
     App.ensureFamilyFor(toId);
     Tree.highlightConnection(fromId, toId);
     Fan.highlightConnection(fromId, toId);
     if (Gotha.isActive()) Gotha.highlightConnection(fromId, toId);
+  }
+
+  /** Hinweis statt Schrittliste, wenn beide aus verschiedenen Zweigen stammen. */
+  function renderCrossBranch(memberA, memberB, famA, famB) {
+    const stepsEl = document.getElementById('conn-steps');
+    stepsEl.innerHTML = '';
+    stepsEl.appendChild(Utils.createEl('div', {
+      className: 'conn-step-hint',
+      textContent: `Ihr stammt aus verschiedenen Familienzweigen — ${memberA.firstName} (${famA.short}) `
+        + `und ${memberB.firstName} (${famB.short}). Eine Verwandtschaft zwischen den Zweigen ist nicht dokumentiert.`,
+    }));
+    const btn = Utils.createEl('button', {
+      className: 'btn btn-small btn-secondary conn-branch-btn',
+      textContent: `Zweig „${famB.short}" ansehen`,
+    });
+    btn.addEventListener('click', () => { closeOverlay(); App.setActiveFamily(famB.rootId); });
+    stepsEl.appendChild(btn);
   }
 
   /**

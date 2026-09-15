@@ -440,6 +440,16 @@ zuletzt), dann Vorname — nie Geschwister und Eltern im Wechsel. Die
 Artikelseite (`article.js → renderRelations`) gruppiert nach denselben
 Kategorien in derselben Reihenfolge.
 
+## Verwandtschafts-Overlay über Zweiggrenzen (`connection.js`)
+
+Stammen Start und Ziel aus verschiedenen Familienzweigen (`App.familyInfo`
+liefert unterschiedliche `rootId`s — z.B. Märkischer scannt pommerschen
+QR-Code), zeigt `showOverlay` „Verschiedene Zweige" mit Hinweistext und
+einem Button „Zweig … ansehen" statt der Schrittliste; DNA/Vorfahre „—",
+kein Pfad-Highlight, und **der aktive Zweig wird nicht umgeschaltet**
+(sonst würde `ensureFamilyFor(toId)` den fremden Zweig öffnen). Gleicher
+Zweig ohne Pfad (Waise): weiterhin „Keine Verbindung gefunden".
+
 ## Beziehungs-Automatik (`relations.js → propagateLogicalRelations`)
 
 Kaskadierende Regel-Engine: Graph wird EINMAL geladen, in-memory

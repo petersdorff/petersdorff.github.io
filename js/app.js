@@ -843,6 +843,7 @@ const App = (() => {
     applyView,
     setActiveFamily,
     ensureFamilyFor,
+    familyInfo: (id) => { const f = families.find(x => x.assigned.has(id)); return f ? { rootId: f.rootId, short: f.short, name: f.name } : null; },
     addRelative,
     toast,
     refreshTree,

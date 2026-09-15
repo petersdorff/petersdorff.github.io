@@ -1809,6 +1809,20 @@ a {
 .admin-code-row .input-group { flex: 1 1 200px; margin-bottom: 8px; }
 .admin-code-box .btn { width: auto; display: inline-block; margin-right: 10px; }
 
+/* Nutzungsstatistik (Nutzerverwaltung) */
+.usage-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.usage-tile { border: 1.5px solid var(--trace-faint); border-radius: var(--radius-lg); padding: 10px 12px; }
+.usage-val { font-size: 22px; font-weight: 700; line-height: 1.1; }
+.usage-label { font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-secondary); margin-top: 4px; }
+.usage-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.usage-table-wrap { overflow-x: auto; border: 1.5px solid var(--trace-faint); border-radius: var(--radius-lg); }
+.usage-table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.usage-table th { text-align: right; font-size: 10px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-muted); padding: 8px 8px; border-bottom: 1.5px solid var(--trace-faint); white-space: nowrap; }
+.usage-table th:first-child, .usage-table td.usage-day { text-align: left; }
+.usage-table td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--trace-faint); font-variant-numeric: tabular-nums; }
+.usage-table td.usage-zero { color: var(--trace-light); }
+.usage-table tr.usage-total td { font-weight: 700; border-top: 1.5px solid var(--trace); border-bottom: none; }
+
 /* Hinweis: eigenes Profil noch unverbunden — unter dem Familien-Umschalter */
 .connect-hint {
   position: absolute;

@@ -45,6 +45,8 @@ const Connection = (() => {
       return;
     }
 
+    DB.logEvent('connection', { guest: Guest.isActive() });
+
     // Calculate connection
     const cachedRelationships = App.getCachedRelationships();
     const connection = Relationship.getConnection(

@@ -103,6 +103,7 @@ const App = (() => {
           return;
         }
 
+        if (!appOpenLogged) { appOpenLogged = true; DB.logEvent('app_open'); }
         if (member) {
           Tree.setCurrentUser(member.id);
           showView('loading-screen');
@@ -597,6 +598,7 @@ const App = (() => {
 
   // ─── Ansichten: fan | fan-years | fan-name | gotha | tree (Stammtafel) ───
 
+  let appOpenLogged = false;   // Nutzungsstatistik: ein App-Start je Seitenaufruf
   const VIEW_ORDER = ['fan', 'fan-years', 'fan-name', 'gotha', 'tree'];
   const fanColorMode = name => name === 'fan-years' ? 'year' : name === 'fan-name' ? 'name' : 'gender';
 

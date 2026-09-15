@@ -89,9 +89,64 @@ const Admin = (() => {
     }
   }
 
+  /** Nutzungsstatistik: Gesamtzahlen + Tagestabelle (usage_stats, nur Admins). */
+  async function loadUsage() {
+    const box = document.getElementById('admin-usage');
+    if (!box) return;
+    try {
+      const st = await DB.getUsageStats(14);
+      box.innerHTML = '';
+      const tiles = [
+        ['Konten', st.accounts_total, `${st.accounts_approved} freigegeben · ${st.accounts_pending} offen`],
+        ['Verknüpfte Profile', st.profiles_claimed, `von ${st.members_total} Personen`],
+        ['Aktive Konten', st.active_users_period, 'mit App-Start in 14 Tagen'],
+        ['Beziehungen', st.relationships_total, 'gesamt'],
+      ];
+      const tileRow = Utils.createEl('div', { className: 'usage-tiles' });
+      for (const [label, val, sub] of tiles) {
+        tileRow.appendChild(Utils.createEl('div', { className: 'usage-tile' }, [
+          Utils.createEl('div', { className: 'usage-val', textContent: String(val ?? 0) }),
+          Utils.createEl('div', { className: 'usage-label', textContent: label }),
+          Utils.createEl('div', { className: 'usage-sub', textContent: sub }),
+        ]));
+      }
+      box.appendChild(tileRow);
+      const cols = [
+        ['day', 'Tag'], ['app_open', 'App-Starts'], ['active_users', 'Konten'], ['guest_open', 'Gäste'],
+        ['connection', 'Verwandt-schaft'], ['member_create', 'Neue Personen'], ['member_update', 'Bearbei-tungen'], ['relationship_add', 'Bezie-hungen'],
+      ];
+      const table = Utils.createEl('table', { className: 'usage-table' });
+      const thead = Utils.createEl('thead'); const hr = Utils.createEl('tr');
+      for (const [, label] of cols) hr.appendChild(Utils.createEl('th', { textContent: label }));
+      thead.appendChild(hr); table.appendChild(thead);
+      const tbody = Utils.createEl('tbody');
+      const fmtDay = d => { const [y, m, dd] = String(d).split('-'); return `${dd}.${m}.`; };
+      const totals = {};
+      for (const row of (st.days || [])) {
+        const tr = Utils.createEl('tr');
+        for (const [key] of cols) {
+          const v = key === 'day' ? fmtDay(row.day) : (row[key] || 0);
+          if (key !== 'day') totals[key] = (totals[key] || 0) + (row[key] || 0);
+          tr.appendChild(Utils.createEl('td', { className: key === 'day' ? 'usage-day' : (v ? '' : 'usage-zero'), textContent: String(v) }));
+        }
+        tbody.appendChild(tr);
+      }
+      const tr = Utils.createEl('tr', { className: 'usage-total' });
+      for (const [key] of cols) tr.appendChild(Utils.createEl('td', { textContent: key === 'day' ? 'Σ 14 Tage' : key === 'active_users' ? '' : String(totals[key] || 0) }));
+      tbody.appendChild(tr);
+      table.appendChild(tbody);
+      box.appendChild(Utils.createEl('div', { className: 'usage-table-wrap' }, [table]));
+      box.appendChild(Utils.createEl('p', { className: 'admin-hint', textContent: 'App-Starts = Seitenaufrufe mit Konto (ein Eintrag je Aufruf); Konten = verschiedene Konten an dem Tag; Gäste = Familientag-Starts. Es werden nur Zähler gespeichert, keine Inhalte.' }));
+    } catch (err) {
+      console.error('[Admin] usage:', err);
+      box.innerHTML = '<p class="admin-hint">Nutzungsdaten nicht verfügbar (Migration 009 ausgeführt?).</p>';
+    }
+  }
+
   async function showAdminPanel() {
     App.showView('view-admin-approve');
     loadInviteCode();
+    loadUsage();
     const lists = {
       pending: document.getElementById('admin-pending-list'),
       approved: document.getElementById('admin-approved-list'),

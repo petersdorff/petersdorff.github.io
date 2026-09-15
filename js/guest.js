@@ -64,6 +64,7 @@ const Guest = (() => {
     storeCode(useCode);
     active = true;
     DB.setOffline(true);
+    DB.logEvent('guest_open');
     await App.loadTree();
 
     // Restore previously chosen identity if it still exists

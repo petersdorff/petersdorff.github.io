@@ -56,6 +56,23 @@ const DB = (() => {
     return guestRows && guestRows.generated_at ? String(guestRows.generated_at).substring(0, 10) : '';
   }
 
+  /** Nutzungsereignis melden (Zähler, keine Inhalte); Fehler werden verschluckt. */
+  function logEvent(kind, meta) {
+    if (!supabase) return;
+    try {
+      supabase.rpc('log_event', { p_kind: kind, p_meta: meta || null }).then(({ error }) => {
+        if (error) console.debug('[DB] log_event:', error.message);
+      }, () => {});
+    } catch { /* egal */ }
+  }
+
+  /** Admin: Tageszahlen + Gesamtzahlen der letzten n Tage. */
+  async function getUsageStats(days = 14) {
+    const { data, error } = await supabase.rpc('usage_stats', { p_days: days });
+    if (error) throw error;
+    return data;
+  }
+
   /** Familientag-Code bei der Registrierung einlösen → sofort freigegeben. */
   async function redeemInviteCode(code, displayName) {
     const { data, error } = await supabase.rpc('redeem_invite_code', { p_code: code || '', p_display_name: displayName || null });
@@ -178,6 +195,7 @@ const DB = (() => {
     const row = unmapMember(memberData);
     const data = await writeWithColumnFallback(row, r =>
       supabase.from('members').insert(r).select().single());
+    logEvent('member_create');
     return data.id;
   }
 
@@ -188,6 +206,7 @@ const DB = (() => {
     delete row.created_at;
     await writeWithColumnFallback(row, r =>
       supabase.from('members').update(r).eq('id', id));
+    logEvent('member_update');
   }
 
   async function claimMember(memberId, uid) {
@@ -265,6 +284,7 @@ const DB = (() => {
 
     const data = await writeWithColumnFallback(row, r =>
       supabase.from('relationships').insert(r).select().single());
+    logEvent('relationship_add', { type });
     return data.id;
   }
 
@@ -572,6 +592,8 @@ const DB = (() => {
     redeemInviteCode,
     getInviteCode,
     setInviteCode,
+    logEvent,
+    getUsageStats,
     getAllMembers,
     getMember,
     searchMembers,

@@ -906,7 +906,7 @@ const Fan = (() => {
   }
 
   /** Jahresbereich je Familienzweig: vom ältesten bis zum jüngsten Geburtsjahr
-      der aktiven Familie (Märkisch: ab Hans Leo 1830), damit die Skala den
+      der aktiven Familie (Märkisch: ab dem Stammvater 1830), damit die Skala den
       Zweig ausfüllt und nicht von einem anderen Zweig gestaucht wird. */
   function computeYearRange(fam) {
     const pool = fam ? members.filter(m => fam.assigned.has(m.id)) : members;

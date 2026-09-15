@@ -11,3 +11,11 @@ update-db.sh
 
 # Python
 __pycache__/
+
+# Persönliche Daten — liegen privat in ~/Documents/ClaudeCode/stammbaum-private/
+js/data-snapshot.js
+gotha-data-extract.md
+import_data.py
+gotha-entry-script.js
+populate-dates.js
+tools/generate-snapshot.py

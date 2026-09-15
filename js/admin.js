@@ -55,8 +55,43 @@ const Admin = (() => {
    * Nutzerverwaltung: alle Konten mit Status, verknüpftem Profil und Aktionen.
    * Gruppiert in offene Anträge, freigegebene Mitglieder, abgelehnt/gesperrt.
    */
+  /** Familientag-Code laden/anzeigen (app_settings, nur Admins). */
+  async function loadInviteCode() {
+    const codeEl = document.getElementById('admin-invite-code');
+    const untilEl = document.getElementById('admin-invite-until');
+    const statusEl = document.getElementById('admin-invite-status');
+    if (!codeEl) return;
+    try {
+      const { code, validUntil } = await DB.getInviteCode();
+      codeEl.value = code;
+      // Ablauf als Berliner Kalendertag anzeigen
+      untilEl.value = validUntil ? new Date(validUntil).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' }) : '';
+      const expired = validUntil && new Date(validUntil) < new Date();
+      statusEl.textContent = !code ? 'Kein Code gesetzt.' : expired ? 'Abgelaufen.' : validUntil ? `Aktiv bis ${new Date(validUntil).toLocaleDateString('de-DE', { timeZone: 'Europe/Berlin' })}.` : 'Aktiv (ohne Ablauf).';
+    } catch (err) {
+      console.error('[Admin] invite code:', err);
+      statusEl.textContent = 'Konnte den Code nicht laden (Migration 007 ausgeführt?).';
+    }
+  }
+
+  async function saveInviteCode() {
+    const code = document.getElementById('admin-invite-code').value.trim();
+    const until = document.getElementById('admin-invite-until').value;
+    // „bis einschließlich“ Tag X → Ablauf am Ende des Tages (Berlin, Sommerzeit +02)
+    const validUntil = until ? `${until}T23:59:59+02:00` : null;
+    try {
+      await DB.setInviteCode(code, validUntil);
+      App.toast('Familientag-Code gespeichert', 'success');
+      loadInviteCode();
+    } catch (err) {
+      console.error('[Admin] save invite code:', err);
+      App.toast('Speichern fehlgeschlagen', 'error');
+    }
+  }
+
   async function showAdminPanel() {
     App.showView('view-admin-approve');
+    loadInviteCode();
     const lists = {
       pending: document.getElementById('admin-pending-list'),
       approved: document.getElementById('admin-approved-list'),
@@ -292,6 +327,11 @@ const Admin = (() => {
       );
     }
   }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const b = document.getElementById('btn-admin-invite-save');
+    if (b) b.addEventListener('click', saveInviteCode);
+  });
 
   return {
     initEmailJS,

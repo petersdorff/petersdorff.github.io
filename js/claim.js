@@ -50,6 +50,10 @@ const Claim = (() => {
     sessionStorage.setItem('reg_lastName', lastName);
     sessionStorage.setItem('reg_birthName',
       document.getElementById('reg-birthname').value.trim());
+    // Familientag-Code → wird nach dem Login eingelöst (Sofort-Freigabe)
+    const inviteCode = (document.getElementById('reg-code')?.value || '').trim();
+    if (inviteCode) sessionStorage.setItem('reg_inviteCode', inviteCode);
+    else sessionStorage.removeItem('reg_inviteCode');
 
     // Auto-login after registration
     const loginResult = await Auth.loginWithEmail(email, password);
@@ -169,7 +173,14 @@ const Claim = (() => {
     debouncedClaimSearch(query);
   }
 
-  async function handleClaimNew() {
+  /**
+   * Neues eigenes Profil anlegen und sofort verknüpfen.
+   * mode 'connect': Editor mit Pflicht-Erstverbindung öffnen (Standard).
+   * mode 'later':   ohne Verbindung anlegen — Person landet im Stammbaum
+   *                 und baut die Lücke selbst zu; bis dahin steht das Profil
+   *                 in der Waisen-Ablage und ein Hinweis erinnert daran.
+   */
+  async function handleClaimNew(mode = 'connect') {
     const user = Auth.getUser();
     const firstName = sessionStorage.getItem('reg_firstName') ||
       user.user_metadata?.display_name?.split(' ')[0] || 'Unbekannt';
@@ -204,6 +215,11 @@ const Claim = (() => {
     App.toast('Willkommen im Stammbaum!', 'success');
     await App.loadTree();
 
+    if (mode === 'later') {
+      App.showView('view-main');
+      App.toast('Dein Profil ist angelegt, aber noch nicht verbunden – hänge dich ein, sobald die Lücke gebaut ist.', 'info');
+      return;
+    }
     // Redirect to profile edit so the user can add their first relationship.
     // Without a relationship they won't appear on the tree (orphan filter).
     Profile.edit(memberId);

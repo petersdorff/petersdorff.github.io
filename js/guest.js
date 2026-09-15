@@ -1,12 +1,25 @@
 /* ═══════════════════════════════════════════════════════════
    STAMMBAUM – Familientag-Modus (Gast ohne Konto)
-   Identität wählen statt registrieren; funktioniert komplett
-   offline über den gebündelten Daten-Snapshot.
+   Identität wählen statt registrieren. Zugang nur mit dem
+   Familientag-Code (zeitlich begrenzt); der Baum kommt lesend aus der
+   Datenbank (guest_graph), nichts liegt mehr öffentlich im Repo.
    ═══════════════════════════════════════════════════════════ */
 
 const Guest = (() => {
   const STORAGE_KEY = 'stammbaum_guestMemberId';
+  const CODE_KEY = 'stammbaum_guestCode';
   let active = false;
+
+  function getStoredCode() {
+    try { return localStorage.getItem(CODE_KEY) || ''; } catch { return ''; }
+  }
+  function storeCode(code) {
+    try {
+      if (code) localStorage.setItem(CODE_KEY, code);
+      else localStorage.removeItem(CODE_KEY);
+    } catch { /* private mode */ }
+  }
+  function hasStoredCode() { return !!getStoredCode(); }
 
   function isActive() {
     return active;
@@ -24,18 +37,33 @@ const Guest = (() => {
   }
 
   /**
-   * Enter guest mode: read-only view on the bundled snapshot.
-   * Works without backend, without account, without approval.
+   * Gastmodus betreten (lesend). Ohne Konto, ohne Freigabe — aber nur mit
+   * gültigem Familientag-Code: der Baum wird per guest_graph(code) geladen.
+   * Ohne Code-Argument wird der gespeicherte Code versucht; fehlt er oder
+   * ist er abgelaufen, erscheint die Code-Abfrage auf der Login-Seite.
+   * Gibt true zurück, wenn der Gastmodus aktiv ist.
    */
-  async function enter() {
-    if (!DB.snapshotAvailable()) {
-      App.toast('Keine lokalen Daten verfügbar', 'error');
-      return;
+  async function enter(code) {
+    const useCode = (code || getStoredCode()).trim();
+    if (!useCode) { showCodePrompt(); return false; }
+    App.showView('loading-screen');
+    try {
+      await DB.loadGuestGraph(useCode);
+    } catch (err) {
+      App.showView('view-auth');
+      if (String(err.message) === 'invalid_code') {
+        storeCode(null);
+        App.toast('Familientag-Code ungültig oder abgelaufen', 'error');
+        showCodePrompt();
+      } else {
+        console.error('[Guest] guest_graph:', err);
+        App.toast('Server nicht erreichbar – bitte später noch einmal versuchen', 'error');
+      }
+      return false;
     }
+    storeCode(useCode);
     active = true;
     DB.setOffline(true);
-
-    App.showView('loading-screen');
     await App.loadTree();
 
     // Restore previously chosen identity if it still exists
@@ -55,6 +83,24 @@ const Guest = (() => {
     } else {
       showIdentityPicker();
     }
+    return true;
+  }
+
+  /** Code-Feld unter dem Familientag-Knopf auf der Login-Seite einblenden. */
+  function showCodePrompt() {
+    App.showView('view-auth');
+    const box = document.getElementById('guest-code-box');
+    if (!box) return;
+    box.classList.remove('hidden');
+    const input = document.getElementById('guest-code');
+    setTimeout(() => input && input.focus(), 150);
+  }
+
+  async function submitCode() {
+    const input = document.getElementById('guest-code');
+    const code = (input ? input.value : '').trim();
+    if (!code) { App.toast('Bitte den Familientag-Code eingeben', 'error'); return; }
+    await enter(code);
   }
 
   /**
@@ -140,6 +186,7 @@ const Guest = (() => {
     active = false;
     DB.setOffline(false);
     storeIdentityId(null); // don't auto-resume after explicit exit
+    storeCode(null);
     Auth.setMember(null);
     Tree.setCurrentUser(null);
     App.showView('view-auth');
@@ -152,6 +199,9 @@ const Guest = (() => {
   return {
     isActive,
     hasStoredIdentity,
+    hasStoredCode,
+    showCodePrompt,
+    submitCode,
     enter,
     showIdentityPicker,
     handleSearchInput,

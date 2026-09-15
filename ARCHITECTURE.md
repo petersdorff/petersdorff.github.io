@@ -11,10 +11,13 @@ Gotha-Datenbasis). Vanilla HTML/CSS/JS ohne Build-Schritt, PCB-Ästhetik
 (IBM Plex Mono). Zwei Betriebsarten:
 
 - **Online (eingeloggt):** Lesen + Bearbeiten gegen Supabase.
-- **Familientag-/Offline-Modus (Gast):** rein lesend aus dem gebündelten
-  Snapshot `js/data-snapshot.js` — funktioniert komplett ohne Backend
-  und ohne Konto (Identität wählen statt registrieren, QR-Codes,
-  Verwandtschafts-Anzeige).
+- **Familientag-Modus (Gast):** rein lesend, ohne Konto, aber **nur mit
+  dem zeitlich begrenzten Familientag-Code**; der Baum kommt aus der
+  DB-Funktion `guest_graph(code)` (Identität wählen statt registrieren,
+  QR-Codes, Verwandtschafts-Anzeige). Es gibt **keinen öffentlichen
+  Daten-Snapshot mehr** — seit 15.09.2026 liegt nichts Persönliches in
+  Repo oder Website (History bereinigt). Ohne erreichbares Backend geht
+  nur noch eine Fehlermeldung.
 
 ## Hosting & Deployment
 
@@ -74,8 +77,7 @@ oben ab.
   Dashboard → Restore, dauert ~5 Min (DNS kommt vor der REST-API, die
   antwortet zwischenzeitlich 502/404). Neuaufbau nach Löschung: `RESTORE.md`.
 - **Nach jedem Restore** prüfen: offene Freigaben im Admin-Panel (Mails
-  gingen während der Pause ggf. unter) und ob die DB neuer ist als der
-  Snapshot (`updated_at` vs. `snapshot_date`) → ggf. Snapshot neu erzeugen.
+  gingen während der Pause ggf. unter).
 - Tabellen: `members`, `relationships`, `user_approvals`; Storage-Bucket
   `photos`. Schema: `supabase-schema.sql`, dann
   `supabase-migration-approvals.sql`, `migrations/002…`, `migrations/003…`.
@@ -86,9 +88,10 @@ oben ab.
   (lässt bei „Spalte fehlt" GENAU diese Spalte weg, Warnung in der
   Konsole) — nie wieder pauschal Spalten verwerfen, das hatte `gender`
   still verschluckt. Nach einem Neuaufbau des Projekts alle Migrationen
-  in Reihenfolge 002 → 003 → 004 → 005 → 006 erneut ausführen.
-- **Zugriffsmodell (4 Stufen):** Gast/Familientag (Snapshot, nur lesen) ·
-  registriert-wartend (nichts, Warteseite) · Mitglied `approved` (alles
+  in Reihenfolge 002 → 003 → 004 → 005 → 006 → 007 erneut ausführen.
+- **Zugriffsmodell (4 Stufen):** Gast/Familientag (nur mit Code, nur
+  lesen, ohne Kontaktfelder) · registriert-wartend (nichts, Warteseite;
+  mit Code sofort freigeschaltet) · Mitglied `approved` (alles
   lesen, Personen/Beziehungen anlegen und ändern, Kernfelder beanspruchter
   Profile nur Inhaber/Admin) · Admin. **Admin = `user_approvals.role =
   'admin'`** (Migration 005, vergebbar in der Nutzerverwaltung durch jeden
@@ -108,7 +111,7 @@ oben ab.
   Policies (anonymes Lesen aller E-Mails, Selbst-Freigabe per REST) durch
   „eigene Zeile bzw. Admin", ergänzt `revoked`, spiegelt den Kernfeld-
   Schutz in RLS und beschränkt Löschen auf Platzhalter. Stand 13.09.2026:
-  5 Konten (Kai, Tabea, Stephan, Lea Sophia, Anne), 3 Profile verknüpft.
+  5 Konten, 3 Profile verknüpft.
 - **Serverseitige Freigabe-Prüfung** (Migration 003) ist eingespielt —
   verifiziert September 2026: RLS-Policies laufen über `public.is_approved()`,
   nicht freigegebene Konten lesen nichts. Prüfen per
@@ -130,7 +133,7 @@ oben ab.
 Ein Profil gilt als „registriert" ⇔ `is_placeholder = false`; im Baum
 durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
 **Badge-Logik in `profile.js` prüft nur `isPlaceholder`** — nie
-`claimedByUid`, denn der ist im öffentlichen Snapshot immer `null`.
+`claimedByUid` (historisch: im früheren Snapshot immer `null`).
 
 `relationships`: gerichtete Kanten `from_id → to_id` mit `rel_type`:
 - `parent_child` (Eltern → Kind; **hartes Limit: max. 2 Eltern pro Kind**)
@@ -149,7 +152,7 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
 |---|---|
 | `app.js` | Init, Supabase-Client, Auth-Listener, Views, Toasts, FABs, Legende |
 | `auth.js` | Login/Registrierung/Passwort-Reset, Fehler-Mapping (`mapAuthError`) |
-| `db.js` | Alle Supabase-Zugriffe + Offline-Fallback auf `LocalSnapshot` |
+| `db.js` | Alle Supabase-Zugriffe; Gastmodus liest aus `guestRows` (RPC `guest_graph`), Invite-Code-RPCs, `app_settings` |
 | `tree.js` | **Stammtafel** (Ansicht `tree`): verdichtete Nachfahrentafel in reinem SVG — Kontur-Layout, gestapelte Geschwister, Partner unter der Person, Generationsbänder, Minimap, Ein-/Ausklappen. Seit Sept. 2026 ohne Cytoscape; `temporal` ist entfallen |
 | `fan.js` | **Fächer-Ansicht (Standard)**: radialer Nachkommen-Sunburst in reinem SVG, s.u. |
 | `gotha.js` | **Gotha-Verzeichnis**: eingerücktes, klappbares Textverzeichnis je Generation (`#gotha-container`), nutzt `Fan.buildFamiliesFrom` |
@@ -158,12 +161,11 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
 | `relations.js` | Beziehungs-UI **und Auto-Vervollständigungs-Engine** (s.u.) |
 | `relationship.js` | Verwandtschaftsgrad-Berechnung (Pfadsuche, Begriffe) |
 | `profile.js` | Profile anzeigen/bearbeiten, Badges, Pflicht-Erstverbindung |
-| `guest.js` | Familientag-Modus (Identität wählen, offline) |
+| `guest.js` | Familientag-Modus (Code-Abfrage, Identität wählen, nur lesen) |
 | `connection.js` | „Wie sind wir verwandt?"-Panel, QR-Deep-Links `#connect/<id>` |
 | `claim.js` | Profil beanspruchen nach Registrierung |
 | `admin.js` | Freigabe-Panel, EmailJS-Benachrichtigung |
 | `search.js`, `qr.js`, `utils.js` | Suche, QR-Codes, Helfer |
-| `data-snapshot.js` | GENERIERT — nicht von Hand bearbeiten |
 
 ## Stammtafel (`tree.js`) — Ansicht `tree`
 
@@ -480,18 +482,39 @@ drittes Elternteil.
 headless mit Mock-DB, nach jeder Änderung an der Engine ausführen.
 Widersprüche beim manuellen Anlegen räumt `cleanConflictingRelations` ab.
 
-## Offline-Snapshot & Familientag
+## Familientag-Code, Gastzugang & Konto↔Profil (Migration 007)
 
-- `tools/generate-snapshot.py` erzeugt `js/data-snapshot.js`:
-  bevorzugt `--from-db` (braucht `SUPABASE_URL`+`SUPABASE_SERVICE_KEY` als
-  Env-Vars), sonst Fallback aus `import_data.py` (Gotha-Stand Feb 2026 —
-  Achtung: setzt dann ALLE als Platzhalter). Auth-IDs/Kontaktdaten werden
-  für den öffentlichen Snapshot entfernt.
-- Nach dem Generieren: Version von `data-snapshot.js` in `index.html` und
-  `CACHE_NAME` in `sw.js` erhöhen, committen, pushen.
-- `db.js` schaltet automatisch auf den Snapshot, wenn Supabase nicht
-  erreichbar ist (`getFullGraph` mit Timeout); Schreiben wirft dann
-  `Offline-Modus: Änderungen sind zurzeit nicht möglich.`
+- **Tabelle `app_settings`** (`key`, `value`, `valid_until`; RLS nur
+  Admins): Zeile `invite_code`. Aktueller Code seit 15.09.2026:
+  `Familientag-2026-EGX9`, gültig **bis einschließlich So 20.09.2026**
+  (Berlin). Ändern/verlängern in der Nutzerverwaltung (Block ganz oben;
+  Datum = „gültig bis einschließlich", wird als 23:59:59+02 gespeichert).
+  Leerer Code = kein Gast- und kein Sofort-Zugang.
+- **`invite_code_valid(code)`** (SECURITY DEFINER, anon+authenticated):
+  Vergleich ohne Groß/Klein, prüft Ablauf.
+- **`redeem_invite_code(code, display_name)`** (authenticated): legt die
+  eigene `user_approvals`-Zeile als `approved` an bzw. hebt `pending` auf
+  `approved`; `rejected`/`revoked` bleiben gesperrt. Client: Code aus dem
+  Registrierungsformular wandert nach `sessionStorage.reg_inviteCode` und
+  wird im Auth-Listener **vor** der Freigabeprüfung eingelöst; auf der
+  Warteseite gibt es ein Code-Feld für Nachzügler.
+- **`guest_graph(code)`** (anon+authenticated): kompletter Baum als JSON
+  **ohne `contact`/`phone`/`email`**; wirft `invalid_code`. `Guest.enter(code)`
+  lädt ihn (`DB.loadGuestGraph`), merkt den Code in
+  `localStorage.stammbaum_guestCode` (Auto-Wiedereinstieg beim nächsten
+  Öffnen, bis der Code abläuft), `DB.isOffline()` = „nur lesen aus
+  guestRows". Login-Seite: Familientag-Knopf blendet das Code-Feld ein.
+- **Jedes Konto hängt an genau einem Profil:** nach der Freigabe zeigt der
+  Login ohne verknüpftes Profil zwingend die Willkommen-Seite (kein
+  Überspringen) mit drei Wegen — bestehendes Profil verknüpfen; „Neues
+  Profil mit Verbindung" (Editor mit Pflicht-Erstverbindung); **„Anschluss
+  noch unklar"** (`Claim.handleClaimNew('later')`: Profil sofort geclaimt,
+  ohne Verbindung → Stammbaum; steht in der Waisen-Ablage und der Inhaber
+  sieht oben die rote Leiste `#connect-hint` „Verbindung hinzufügen", bis
+  er die Lücke beim letzten bekannten Vorfahren per + Kind zugebaut und
+  sich eingehängt hat). Löst ein Admin die Verknüpfung, kommt beim nächsten
+  Login wieder die Willkommen-Seite. Rote Umrandung/„?"-Chip brauchen
+  dieses eigene Profil.
 - Familientag-Checkliste und QR-Namensschilder: siehe `RESTORE.md` §6.
 
 ## Entwicklung & Betrieb
@@ -503,6 +526,8 @@ Widersprüche beim manuellen Anlegen räumt `cleanConflictingRelations` ab.
   SVG/DOM). UI-Sprache: Deutsch.
 - Branches: `main` = live; `feature/multi-spouse` (gemerged-Stand prüfen),
   `feature/temporal-view` (nur lokal) sind historische Feature-Branches.
-- `gotha-data-extract.md` ist die Quell-Transkription (Gotha S. 293–306),
-  `import_data.py` der zugehörige Importer (IDs deterministisch aus
-  `gotha_code` → `make_id`).
+- **Persönliche Daten liegen nicht im Repo.** Gotha-Transkription,
+  Importer, Konsolen-Skripte und der frühere Snapshot wurden am 15.09.2026
+  aus Repo und Git-History entfernt (`git filter-repo`) und liegen lokal in
+  `~/Documents/ClaudeCode/stammbaum-private/` (samt History-Bundle von
+  vor der Bereinigung). Namen gehören auch nicht in Commit-Messages.

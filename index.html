@@ -11,7 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=45">
+  <link rel="stylesheet" href="css/style.css?v=46">
 </head>
 <body>
 
@@ -59,7 +59,14 @@
         <p class="auth-switch">Noch kein Konto? <a href="#" id="show-register">Registrieren</a></p>
         <div class="claim-divider"><span>oder</span></div>
         <button id="btn-guest" class="btn btn-secondary">Familientag: Ohne Konto ansehen</button>
-        <p class="auth-hint" style="margin-top:8px;">Stammbaum ansehen &amp; Verwandtschaft entdecken – ganz ohne Registrierung.</p>
+        <p class="auth-hint" style="margin-top:8px;">Stammbaum ansehen &amp; Verwandtschaft entdecken – ganz ohne Registrierung. Du brauchst nur den Familientag-Code vom Aushang.</p>
+        <div id="guest-code-box" class="guest-code-box hidden">
+          <div class="input-group">
+            <label>Familientag-Code</label>
+            <input type="text" id="guest-code" placeholder="Familientag-2026-…" autocomplete="off" autocapitalize="characters">
+          </div>
+          <button id="btn-guest-code" class="btn btn-primary">Ansehen</button>
+        </div>
       </div>
 
       <!-- Forgot Password Form -->
@@ -109,6 +116,11 @@
           <label>Passwort</label>
           <input type="password" id="reg-password" placeholder="Mindestens 6 Zeichen" autocomplete="new-password">
         </div>
+        <div class="input-group">
+          <label>Familientag-Code (optional)</label>
+          <input type="text" id="reg-code" placeholder="Familientag-2026-…" autocomplete="off" autocapitalize="characters">
+          <p class="auth-hint" style="margin-top:6px;">Mit dem Code vom Aushang bist du sofort freigeschaltet – ohne Code muss ein Administrator dich erst bestätigen.</p>
+        </div>
         <button id="btn-register" class="btn btn-primary">Registrieren</button>
         <p class="auth-switch">Schon registriert? <a href="#" id="show-login">Anmelden</a></p>
       </div>
@@ -133,7 +145,13 @@
         Dein Konto wurde erstellt. Ein Administrator muss deinen Zugang erst bestätigen.
         Du wirst per E-Mail benachrichtigt, sobald dein Konto freigeschaltet wird.
       </p>
-      <button id="btn-pending-refresh" class="btn" style="margin-top:24px;">Status prüfen</button>
+      <div class="input-group" style="margin-top:20px; text-align:left;">
+        <label>Familientag-Code? Dann sofort freischalten</label>
+        <input type="text" id="pending-code" placeholder="Familientag-2026-…" autocomplete="off" autocapitalize="characters">
+      </div>
+      <button id="btn-pending-code" class="btn btn-primary">Code einlösen</button>
+      <button id="btn-pending-refresh" class="btn" style="margin-top:12px;">Status prüfen</button>
+      <button id="btn-pending-guest" class="btn btn-secondary" style="margin-top:12px;">Inzwischen im Familientag-Modus ansehen</button>
       <button id="btn-pending-logout" class="btn btn-secondary" style="margin-top:12px;">Abmelden</button>
     </div>
   </div>
@@ -146,7 +164,24 @@
       <h2>Nutzerverwaltung</h2>
       <p class="admin-subtitle" id="admin-summary">Konten, Freigaben und Profil-Verknüpfungen</p>
 
-      <h3 class="admin-section-title">Offene Anträge <span id="admin-pending-count" class="admin-count"></span></h3>
+      <h3 class="admin-section-title">Familientag-Code</h3>
+      <div class="admin-code-box">
+        <p class="admin-hint">Wer den Code bei der Registrierung eingibt, ist sofort freigeschaltet; Gäste sehen den Stammbaum nur mit Code. Leer = kein Code-Zugang. Wer den Code kennt, gilt als Familie.</p>
+        <div class="admin-code-row">
+          <div class="input-group">
+            <label>Code</label>
+            <input type="text" id="admin-invite-code" placeholder="Familientag-2026-…" autocomplete="off">
+          </div>
+          <div class="input-group">
+            <label>Gültig bis (einschließlich)</label>
+            <input type="date" id="admin-invite-until">
+          </div>
+        </div>
+        <button id="btn-admin-invite-save" class="btn btn-small btn-primary">Speichern</button>
+        <span id="admin-invite-status" class="admin-hint"></span>
+      </div>
+
+      <h3 class="admin-section-title mt-24">Offene Anträge <span id="admin-pending-count" class="admin-count"></span></h3>
       <div id="admin-pending-list"></div>
 
       <h3 class="admin-section-title mt-24">Freigegebene Mitglieder <span id="admin-approved-count" class="admin-count"></span></h3>
@@ -170,7 +205,7 @@
     <div class="claim-container">
       <div class="view-header">
         <h2>Willkommen in der Familie!</h2>
-        <p>Vielleicht hat jemand dich schon im Stammbaum angelegt. Lass uns nachsehen.</p>
+        <p>Jedes Konto gehört zu genau einer Person im Stammbaum – so weißt du immer, wer „du" bist. Vielleicht hat jemand dich schon angelegt. Lass uns nachsehen.</p>
       </div>
       <div class="input-group">
         <label>Suche deinen Namen</label>
@@ -178,9 +213,12 @@
       </div>
       <div id="claim-results" class="claim-results"></div>
       <div class="claim-divider">
-        <span>oder</span>
+        <span>oder neu anlegen</span>
       </div>
-      <button id="btn-claim-new" class="btn btn-secondary">Neues Profil erstellen</button>
+      <button id="btn-claim-new" class="btn btn-secondary">Neues Profil mit Verbindung erstellen</button>
+      <p class="auth-hint" style="margin:8px 0 14px;">Du wählst gleich, wessen Kind, Partner/in oder Geschwister du bist – der Rest ergänzt sich von selbst.</p>
+      <button id="btn-claim-later" class="btn btn-secondary">Anschluss noch unklar – erst mal anlegen</button>
+      <p class="auth-hint" style="margin-top:8px;">Z.B. wenn deine Eltern oder Großeltern noch fehlen: Du landest im Stammbaum, legst die fehlenden Personen beim letzten bekannten Vorfahren mit „+ Kind" an und hängst dich zum Schluss dort ein. Bis dahin steht dein Profil in der Ablage „unverbunden".</p>
     </div>
   </div>
 
@@ -281,6 +319,12 @@
           <line x1="18" y1="10" x2="18" y2="14"/><circle cx="18" cy="16" r="2"/>
         </svg>
       </button>
+    </div>
+
+    <!-- Eigenes Profil noch ohne Verbindung (Anschluss „noch unklar") -->
+    <div id="connect-hint" class="connect-hint hidden">
+      <span>Dein Profil ist noch nicht mit dem Stammbaum verbunden.</span>
+      <button id="btn-connect-hint" class="btn btn-small btn-primary">Verbindung hinzufügen</button>
     </div>
 
     <!-- Waisen-Ablage: Profile ohne Verbindung zum Stammbaum -->
@@ -823,8 +867,7 @@
 
   <!-- App modules -->
   <script src="js/utils.js?v=8"></script>
-  <script src="js/data-snapshot.js?v=7"></script>
-  <script src="js/db.js?v=29"></script>
+  <script src="js/db.js?v=30"></script>
   <script src="js/auth.js?v=30"></script>
   <script src="js/relationship.js?v=29"></script>
   <script src="js/tree.js?v=84"></script>
@@ -832,15 +875,15 @@
   <script src="js/article.js?v=3"></script>
   <script src="js/gotha.js?v=2"></script>
   <script src="js/babycry.js?v=6"></script>
-  <script src="js/fan.js?v=46"></script>
+  <script src="js/fan.js?v=47"></script>
   <script src="js/qr.js?v=23"></script>
   <script src="js/search.js?v=22"></script>
-  <script src="js/admin.js?v=7"></script>
-  <script src="js/claim.js?v=5"></script>
-  <script src="js/guest.js?v=5"></script>
+  <script src="js/admin.js?v=8"></script>
+  <script src="js/claim.js?v=6"></script>
+  <script src="js/guest.js?v=6"></script>
   <script src="js/connection.js?v=12"></script>
   <script src="js/relations.js?v=15"></script>
   <script src="js/profile.js?v=34"></script>
-  <script src="js/app.js?v=61"></script>
+  <script src="js/app.js?v=62"></script>
 </body>
 </html>

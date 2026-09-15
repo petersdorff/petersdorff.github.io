@@ -61,7 +61,18 @@ const App = (() => {
         // der Freigabe-Zeile (Status UND Rolle) — sie wird für jeden gelesen.
         let isAdmin = Admin.setCurrentRole(user, null);
         try {
-          const approval = await DB.getApprovalStatus(user.id);
+          let approval = await DB.getApprovalStatus(user.id);
+          // Familientag-Code aus der Registrierung: sofort freischalten
+          const regCode = sessionStorage.getItem('reg_inviteCode') || '';
+          if (regCode && (!approval || approval.status === 'pending')) {
+            const displayName = user.user_metadata?.display_name || user.email || '';
+            try {
+              const ok = await DB.redeemInviteCode(regCode, displayName);
+              if (ok) { approval = await DB.getApprovalStatus(user.id); toast('Familientag-Code erkannt – du bist freigeschaltet!', 'success'); }
+              else toast('Familientag-Code ungültig oder abgelaufen – ein Administrator muss dich freischalten.', 'error');
+            } catch (e) { console.error('[App] redeemInviteCode:', e); }
+            sessionStorage.removeItem('reg_inviteCode');
+          }
           isAdmin = Admin.setCurrentRole(user, approval);
           if (!isAdmin) {
             if (!approval) {
@@ -84,15 +95,11 @@ const App = (() => {
             }
           }
         } catch (err) {
-          // Backend nicht erreichbar (z.B. Projekt pausiert): statt den Nutzer
-          // auf dem Warte-Screen zu stranden, lesend in den Offline-Modus gehen.
+          // Backend nicht erreichbar (z.B. Projekt pausiert): klare Meldung,
+          // zurück zum Login — einen Offline-Snapshot gibt es bewusst nicht mehr.
           console.error('[App] Approval check failed:', err);
-          if (DB.snapshotAvailable()) {
-            toast('Server nicht erreichbar – Offline-Modus', 'info');
-            await Guest.enter();
-            return;
-          }
-          showView('view-pending');
+          toast('Server nicht erreichbar – bitte später noch einmal versuchen', 'error');
+          showView('view-auth');
           return;
         }
 
@@ -113,10 +120,11 @@ const App = (() => {
         }
       } else {
         authHandled = false;
-        // Familientag: wer schon mal als Gast eine Identität gewählt hat,
-        // landet direkt wieder im Stammbaum statt auf dem Login.
-        if (Guest.hasStoredIdentity() && DB.snapshotAvailable()) {
-          await Guest.enter();
+        // Familientag: wer schon mal als Gast drin war (Code gespeichert),
+        // landet direkt wieder im Stammbaum statt auf dem Login — solange
+        // der Code noch gilt (sonst zeigt enter() die Code-Abfrage).
+        if (Guest.hasStoredCode()) {
+          if (await Guest.enter()) return;
           return;
         }
         showView('view-auth');
@@ -187,10 +195,19 @@ const App = (() => {
 
     // Claim view
     document.getElementById('claim-search').addEventListener('input', Claim.handleClaimSearch);
-    document.getElementById('btn-claim-new').addEventListener('click', Claim.handleClaimNew);
+    document.getElementById('btn-claim-new').addEventListener('click', () => Claim.handleClaimNew('connect'));
+    document.getElementById('btn-claim-later').addEventListener('click', () => Claim.handleClaimNew('later'));
 
-    // Guest / Familientag mode
+    // Hinweis „Profil noch nicht verbunden" → eigenes Profil bearbeiten
+    document.getElementById('btn-connect-hint').addEventListener('click', () => {
+      const me = Auth.getMember();
+      if (me) Profile.edit(me.id);
+    });
+
+    // Guest / Familientag mode (nur mit Code)
     document.getElementById('btn-guest').addEventListener('click', () => Guest.enter());
+    document.getElementById('btn-guest-code').addEventListener('click', () => Guest.submitCode());
+    document.getElementById('guest-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') Guest.submitCode(); });
     document.getElementById('whoami-search').addEventListener('input',
       Utils.debounce(Guest.handleSearchInput, 150));
     document.getElementById('btn-whoami-skip').addEventListener('click', Guest.skipIdentity);
@@ -335,6 +352,25 @@ const App = (() => {
       }
     });
     document.getElementById('btn-pending-logout').addEventListener('click', () => Auth.logout());
+    document.getElementById('btn-pending-code').addEventListener('click', async () => {
+      const code = document.getElementById('pending-code').value.trim();
+      if (!code) { toast('Bitte den Familientag-Code eingeben', 'error'); return; }
+      const user = Auth.getUser();
+      if (!user) return;
+      try {
+        const ok = await DB.redeemInviteCode(code, user.user_metadata?.display_name || user.email || '');
+        if (ok) { toast('Freigeschaltet!', 'success'); window.location.reload(); }
+        else toast('Code ungültig oder abgelaufen', 'error');
+      } catch (err) {
+        console.error('[App] redeemInviteCode:', err);
+        toast('Fehler beim Einlösen. Bitte versuche es nochmal.', 'error');
+      }
+    });
+    document.getElementById('btn-pending-guest').addEventListener('click', async () => {
+      // Konto bleibt bestehen; Gastmodus braucht den Code (Abfrage auf der Login-Seite)
+      await Auth.logout();
+      Guest.showCodePrompt();
+    });
 
     // Admin panel back button
     document.getElementById('btn-admin-back').addEventListener('click', () => showView('view-main'));
@@ -491,6 +527,15 @@ const App = (() => {
    * Im Fächer: alle, die nicht über die Wurzel erreichbar sind. Im Baum:
    * alle ohne jede Verbindung (nur die fehlen dort in der Darstellung).
    */
+  /** Eigenes Profil noch unverbunden (Anschluss „noch unklar"): Hinweis oben. */
+  function updateConnectHint(unreachable) {
+    const el = document.getElementById('connect-hint');
+    if (!el) return;
+    const me = Auth.getMember();
+    const show = !!me && !Guest.isActive() && !DB.isOffline() && unreachable.includes(me.id);
+    el.classList.toggle('hidden', !show);
+  }
+
   function updateOrphanTray() {
     const tray = document.getElementById('orphan-tray');
     if (!tray) return;
@@ -500,6 +545,7 @@ const App = (() => {
       .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`));
     document.getElementById('orphan-count').textContent = orphans.length;
     tray.classList.toggle('hidden', orphans.length === 0);
+    updateConnectHint(ids);
     const list = document.getElementById('orphan-list');
     list.innerHTML = '';
     if (!orphans.length) return;
@@ -620,10 +666,10 @@ const App = (() => {
     if (!banner) return;
     if (DB.isOffline()) {
       const textEl = document.getElementById('offline-banner-text');
-      const date = (typeof LocalSnapshot !== 'undefined' && LocalSnapshot.snapshot_date) || '';
+      const date = DB.getGuestGraphDate();
       textEl.textContent = Guest.isActive()
-        ? `Familientag-Modus · Datenstand ${date}`
-        : `Offline-Modus · Datenstand ${date}`;
+        ? `Familientag-Modus · nur lesen${date ? ' · Stand ' + date : ''}`
+        : `Nur lesen${date ? ' · Stand ' + date : ''}`;
       banner.classList.remove('hidden');
     } else {
       banner.classList.add('hidden');

@@ -10,9 +10,14 @@ const DB = (() => {
     supabase = supabaseClient;
   }
 
-  // ─── Offline-Fallback (gebündelter Snapshot) ───
-  // Wird aktiv, wenn Supabase nicht erreichbar ist (Projekt pausiert/gelöscht
-  // oder kein Netz). Lesend voll funktionsfähig, Schreiben deaktiviert.
+  // ─── Gastmodus (Familientag): lesend aus dem Gast-Graphen ───
+  // Gäste ohne Konto dürfen per RLS nichts lesen; der komplette Baum kommt
+  // stattdessen aus der SECURITY-DEFINER-Funktion guest_graph(code), die
+  // nur mit gültigem, nicht abgelaufenem Familientag-Code Daten liefert.
+  // Es gibt keinen gebündelten Snapshot mehr — nichts Persönliches liegt
+  // in Repo oder Website. "offlineMode" heißt hier: nur lesen, aus guestRows.
+
+  let guestRows = null;   // { members: [rows], relationships: [rows], generated_at }
 
   function isOffline() {
     return offlineMode;
@@ -22,17 +27,52 @@ const DB = (() => {
     offlineMode = value;
   }
 
-  function snapshotAvailable() {
-    return typeof LocalSnapshot !== 'undefined'
-      && Array.isArray(LocalSnapshot.members)
-      && LocalSnapshot.members.length > 0;
+  /** Gast-Graph mit Code laden. Wirft Error('invalid_code') bei falschem/abgelaufenem Code. */
+  async function loadGuestGraph(code) {
+    const { data, error } = await withTimeout(
+      supabase.rpc('guest_graph', { p_code: code || '' }), 12000, 'guest_graph');
+    if (error) {
+      const msg = String(error.message || '');
+      const err = new Error(/invalid_code/.test(msg) ? 'invalid_code' : msg);
+      throw err;
+    }
+    if (!data || !Array.isArray(data.members)) throw new Error('invalid_code');
+    guestRows = data;
+    return { members: data.members.length, relationships: data.relationships.length };
   }
 
-  function getSnapshotGraph() {
+  function guestGraphLoaded() {
+    return !!(guestRows && Array.isArray(guestRows.members) && guestRows.members.length);
+  }
+
+  function getGuestGraph() {
     return {
-      members: LocalSnapshot.members.map(mapMember),
-      relationships: LocalSnapshot.relationships.map(mapRelationship),
+      members: guestRows.members.map(mapMember),
+      relationships: guestRows.relationships.map(mapRelationship),
     };
+  }
+
+  function getGuestGraphDate() {
+    return guestRows && guestRows.generated_at ? String(guestRows.generated_at).substring(0, 10) : '';
+  }
+
+  /** Familientag-Code bei der Registrierung einlösen → sofort freigegeben. */
+  async function redeemInviteCode(code, displayName) {
+    const { data, error } = await supabase.rpc('redeem_invite_code', { p_code: code || '', p_display_name: displayName || null });
+    if (error) throw error;
+    return !!data;
+  }
+
+  /** Admin: aktuellen Code + Ablauf lesen / setzen (RLS: nur Admins). */
+  async function getInviteCode() {
+    const { data, error } = await supabase.from('app_settings').select('value, valid_until').eq('key', 'invite_code').maybeSingle();
+    if (error) throw error;
+    return data ? { code: data.value || '', validUntil: data.valid_until } : { code: '', validUntil: null };
+  }
+  async function setInviteCode(code, validUntil) {
+    const { error } = await supabase.from('app_settings')
+      .upsert({ key: 'invite_code', value: code || '', valid_until: validUntil || null, updated_at: new Date().toISOString() });
+    if (error) throw error;
   }
 
   function assertWritable() {
@@ -63,7 +103,7 @@ const DB = (() => {
 
   async function getMember(id) {
     if (offlineMode) {
-      const row = LocalSnapshot.members.find(m => m.id === id);
+      const row = guestRows.members.find(m => m.id === id);
       return row ? mapMember(row) : null;
     }
     const { data, error } = await supabase
@@ -78,7 +118,7 @@ const DB = (() => {
   async function searchMembers(query) {
     const q = query.toLowerCase().trim();
     if (offlineMode) {
-      const all = LocalSnapshot.members.map(mapMember);
+      const all = guestRows.members.map(mapMember);
       if (!q) return all;
       return all.filter(m =>
         `${m.firstName} ${m.lastName} ${m.birthName || ''}`.toLowerCase().includes(q));
@@ -239,7 +279,7 @@ const DB = (() => {
 
   async function getRelationshipsForMember(memberId) {
     if (offlineMode) {
-      return LocalSnapshot.relationships
+      return guestRows.relationships
         .filter(r => r.from_id === memberId || r.to_id === memberId)
         .map(mapRelationship);
     }
@@ -254,22 +294,12 @@ const DB = (() => {
   // ─── Full Graph ───
 
   async function getFullGraph() {
-    if (offlineMode) return getSnapshotGraph();
-    try {
-      const [members, relationships] = await withTimeout(
-        Promise.all([getAllMembers(), getAllRelationships()]),
-        6000, 'getFullGraph'
-      );
-      return { members, relationships };
-    } catch (err) {
-      // Supabase nicht erreichbar → auf gebündelten Snapshot ausweichen
-      if (snapshotAvailable()) {
-        console.warn('[DB] Supabase nicht erreichbar, nutze lokalen Snapshot:', err.message);
-        offlineMode = true;
-        return getSnapshotGraph();
-      }
-      throw err;
-    }
+    if (offlineMode) return getGuestGraph();
+    const [members, relationships] = await withTimeout(
+      Promise.all([getAllMembers(), getAllRelationships()]),
+      8000, 'getFullGraph'
+    );
+    return { members, relationships };
   }
 
   // ─── Seed Demo Data ───
@@ -533,8 +563,13 @@ const DB = (() => {
     init,
     isOffline,
     setOffline,
-    snapshotAvailable,
-    getSnapshotGraph,
+    loadGuestGraph,
+    guestGraphLoaded,
+    getGuestGraph,
+    getGuestGraphDate,
+    redeemInviteCode,
+    getInviteCode,
+    setInviteCode,
     getAllMembers,
     getMember,
     searchMembers,

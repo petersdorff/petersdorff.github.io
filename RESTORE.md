@@ -4,10 +4,11 @@
 erreichbar (DNS existiert nicht mehr).** Supabase pausiert Free-Tier-Projekte
 nach ~1 Woche Inaktivität und löscht sie nach längerer Pause.
 
-Die App funktioniert trotzdem: Ohne erreichbares Backend läuft sie automatisch
-im **Offline-Modus** über den gebündelten Snapshot (`js/data-snapshot.js`) —
-lesend, inkl. Familientag-Modus, QR-Codes und Verwandtschafts-Anzeige.
-Nur Bearbeiten/Registrieren braucht das Backend.
+**Seit 15.09.2026 gibt es keinen gebündelten Offline-Snapshot mehr** (nichts
+Persönliches liegt im öffentlichen Repo). Ohne erreichbares Backend zeigt die
+App nur noch eine Fehlermeldung — der Familientag-Modus liest über die
+DB-Funktion `guest_graph(code)`. Vor jedem Familientag also sicherstellen, dass
+das Projekt aktiv ist (Keep-alive-Workflow läuft, `RESTORE.md` §1).
 
 ---
 
@@ -46,22 +47,13 @@ Projekts ersetzen (Dashboard → Settings → API → **anon public** Key — ni
 den service_role Key!). Danach Versionsnummer von `js/app.js` in `index.html`
 erhöhen und pushen.
 
-## 4. Snapshot aktualisieren
+## 4. Familientag-Code
 
-Der gebündelte Offline-Datenbestand sollte nach Datenänderungen regelmäßig
-neu erzeugt werden:
-
-```bash
-# aus der Live-DB (bevorzugt):
-export SUPABASE_URL=... SUPABASE_SERVICE_KEY=...
-python3 tools/generate-snapshot.py --from-db
-
-# oder ohne Backend aus import_data.py:
-python3 tools/generate-snapshot.py
-```
-
-Danach in `index.html` die Version von `js/data-snapshot.js` **und** in
-`sw.js` den `CACHE_NAME` erhöhen, committen, pushen.
+Code und Ablaufdatum stehen in `app_settings` (Migration 007) und werden in
+der Nutzerverwaltung (Block „Familientag-Code") gepflegt. Aktuell:
+`Familientag-2026-EGX9`, gültig bis einschließlich 20.09.2026. Nach dem Fest
+Code leeren oder Datum auslaufen lassen — dann gibt es weder Gast- noch
+Sofort-Zugang.
 
 ## 5. Sicherheit — unbedingt beachten
 
@@ -69,23 +61,25 @@ Danach in `index.html` die Version von `js/data-snapshot.js` **und** in
   (`import_data.py`, Git-Historie). Für das alte, gelöschte Projekt ist das
   folgenlos. Für ein NEUES Projekt gilt: Keys nur als Umgebungsvariable,
   niemals committen. `fetch-db.sh`/`update-db.sh` stehen in `.gitignore`.
-- **Das Repo ist öffentlich** und enthält die Familiendaten (Gotha-Auszug,
-  Snapshot). Empfehlung: Repo auf **privat** stellen und für GitHub Pages
-  entweder GitHub Pro nutzen oder auf einen Dienst mit Zugriffsschutz
-  (z. B. Cloudflare Pages + Access) umziehen. Ein Passwort-Gate in der App
-  wäre nur Show — die Daten lägen weiter offen im Repo.
+- **Das Repo ist öffentlich — deshalb liegen keine Familiendaten mehr darin**
+  (Gotha-Auszug, Importer, Skripte und Snapshot am 15.09.2026 aus Repo und
+  History entfernt; privat unter `~/Documents/ClaudeCode/stammbaum-private/`).
+  Ein privates Repo hätte nichts gebracht: GitHub Pages ist immer öffentlich,
+  und für Pages aus einem privaten Org-Repo wäre GitHub Team fällig.
+  Daten kommen nur noch aus der DB: Mitglieder per Login, Gäste per Code.
 - Nach Wiederherstellung des Backends: Migration 003 einspielen, sonst können
   nicht freigegebene Konten per REST-API alles lesen (die Freigabe war bisher
   nur ein Client-Check).
 
 ## 6. Familientag-Checkliste
 
-1. `python3 tools/generate-snapshot.py --from-db` (aktueller Datenstand)
-   → committen & deployen. Die App funktioniert dann auch bei schlechtem
-   Empfang vollständig (Service Worker cached alles).
+1. Backend aktiv? (Dashboard; Keep-alive-Workflow läuft wöchentlich.) Code
+   und Ablaufdatum in der Nutzerverwaltung prüfen; Code auf den Aushang.
 2. Namensschilder mit QR-Codes drucken: Jeder QR enthält
-   `https://<pages-url>/#connect/<member-id>`. Die IDs stehen in
-   `js/data-snapshot.js`; `gotha_code` hilft beim Zuordnen.
+   `https://petersdorff.github.io/#connect/<member-id>` (im Profil unter
+   „Mein QR-Code" bzw. per `fetch-db.sh` exportierbar).
 3. Ablauf für Gäste: QR scannen (native Kamera) → „Familientag: Ohne Konto
-   ansehen" → eigenen Namen wählen → Verwandtschaft wird angezeigt.
-   Kein Konto, keine Freigabe, kein Backend nötig.
+   ansehen" → Code eingeben → eigenen Namen wählen → Verwandtschaft wird
+   angezeigt. Kein Konto, keine Freigabe — aber Netz und Code nötig.
+4. Wer mitarbeiten will: Registrieren mit Code → sofort freigeschaltet →
+   eigenes Profil verknüpfen oder anlegen.

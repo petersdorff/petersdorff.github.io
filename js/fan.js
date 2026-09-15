@@ -259,8 +259,11 @@ const Fan = (() => {
   /** Aktive Familie wählen: bisherige → gewünschte → die des Nutzers → größte. */
   function pickFamily() {
     const valid = id => id && families.some(f => f.rootId === id);
-    if (valid(activeFamilyId)) return activeFamilyId;
+    // App-weite Zweigwahl (Umschalter in jeder Ansicht) hat Vorrang vor dem
+    // zuletzt im Fächer gezeigten Zweig — sonst zeigt der Fächer nach einem
+    // Wechsel in einer anderen Ansicht noch den alten Zweig.
     if (valid(preferredFamilyId)) return preferredFamilyId;
+    if (valid(activeFamilyId)) return activeFamilyId;
     const me = (typeof Tree !== 'undefined' && Tree.getCurrentUser) ? Tree.getCurrentUser() : null;
     const mine = me && families.find(f => f.assigned.has(me));
     return mine ? mine.rootId : families[0].rootId;

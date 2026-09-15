@@ -12,7 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=48">
+  <link rel="stylesheet" href="css/style.css?v=49">
 </head>
 <body>
 
@@ -126,13 +126,55 @@
         <p class="auth-switch">Schon registriert? <a href="#" id="show-login">Anmelden</a></p>
       </div>
 
-      <p class="auth-footer">Feedback: <a href="mailto:kaivonpetersdorff@me.com">kaivonpetersdorff@me.com</a></p>
+      <p class="auth-footer">Feedback: <a href="mailto:kaivonpetersdorff@me.com">kaivonpetersdorff@me.com</a> · <a href="#" id="link-privacy">Datenschutz</a></p>
     </div>
   </div>
 
   <!-- ═══════════════════════════════════════ -->
   <!-- PENDING APPROVAL VIEW                    -->
   <!-- ═══════════════════════════════════════ -->
+  <!-- ═══════════════════════════════════════ -->
+  <!-- DATENSCHUTZ                              -->
+  <!-- ═══════════════════════════════════════ -->
+  <div id="view-privacy" class="view">
+    <div class="privacy-container">
+      <div class="view-header privacy-header">
+        <button id="btn-privacy-back" class="icon-btn" aria-label="Zurück">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </button>
+        <h2>Datenschutz</h2>
+      </div>
+      <div class="privacy-body">
+        <p>Der Digitale Stammbaum ist ein <strong>privates Familienprojekt</strong> der Familien von Petersdorff und von Petersdorff-Campen. Er ist nicht öffentlich: Ohne Zugang sieht niemand Personendaten, die Seite wird von Suchmaschinen nicht erfasst, und der Quellcode enthält keine Familiendaten.</p>
+
+        <h3>Wer sieht was</h3>
+        <ul>
+          <li><strong>Ohne Zugang:</strong> nichts außer der Anmeldeseite.</li>
+          <li><strong>Familientag-Modus</strong> (mit dem zeitlich befristeten Code vom Aushang): Namen, Lebensdaten, Verwandtschaft, Wohnort, Beruf, Fotos und Vita-Texte — <em>keine</em> Kontaktdaten. Nur lesen.</li>
+          <li><strong>Freigegebene Mitglieder</strong> (registriert und bestätigt): zusätzlich Kontaktdaten; sie dürfen Personen und Verbindungen ergänzen und Platzhalter-Profile bearbeiten. Das eigene Profil ändert nur, wem es gehört.</li>
+          <li><strong>Administratoren:</strong> zusätzlich Konten und Freigaben.</li>
+        </ul>
+
+        <h3>Welche Daten</h3>
+        <ul>
+          <li>Stammdaten aus dem Gothaischen Genealogischen Taschenbuch (veröffentlichte Quelle) sowie Ergänzungen durch Familienmitglieder.</li>
+          <li>Bei einem Konto: E-Mail-Adresse und Anzeigename, gespeichert beim Anbieter Supabase (Rechenzentrum Frankfurt, EU).</li>
+          <li>Nutzungszähler (z.&nbsp;B. Aufrufe pro Tag) ohne Inhalte — kein Tracking durch Dritte, keine Werbung, keine Weitergabe.</li>
+        </ul>
+
+        <h3>Deine Rechte</h3>
+        <ul>
+          <li>Eigene Angaben kannst du im verknüpften Profil jederzeit selbst ändern oder leeren.</li>
+          <li>Auf Wunsch werden deine Angaben reduziert (z.&nbsp;B. nur Geburtsjahr), dein Foto entfernt oder dein Profil gelöscht — eine Nachricht genügt.</li>
+          <li>Fotos anderer bitte nur mit deren Einverständnis hochladen.</li>
+        </ul>
+
+        <p>Verantwortlich: Kai von Petersdorff-Campen · <a href="mailto:kaivonpetersdorff@me.com">kaivonpetersdorff@me.com</a></p>
+        <p class="privacy-date">Stand: September 2026</p>
+      </div>
+    </div>
+  </div>
+
   <div id="view-pending" class="view">
     <div class="pending-container">
       <div class="pending-icon">
@@ -846,6 +888,9 @@
         <li id="menu-admin-item" style="display:none;"><a href="#" id="menu-admin">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           Nutzer-Verwaltung</a></li>
+        <li><a href="#" id="menu-privacy">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          Datenschutz</a></li>
         <li class="menu-divider"></li>
         <li><a href="#" id="menu-logout">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -884,7 +929,7 @@
   <script src="js/article.js?v=3"></script>
   <script src="js/gotha.js?v=2"></script>
   <script src="js/babycry.js?v=6"></script>
-  <script src="js/fan.js?v=47"></script>
+  <script src="js/fan.js?v=48"></script>
   <script src="js/qr.js?v=23"></script>
   <script src="js/search.js?v=22"></script>
   <script src="js/admin.js?v=10"></script>
@@ -893,6 +938,6 @@
   <script src="js/connection.js?v=13"></script>
   <script src="js/relations.js?v=15"></script>
   <script src="js/profile.js?v=35"></script>
-  <script src="js/app.js?v=65"></script>
+  <script src="js/app.js?v=66"></script>
 </body>
 </html>

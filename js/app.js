@@ -199,6 +199,22 @@ const App = (() => {
     document.getElementById('btn-claim-new').addEventListener('click', () => Claim.showBranchChooser());
     document.getElementById('btn-claim-new-go').addEventListener('click', () => Claim.handleClaimNew());
 
+    // Datenschutz-Seite (Login-Fußzeile + Menü); zurück zur vorherigen Ansicht
+    let privacyReturn = 'view-auth';
+    const openPrivacy = (e) => {
+      e.preventDefault(); closeMenu();
+      const cur = document.querySelector('.view.active');
+      privacyReturn = cur && cur.id !== 'view-privacy' ? cur.id : 'view-auth';
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.getElementById('view-privacy').classList.add('active');
+    };
+    document.getElementById('link-privacy').addEventListener('click', openPrivacy);
+    document.getElementById('menu-privacy').addEventListener('click', openPrivacy);
+    document.getElementById('btn-privacy-back').addEventListener('click', () => {
+      document.getElementById('view-privacy').classList.remove('active');
+      document.getElementById(privacyReturn).classList.add('active');
+    });
+
     // Hinweis „Profil noch nicht verbunden" → eigenes Profil bearbeiten
     document.getElementById('btn-connect-hint').addEventListener('click', () => {
       const me = Auth.getMember();

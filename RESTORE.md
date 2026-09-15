@@ -55,6 +55,16 @@ der Nutzerverwaltung (Block „Familientag-Code") gepflegt. Aktuell:
 Code leeren oder Datum auslaufen lassen — dann gibt es weder Gast- noch
 Sofort-Zugang.
 
+## 4b. Backup zurückspielen
+
+Das private Repo `petersdorff/stammbaum-backup` enthält täglich `data/*.json`
+(Tabellenzeilen im PostgREST-Format) und `photos/`. Wiederherstellen in ein
+leeres Schema: Reihenfolge members → relationships → user_approvals →
+app_settings; je Datei `curl -X POST "$URL/rest/v1/<tabelle>" -H "apikey: $KEY"
+-H "Authorization: Bearer $KEY" -H "Content-Type: application/json"
+--data-binary @data/<tabelle>.json`; Fotos per Storage-Upload
+(`/storage/v1/object/photos/<name>`).
+
 ## 5. Sicherheit — unbedingt beachten
 
 - **Der service_role-Key stand bis Juli 2026 im öffentlichen Repo**

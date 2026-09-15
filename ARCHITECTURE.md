@@ -236,7 +236,10 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   Zeitstrahl (62 px, mit Status-Pille 112 px; Mobil 110 px). Offenes
   Seitenpanel (Desktop, `body.side-panel-open`) schiebt Ansichts- und
   Status-Pille in die Mitte der freien linken Hälfte;
-  `Fan.setColorMode('gender'|'year')` tauscht nur Füllfarben (Skala je
+  Der app-weite Zweig (`App.setActiveFamily` → `Fan.setPreferredFamily`)
+  hat in `Fan.pickFamily` Vorrang vor dem zuletzt im Fächer gezeigten
+  Zweig — sonst zeigte der Fächer nach einem Zweigwechsel in Gotha/Tafel
+  noch den alten Zweig. `Fan.setColorMode('gender'|'year')` tauscht nur Füllfarben (Skala je
   Familienzweig vom ältesten bis jüngsten Geburtsjahr, Blau → Orange;
   Legende mit Farbbalken, wird beim Zweigwechsel nachgezogen);
   ohne Eintrag ist der Fächer Standard. `App.applyView(name)` ist die
@@ -469,9 +472,15 @@ Zweig ohne Pfad (Waise): weiterhin „Keine Verbindung gefunden".
   content="noindex, nofollow">` (Login-Seite soll nicht in Suchmaschinen);
   Markdown-Renderer erlaubt nur `http(s)`-Links, Nutzertexte gehen über
   `textContent`/`escapeHtml`; HTTPS erzwungen.
-- **Kein Backup im Free-Tier:** Supabase Free hat keine automatischen
-  Backups — `fetch-db.sh` regelmäßig laufen lassen (Export in den privaten
-  Ordner), bis ein Cron dafür eingerichtet ist.
+- **Backup:** Supabase Free hat keine automatischen Backups. Deshalb
+  privates Repo **`petersdorff/stammbaum-backup`** mit GitHub Action
+  (täglich 06:41 Berlin + manuell): `export.sh` zieht alle Tabellen als
+  JSON und die Fotos, committet nur bei Änderung — jede Version bleibt in
+  der History. Secret `SUPABASE_SERVICE_KEY` liegt nur dort. Lokaler Klon
+  in `~/Documents/ClaudeCode/stammbaum-private/stammbaum-backup`.
+- **Datenschutz-Seite** (`#view-privacy`, Link in Login-Fußzeile und Menü):
+  Zweck, Wer-sieht-was, Datenarten, Speicherort (Supabase Frankfurt),
+  Rechte, Ansprechpartner.
 - **Offene Entscheidungen** (siehe Review-Notiz an Kai): Geburtsdaten
   Lebender für Gäste nur als Jahr; Kontaktfelder nur vom Profil-Inhaber
   editierbar; Löschrecht auf Ersteller/Admin beschränken; längerer

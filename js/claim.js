@@ -158,6 +158,9 @@ const Claim = (() => {
           Tree.setCurrentUser(m.id);
           App.toast('Profil erfolgreich verknüpft!', 'success');
           await App.loadTree();
+          App.applyReadOnlyUI();
+          Admin.updateAdminMenu(Admin.isAdmin() && !DB.isOffline());
+          App.ensureFamilyFor(m.id);
           App.showView('view-main');
         } catch (err) {
           console.error('Claim error:', err);
@@ -180,8 +183,37 @@ const Claim = (() => {
    *                 und baut die Lücke selbst zu; bis dahin steht das Profil
    *                 in der Waisen-Ablage und ein Hinweis erinnert daran.
    */
+  /** Zweig-Auswahl für „Anschluss noch unklar" einblenden (Pflicht). */
+  function showBranchChooser() {
+    const box = document.getElementById('claim-branch-box');
+    const opts = document.getElementById('claim-branch-options');
+    const go = document.getElementById('btn-claim-later-go');
+    opts.innerHTML = '';
+    const fams = App.getFamilies();
+    for (const f of fams) {
+      const id = `claim-branch-${f.rootId}`;
+      const input = Utils.createEl('input', { type: 'radio', name: 'claim-branch', id, value: f.rootId });
+      input.addEventListener('change', () => { go.disabled = false; });
+      const label = Utils.createEl('label', { className: 'claim-branch-option', 'for': id }, [input, Utils.createEl('span', { textContent: f.name })]);
+      opts.appendChild(label);
+    }
+    go.disabled = true;
+    box.classList.remove('hidden');
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function chosenBranch() {
+    const r = document.querySelector('input[name="claim-branch"]:checked');
+    return r ? r.value : null;
+  }
+
   async function handleClaimNew(mode = 'connect') {
     const user = Auth.getUser();
+    const familyHint = mode === 'later' ? chosenBranch() : null;
+    if (mode === 'later' && !familyHint) {
+      App.toast('Bitte wähle deinen Familienzweig', 'error');
+      return;
+    }
     const firstName = sessionStorage.getItem('reg_firstName') ||
       user.user_metadata?.display_name?.split(' ')[0] || 'Unbekannt';
     const lastName = sessionStorage.getItem('reg_lastName') ||
@@ -202,6 +234,7 @@ const Claim = (() => {
       contact: user.email || '',
       photo: user.user_metadata?.avatar_url || '',
       notes: '',
+      familyHint,
     });
 
     const member = await DB.getMember(memberId);
@@ -214,8 +247,11 @@ const Claim = (() => {
 
     App.toast('Willkommen im Stammbaum!', 'success');
     await App.loadTree();
+    App.applyReadOnlyUI();   // Bearbeitungsrechte (+-Chips, FAB) jetzt aktiv
+    Admin.updateAdminMenu(Admin.isAdmin() && !DB.isOffline());
 
     if (mode === 'later') {
+      if (familyHint) App.setActiveFamily(familyHint);
       App.showView('view-main');
       App.toast('Dein Profil ist angelegt, aber noch nicht verbunden – hänge dich ein, sobald die Lücke gebaut ist.', 'info');
       return;
@@ -226,6 +262,7 @@ const Claim = (() => {
   }
 
   return {
+    showBranchChooser,
     handleLogin,
     handleRegister,
     handleForgotPassword,

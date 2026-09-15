@@ -1831,6 +1831,12 @@ a {
 .connect-hint .btn { margin: 0; white-space: nowrap; }
 @media (max-width: 480px) { .connect-hint { flex-direction: column; gap: 6px; text-align: center; } }
 
+.claim-branch-box { margin-top: 14px; padding: 12px 14px; border: 1.5px solid var(--trace-faint); border-radius: var(--radius-lg); text-align: left; }
+.claim-branch-label { display: block; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+.claim-branch-options { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.claim-branch-option { display: flex; align-items: center; gap: 10px; font-size: 13px; cursor: pointer; }
+.claim-branch-option input { width: 16px; height: 16px; margin: 0; accent-color: var(--red); }
+
 /* Code-Feld unter dem Familientag-Knopf */
 .guest-code-box { margin-top: 12px; text-align: left; }
 

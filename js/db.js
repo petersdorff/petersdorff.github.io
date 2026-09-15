@@ -518,6 +518,7 @@ const DB = (() => {
       notes: row.notes || '',
       gender: row.gender || null,
       occupation: row.occupation || '',
+      familyHint: row.family_hint || null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -542,6 +543,7 @@ const DB = (() => {
     if (m.notes !== undefined) row.notes = m.notes;
     if (m.gender !== undefined) row.gender = m.gender || null;
     if (m.occupation !== undefined) row.occupation = m.occupation || '';
+    if (m.familyHint !== undefined) row.family_hint = m.familyHint || null;
     return row;
   }
 

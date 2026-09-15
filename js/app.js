@@ -196,7 +196,8 @@ const App = (() => {
     // Claim view
     document.getElementById('claim-search').addEventListener('input', Claim.handleClaimSearch);
     document.getElementById('btn-claim-new').addEventListener('click', () => Claim.handleClaimNew('connect'));
-    document.getElementById('btn-claim-later').addEventListener('click', () => Claim.handleClaimNew('later'));
+    document.getElementById('btn-claim-later').addEventListener('click', () => Claim.showBranchChooser());
+    document.getElementById('btn-claim-later-go').addEventListener('click', () => Claim.handleClaimNew('later'));
 
     // Hinweis „Profil noch nicht verbunden" → eigenes Profil bearbeiten
     document.getElementById('btn-connect-hint').addEventListener('click', () => {
@@ -541,7 +542,10 @@ const App = (() => {
     if (!tray) return;
     const ids = unreachableIds;
     const byId = new Map(cachedMembers.map(m => [m.id, m]));
+    // Nur die Waisen des aktiven Zweigs (family_hint = Zweig-Wurzel);
+    // ohne Zuordnung (ältere Einträge) in jedem Zweig zeigen.
     const orphans = ids.map(id => byId.get(id)).filter(Boolean)
+      .filter(m => !m.familyHint || !families.some(f => f.rootId === m.familyHint) || m.familyHint === activeFamilyId)
       .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`));
     document.getElementById('orphan-count').textContent = orphans.length;
     tray.classList.toggle('hidden', orphans.length === 0);
@@ -551,7 +555,7 @@ const App = (() => {
     if (!orphans.length) return;
     const hint = document.createElement('div');
     hint.className = 'orphan-hint';
-    hint.textContent = 'Noch nicht mit dem Stammbaum verbunden. Antippen → Profil → Bearbeiten → Verbindung hinzufügen.';
+    hint.textContent = 'Noch nicht mit diesem Zweig verbunden. Antippen → Profil → Bearbeiten → Verbindung hinzufügen.';
     list.appendChild(hint);
     for (const m of orphans) {
       const b = document.createElement('button');
@@ -890,6 +894,8 @@ const App = (() => {
     setActiveFamily,
     ensureFamilyFor,
     familyInfo: (id) => { const f = families.find(x => x.assigned.has(id)); return f ? { rootId: f.rootId, short: f.short, name: f.name } : null; },
+    getFamilies: () => families.map(f => ({ rootId: f.rootId, short: f.short, name: f.name })),
+    getActiveFamilyId: () => activeFamilyId,
     addRelative,
     toast,
     refreshTree,

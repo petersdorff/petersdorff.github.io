@@ -88,7 +88,7 @@ oben ab.
   (lässt bei „Spalte fehlt" GENAU diese Spalte weg, Warnung in der
   Konsole) — nie wieder pauschal Spalten verwerfen, das hatte `gender`
   still verschluckt. Nach einem Neuaufbau des Projekts alle Migrationen
-  in Reihenfolge 002 → 003 → 004 → 005 → 006 → 007 erneut ausführen.
+  in Reihenfolge 002 → 003 → 004 → 005 → 006 → 007 → 008 erneut ausführen.
 - **Zugriffsmodell (4 Stufen):** Gast/Familientag (nur mit Code, nur
   lesen, ohne Kontaktfelder) · registriert-wartend (nichts, Warteseite;
   mit Code sofort freigeschaltet) · Mitglied `approved` (alles
@@ -509,12 +509,17 @@ Widersprüche beim manuellen Anlegen räumt `cleanConflictingRelations` ab.
   Überspringen) mit drei Wegen — bestehendes Profil verknüpfen; „Neues
   Profil mit Verbindung" (Editor mit Pflicht-Erstverbindung); **„Anschluss
   noch unklar"** (`Claim.handleClaimNew('later')`: Profil sofort geclaimt,
-  ohne Verbindung → Stammbaum; steht in der Waisen-Ablage und der Inhaber
+  ohne Verbindung → Stammbaum; **Pflicht-Auswahl des Familienzweigs**
+  (`members.family_hint` = Wurzel-ID, Migration 008), damit das Profil in
+  der Waisen-Ablage des richtigen Zweigs erscheint — die Ablage zeigt nur
+  Waisen mit passendem bzw. ohne `family_hint`; steht dort und der Inhaber
   sieht oben die rote Leiste `#connect-hint` „Verbindung hinzufügen", bis
   er die Lücke beim letzten bekannten Vorfahren per + Kind zugebaut und
   sich eingehängt hat). Löst ein Admin die Verknüpfung, kommt beim nächsten
   Login wieder die Willkommen-Seite. Rote Umrandung/„?"-Chip brauchen
-  dieses eigene Profil.
+  dieses eigene Profil. Nach jedem Verknüpfen ruft `claim.js`
+  `App.applyReadOnlyUI()` + `Admin.updateAdminMenu()` — sonst bleiben
+  +-Chips/FAB im Anfangszustand (nur „?"), wie beim ersten Test gesehen.
 - Familientag-Checkliste und QR-Namensschilder: siehe `RESTORE.md` §6.
 
 ## Entwicklung & Betrieb

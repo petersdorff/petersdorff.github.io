@@ -506,16 +506,16 @@ Widersprüche beim manuellen Anlegen räumt `cleanConflictingRelations` ab.
   guestRows". Login-Seite: Familientag-Knopf blendet das Code-Feld ein.
 - **Jedes Konto hängt an genau einem Profil:** nach der Freigabe zeigt der
   Login ohne verknüpftes Profil zwingend die Willkommen-Seite (kein
-  Überspringen) mit drei Wegen — bestehendes Profil verknüpfen; „Neues
-  Profil mit Verbindung" (Editor mit Pflicht-Erstverbindung); **„Anschluss
-  noch unklar"** (`Claim.handleClaimNew('later')`: Profil sofort geclaimt,
-  ohne Verbindung → Stammbaum; **Pflicht-Auswahl des Familienzweigs**
-  (`members.family_hint` = Wurzel-ID, Migration 008), damit das Profil in
-  der Waisen-Ablage des richtigen Zweigs erscheint — die Ablage zeigt nur
-  Waisen mit passendem bzw. ohne `family_hint`; steht dort und der Inhaber
-  sieht oben die rote Leiste `#connect-hint` „Verbindung hinzufügen", bis
-  er die Lücke beim letzten bekannten Vorfahren per + Kind zugebaut und
-  sich eingehängt hat). Löst ein Admin die Verknüpfung, kommt beim nächsten
+  Überspringen) mit zwei Wegen — bestehendes Profil verknüpfen oder
+  **„Neues Profil erstellen"** (`Claim.handleClaimNew`): Pflicht-Auswahl
+  des Familienzweigs (`members.family_hint` = Wurzel-ID, Migration 008),
+  Profil wird sofort angelegt und geclaimt, Zweig aktiviert, eigener Editor
+  öffnet sich — erste Verbindung jetzt eintragen oder abbrechen und später.
+  Bis dahin steht das Profil in der Waisen-Ablage des gewählten Zweigs (die
+  Ablage zeigt nur Waisen mit passendem bzw. ohne `family_hint`) und der
+  Inhaber sieht oben die rote Leiste `#connect-hint` „Verbindung
+  hinzufügen", bis er die Lücke beim letzten bekannten Vorfahren per + Kind
+  zugebaut und sich eingehängt hat. Löst ein Admin die Verknüpfung, kommt beim nächsten
   Login wieder die Willkommen-Seite. Rote Umrandung/„?"-Chip brauchen
   dieses eigene Profil. Nach jedem Verknüpfen ruft `claim.js`
   `App.applyReadOnlyUI()` + `Admin.updateAdminMenu()` — sonst bleiben

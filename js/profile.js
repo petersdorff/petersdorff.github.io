@@ -207,7 +207,7 @@ const Profile = (() => {
         const container = document.getElementById('edit-existing-rels');
         const hint = document.createElement('div');
         hint.className = 'rel-empty';
-        hint.textContent = 'Füge eine Verbindung hinzu, damit du im Stammbaum erscheinst.';
+        hint.textContent = 'Füge eine Verbindung hinzu, damit du im Stammbaum erscheinst – oder später: Bis dahin steht dein Profil in der Ablage „unverbunden".';
         container.prepend(hint);
       }
     }

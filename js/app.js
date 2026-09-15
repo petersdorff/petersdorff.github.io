@@ -195,9 +195,8 @@ const App = (() => {
 
     // Claim view
     document.getElementById('claim-search').addEventListener('input', Claim.handleClaimSearch);
-    document.getElementById('btn-claim-new').addEventListener('click', () => Claim.handleClaimNew('connect'));
-    document.getElementById('btn-claim-later').addEventListener('click', () => Claim.showBranchChooser());
-    document.getElementById('btn-claim-later-go').addEventListener('click', () => Claim.handleClaimNew('later'));
+    document.getElementById('btn-claim-new').addEventListener('click', () => Claim.showBranchChooser());
+    document.getElementById('btn-claim-new-go').addEventListener('click', () => Claim.handleClaimNew());
 
     // Hinweis „Profil noch nicht verbunden" → eigenes Profil bearbeiten
     document.getElementById('btn-connect-hint').addEventListener('click', () => {

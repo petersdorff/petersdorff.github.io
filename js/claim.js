@@ -176,18 +176,11 @@ const Claim = (() => {
     debouncedClaimSearch(query);
   }
 
-  /**
-   * Neues eigenes Profil anlegen und sofort verknüpfen.
-   * mode 'connect': Editor mit Pflicht-Erstverbindung öffnen (Standard).
-   * mode 'later':   ohne Verbindung anlegen — Person landet im Stammbaum
-   *                 und baut die Lücke selbst zu; bis dahin steht das Profil
-   *                 in der Waisen-Ablage und ein Hinweis erinnert daran.
-   */
   /** Zweig-Auswahl für „Anschluss noch unklar" einblenden (Pflicht). */
   function showBranchChooser() {
     const box = document.getElementById('claim-branch-box');
     const opts = document.getElementById('claim-branch-options');
-    const go = document.getElementById('btn-claim-later-go');
+    const go = document.getElementById('btn-claim-new-go');
     opts.innerHTML = '';
     const fams = App.getFamilies();
     for (const f of fams) {
@@ -207,10 +200,16 @@ const Claim = (() => {
     return r ? r.value : null;
   }
 
-  async function handleClaimNew(mode = 'connect') {
+  /**
+   * Neues eigenes Profil anlegen und sofort verknüpfen (ein Weg für alle):
+   * Zweig ist Pflicht (family_hint), danach öffnet sich der eigene Editor —
+   * Verbindung jetzt eintragen oder später (bis dahin Waisen-Ablage des
+   * Zweigs + Hinweisleiste im Stammbaum).
+   */
+  async function handleClaimNew() {
     const user = Auth.getUser();
-    const familyHint = mode === 'later' ? chosenBranch() : null;
-    if (mode === 'later' && !familyHint) {
+    const familyHint = chosenBranch();
+    if (!familyHint) {
       App.toast('Bitte wähle deinen Familienzweig', 'error');
       return;
     }
@@ -250,14 +249,9 @@ const Claim = (() => {
     App.applyReadOnlyUI();   // Bearbeitungsrechte (+-Chips, FAB) jetzt aktiv
     Admin.updateAdminMenu(Admin.isAdmin() && !DB.isOffline());
 
-    if (mode === 'later') {
-      if (familyHint) App.setActiveFamily(familyHint);
-      App.showView('view-main');
-      App.toast('Dein Profil ist angelegt, aber noch nicht verbunden – hänge dich ein, sobald die Lücke gebaut ist.', 'info');
-      return;
-    }
-    // Redirect to profile edit so the user can add their first relationship.
-    // Without a relationship they won't appear on the tree (orphan filter).
+    App.setActiveFamily(familyHint);
+    // Eigener Editor: erste Verbindung jetzt — oder abbrechen und später
+    // (Profil steht bis dahin in der Waisen-Ablage, Hinweisleiste im Baum).
     Profile.edit(memberId);
   }
 

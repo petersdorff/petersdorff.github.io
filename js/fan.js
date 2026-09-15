@@ -1291,8 +1291,14 @@ const Fan = (() => {
     for (const link of label.querySelectorAll('.fan-spouse-link')) {
       let b;
       try { b = link.getBBox(); } catch { continue; }
+      // getBBox liefert die volle Zeilenbox (≈ 1,2 em); treffen soll nur
+      // die Buchstabenhöhe: bei dominant-baseline=central liegt die Tinte
+      // etwa von Mitte − 0,42 em (Oberlänge) bis Mitte + 0,32 em.
+      const fs = parseFloat(link.getAttribute('font-size')) || b.height / 1.2;
+      const cy = b.y + b.height / 2;
+      const top = cy - 0.42 * fs, bottom = cy + 0.32 * fs;
       const dx = Math.max(b.x - p.x, 0, p.x - (b.x + b.width));
-      const dy = Math.max(b.y - p.y, 0, p.y - (b.y + b.height));
+      const dy = Math.max(top - p.y, 0, p.y - bottom);
       const d = Math.hypot(dx, dy);
       if (d <= padLocal && d < bestDist) { best = link; bestDist = d; }
     }

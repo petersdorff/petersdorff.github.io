@@ -255,7 +255,9 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   Partners** (`hostOf`-Map) und sind dort als blauer Link antippbar
   (Hover: rot) → eigenes Profil. **Treffer per Geometrie, nicht per
   DOM-Hit-Test** (`spouseLinkAt`: Textbox des Link-tspans im lokalen
-  Label-Koordinatensystem, Maus 0 px Toleranz, Finger 6 px) — WebKit
+  Label-Koordinatensystem, vertikal auf die Buchstabenhöhe verengt
+  (Mitte − 0,42 em … + 0,32 em statt der 1,3-em-Zeilenbox), Maus 0 px
+  Toleranz, Finger 6 px) — WebKit
   ignoriert `pointer-events` auf `<tspan>`, deshalb waren Links auf dem
   iPhone sonst gar nicht antippbar; `.fan-spouse-link` hat darum
   `pointer-events: none`. Der Maus-Hover (`updateLinkHover`, Klasse

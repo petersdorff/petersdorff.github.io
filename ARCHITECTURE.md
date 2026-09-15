@@ -28,7 +28,22 @@ Gotha-Datenbasis). Vanilla HTML/CSS/JS ohne Build-Schritt, PCB-Ästhetik
   `gh api repos/petersdorff/petersdorff.github.io/pages/builds/latest`.
 - Supabase-Auth: Site URL / Redirect URLs im Dashboard müssen
   `https://petersdorff.github.io/**` enthalten (Passwort-Reset, Magic-Link);
-  die App baut `redirectTo` und QR-Links aus `window.location`.
+  die App baut `redirectTo` und QR-Links aus `window.location`. Stand
+  15.09.2026 verifiziert: Site URL = neue Domain, alte Domain noch in der
+  Allowlist. Prüfen ohne Mailversand: `GET /auth/v1/verify?token=bogus
+  &type=recovery&redirect_to=<URL>` — der Location-Header zeigt, ob die URL
+  erlaubt ist (sonst Fallback auf die Site URL).
+- **Mailzustellung (Passwort-Reset, Registrierung):** Supabase verschickt
+  über den geteilten Absender `noreply@mail.app.supabase.io`. iCloud/Gmail
+  liefern zu, **GMX und web.de sortieren in „Spamverdacht"** (15.09.2026,
+  pdorff@gmx.de — Mail war da, nur im Spam). Ob eine Mail überhaupt
+  rausging, steht in `recovery_sent_at` des Auth-Users (Admin-API). Erste
+  Hilfe: Spam-Ordner + Absender freischalten, dann erneut anfordern (Link
+  gilt 1 h). Ohne E-Mail: `POST /auth/v1/admin/generate_link`
+  (type=recovery) erzeugt den Link direkt. Dauerhafte Lösung: eigener SMTP
+  (Dashboard → Auth → SMTP), z.B. Gmail-SMTP mit App-Passwort.
+  Bekannte Lücke: Ein abgelaufener Link (`#error=…otp_expired`) zeigt in
+  der App keine Meldung, nur den Login-Screen.
 - **Cache-Busting ist Pflicht bei jeder Änderung:**
   1. Versionsquery der geänderten Dateien in `index.html` erhöhen
      (`js/app.js?v=42` → `?v=43` usw.).

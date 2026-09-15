@@ -254,10 +254,12 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   bekommen Segmente; **Angeheiratete stehen als „∞ Name" im Segment des
   Partners** (`hostOf`-Map) und sind dort als blauer Link antippbar
   (Hover: rot) → eigenes Profil. **Treffer per Geometrie, nicht per
-  DOM-Hit-Test** (`spouseLinkAt`: Textbox des Link-tspans im lokalen
-  Label-Koordinatensystem, vertikal auf die Buchstabenhöhe verengt
-  (Mitte − 0,42 em … + 0,32 em statt der 1,3-em-Zeilenbox), Maus 0 px
-  Toleranz, Finger 6 px) — WebKit
+  DOM-Hit-Test** (`spouseLinkAt` → `linkInkBox`: Glyphenzellen des
+  ersten/letzten Zeichens per `getExtentOfChar` — nicht `getBBox`, das
+  liefert in WebKit für tspans die Box des ganzen `<text>` —, daraus die
+  Grundlinie über die Plex-Mono-Metrik (Zelle 1,3 em = 1,025 Ober- +
+  0,275 Unterlänge) und die Tinte von Versalhöhe (Grundlinie − 0,72 em)
+  bis Grundlinie + 0,15 em; Maus 0 px Toleranz, Finger 6 px) — WebKit
   ignoriert `pointer-events` auf `<tspan>`, deshalb waren Links auf dem
   iPhone sonst gar nicht antippbar; `.fan-spouse-link` hat darum
   `pointer-events: none`. Der Maus-Hover (`updateLinkHover`, Klasse

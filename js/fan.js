@@ -1289,20 +1289,38 @@ const Fan = (() => {
     const padLocal = pad / scale;
     let best = null, bestDist = Infinity;
     for (const link of label.querySelectorAll('.fan-spouse-link')) {
-      let b;
-      try { b = link.getBBox(); } catch { continue; }
-      // getBBox liefert die volle Zeilenbox (≈ 1,2 em); treffen soll nur
-      // die Buchstabenhöhe: bei dominant-baseline=central liegt die Tinte
-      // etwa von Mitte − 0,42 em (Oberlänge) bis Mitte + 0,32 em.
-      const fs = parseFloat(link.getAttribute('font-size')) || b.height / 1.2;
-      const cy = b.y + b.height / 2;
-      const top = cy - 0.42 * fs, bottom = cy + 0.32 * fs;
-      const dx = Math.max(b.x - p.x, 0, p.x - (b.x + b.width));
-      const dy = Math.max(top - p.y, 0, p.y - bottom);
+      const b = linkInkBox(link);
+      if (!b) continue;
+      const dx = Math.max(b.x0 - p.x, 0, p.x - b.x1);
+      const dy = Math.max(b.y0 - p.y, 0, p.y - b.y1);
       const d = Math.hypot(dx, dy);
       if (d <= padLocal && d < bestDist) { best = link; bestDist = d; }
     }
     return best;
+  }
+
+  /**
+   * Buchstaben-Box eines Link-tspans in lokalen Label-Koordinaten. Über
+   * getExtentOfChar (erstes/letztes Zeichen) statt getBBox — WebKit liefert
+   * für tspans sonst die Box des ganzen <text>. Die Glyphenzelle ist die
+   * volle Zeilenhöhe (IBM Plex Mono: Oberlänge 1,025 em + Unterlänge
+   * 0,275 em = 1,3 em); getroffen werden soll nur die Tinte, also von der
+   * Versalhöhe (Grundlinie − 0,72 em) bis knapp unter die Grundlinie.
+   */
+  function linkInkBox(link) {
+    let x0, x1, top, h;
+    try {
+      const n = link.getNumberOfChars();
+      if (!n) return null;
+      const a = link.getExtentOfChar(0), z = link.getExtentOfChar(n - 1);
+      x0 = Math.min(a.x, z.x); x1 = Math.max(a.x + a.width, z.x + z.width);
+      top = Math.min(a.y, z.y); h = Math.max(a.height, z.height);
+    } catch {
+      try { const bb = link.getBBox(); x0 = bb.x; x1 = bb.x + bb.width; top = bb.y; h = bb.height; } catch { return null; }
+    }
+    const fs = parseFloat(link.getAttribute('font-size')) || h / 1.3;
+    const baseline = top + h * (1.025 / 1.3);
+    return { x0, x1, y0: baseline - 0.72 * fs, y1: baseline + 0.15 * fs };
   }
 
   /** Hover (Maus): Link unter dem Zeiger rot färben + Hand-Cursor. */

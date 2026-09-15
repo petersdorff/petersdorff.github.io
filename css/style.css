@@ -2314,13 +2314,16 @@ body.has-status .fan-timeline { bottom: 112px; }
 /* Partner-Namen im Segment: Hyperlink zum eigenen Profil; beim Hovern
    rot, damit klar ist, welcher Link gerade gewählt ist */
 .fan-spouse-link {
-  pointer-events: auto;
-  cursor: pointer;
+  pointer-events: none;   /* Treffer werden per Geometrie ermittelt (spouseLinkAt), nicht per DOM-Hit-Test */
   fill: var(--blue);
   fill-opacity: 1;
   text-decoration: underline;
 }
-.fan-spouse-link:hover { fill: var(--red); }
+.fan-spouse-link.is-hover { fill: var(--red); }
+
+/* Namens-Modus: wer den Zweig-Namen nicht (mehr) trägt, wird gedämpft */
+.fan-label.fan-muted { opacity: 0.35; }
+.fan-label tspan.fan-muted { fill-opacity: 0.3; }
 
 
 /* ═══════════════════════════════════════════════════════════

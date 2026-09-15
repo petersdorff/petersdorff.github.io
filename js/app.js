@@ -391,9 +391,9 @@ const App = (() => {
       // Erster Render: gespeicherte Ansicht anwenden, Standard ist der Fächer.
       viewApplied = true;
       const name = getStoredView();
-      const isFan = name === 'fan' || name === 'fan-years';
+      const isFan = name.startsWith('fan');
       Tree.render(sub.members, sub.relationships);
-      Fan.setColorMode(name === 'fan-years' ? 'year' : 'gender');
+      Fan.setColorMode(fanColorMode(name));
       setFanMode(isFan);
       Gotha.render(cachedMembers, cachedRelationships, { familyId: activeFamilyId });
       if (name === 'gotha') Gotha.show();
@@ -546,9 +546,10 @@ const App = (() => {
     document.getElementById('edit-firstname').focus();
   }
 
-  // ─── Ansichten: fan | fan-years | gotha | tree (Stammtafel) ───
+  // ─── Ansichten: fan | fan-years | fan-name | gotha | tree (Stammtafel) ───
 
-  const VIEW_ORDER = ['fan', 'fan-years', 'gotha', 'tree'];
+  const VIEW_ORDER = ['fan', 'fan-years', 'fan-name', 'gotha', 'tree'];
+  const fanColorMode = name => name === 'fan-years' ? 'year' : name === 'fan-name' ? 'name' : 'gender';
 
   function getStoredView() {
     let v = null;
@@ -560,7 +561,8 @@ const App = (() => {
   function getCurrentView() {
     if (Gotha.isActive()) return 'gotha';
     if (!Fan.isActive()) return 'tree';
-    return Fan.getColorMode() === 'year' ? 'fan-years' : 'fan';
+    const m = Fan.getColorMode();
+    return m === 'year' ? 'fan-years' : m === 'name' ? 'fan-name' : 'fan';
   }
 
   /** Ansicht umschalten und merken. */
@@ -568,9 +570,9 @@ const App = (() => {
     if (name === 'gotha') {
       setFanMode(false);
       Gotha.show();
-    } else if (name === 'fan' || name === 'fan-years') {
+    } else if (name.startsWith('fan')) {
       Gotha.hide();
-      Fan.setColorMode(name === 'fan-years' ? 'year' : 'gender');
+      Fan.setColorMode(fanColorMode(name));
       setFanMode(true);
     } else {
       Gotha.hide();
@@ -583,10 +585,12 @@ const App = (() => {
 
   /** Legende passend zur Ansicht: Baum / Fächer (Geschlecht) / Fächer (Geburtsjahr). */
   function updateLegendBlocks() {
-    const fan = Fan.isActive(), year = fan && Fan.getColorMode() === 'year', gotha = Gotha.isActive();
+    const fan = Fan.isActive(), year = fan && Fan.getColorMode() === 'year', nameMode = fan && Fan.getColorMode() === 'name', gotha = Gotha.isActive();
     document.getElementById('legend-gotha').classList.toggle('hidden', !gotha);
     document.getElementById('legend-tree').classList.toggle('hidden', fan || gotha);
-    document.getElementById('legend-fan').classList.toggle('hidden', !fan || year);
+    document.getElementById('legend-fan').classList.toggle('hidden', !fan || year || nameMode);
+    document.getElementById('legend-fan-name').classList.toggle('hidden', !nameMode);
+    if (nameMode) document.getElementById('legend-name-surname').textContent = Fan.familySurname() || 'Familienname';
     const yl = document.getElementById('legend-fan-year');
     yl.classList.toggle('hidden', !year);
     if (year) {

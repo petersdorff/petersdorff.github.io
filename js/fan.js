@@ -117,7 +117,7 @@ const Fan = (() => {
       if (!hoverIdOf(e.relatedTarget)) scheduleHide();
     });
     svg.addEventListener('pointerleave', e => {
-      if (e.pointerType === 'mouse') { cancelHide(); showGhosts(null); clearHoverHalo(); }
+      if (e.pointerType === 'mouse') { cancelHide(); showGhosts(null); clearHoverHalo(); updateLinkHover(null); }
     });
     container.appendChild(svg);
     attachPanZoom();
@@ -677,6 +677,7 @@ const Fan = (() => {
       labelLayer.appendChild(text);
     }
     applyTimeline();
+    applyNameMode();
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -869,7 +870,23 @@ const Fan = (() => {
 
   /** Männer hellblau, Frauen rosa, unbekannt neutral; Verstorbene entsättigt.
       Im Jahres-Modus: Geburtsjahr auf gemeinsamer Skala (alt → jung). */
+  /** Trägt die Person aktuell den Namen des aktiven Zweigs (Wurzel-Nachname)? */
+  function carriesName(m) {
+    const fam = families.find(f => f.rootId === activeFamilyId);
+    const target = ((fam && fam.root.m.lastName) || '').trim().toLowerCase();
+    return !!target && (m.lastName || '').trim().toLowerCase() === target;
+  }
+  function familySurname() {
+    const fam = families.find(f => f.rootId === activeFamilyId);
+    return (fam && fam.root.m.lastName) || '';
+  }
+
   function segColor(m, depth) {
+    if (colorMode === 'name') {
+      if (!carriesName(m)) return 'hsl(0 0% 91%)';   // anderer Name: ausgegraut
+      const [h, s] = m.gender === 'm' ? [207, 72] : m.gender === 'f' ? [340, 72] : [0, 0];
+      return `hsl(${h} ${s}% 80%)`;
+    }
     if (colorMode === 'year') {
       const y = m.birthDate ? parseInt(m.birthDate.substring(0, 4), 10) : NaN;
       if (!isFinite(y)) return 'hsl(0 0% 88%)';
@@ -899,7 +916,7 @@ const Fan = (() => {
   }
 
   function setColorMode(mode) {
-    if (mode !== 'gender' && mode !== 'year') return;
+    if (mode !== 'gender' && mode !== 'year' && mode !== 'name') return;
     if (mode === colorMode) return;
     colorMode = mode;
     if (members.length) {
@@ -915,6 +932,25 @@ const Fan = (() => {
     }
     updateTimelineVisibility();
     applyTimeline();
+    applyNameMode();
+  }
+
+  /** Namens-Modus: Labels und Partner-Zeilen ohne den Zweig-Namen dämpfen. */
+  function applyNameMode() {
+    if (!labelLayer) return;
+    const on = colorMode === 'name';
+    const byId = new Map(members.map(m => [m.id, m]));
+    for (const t of labelLayer.children) {
+      const m = byId.get(t.getAttribute('data-id'));
+      t.classList.toggle('fan-muted', on && !!m && !carriesName(m));
+      for (const link of t.querySelectorAll('.fan-spouse-link')) {
+        const sp = byId.get(link.getAttribute('data-id'));
+        const muted = on && !!sp && !carriesName(sp);
+        link.classList.toggle('fan-muted', muted);
+        const glyph = link.previousSibling;
+        if (glyph && glyph.classList) glyph.classList.toggle('fan-muted', muted);
+      }
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1235,6 +1271,45 @@ const Fan = (() => {
     apply();
   }
 
+  /**
+   * Partner-Link im Label von segId, dessen Textbox pt (Client-Koordinaten)
+   * trifft — mit `pad` px Toleranz (Maus 0, Finger ein paar px). Geometrie
+   * statt DOM-Hit-Test, weil WebKit `pointer-events` auf <tspan> ignoriert
+   * (Links waren auf dem iPhone sonst gar nicht antippbar). Im LOKALEN
+   * (gedrehten) Koordinatensystem des Labels geprüft, damit sich bei
+   * schrägem Text keine Bildschirm-Boxen benachbarter Links überlappen.
+   */
+  function spouseLinkAt(segId, pt, pad) {
+    const label = labelLayer.querySelector(`.fan-label[data-id="${segId}"]`);
+    if (!label) return null;
+    const ctm = label.getScreenCTM();
+    if (!ctm) return null;
+    const p = new DOMPoint(pt.x, pt.y).matrixTransform(ctm.inverse());
+    const scale = Math.hypot(ctm.a, ctm.b) || 1;   // px je lokaler Einheit
+    const padLocal = pad / scale;
+    let best = null, bestDist = Infinity;
+    for (const link of label.querySelectorAll('.fan-spouse-link')) {
+      let b;
+      try { b = link.getBBox(); } catch { continue; }
+      const dx = Math.max(b.x - p.x, 0, p.x - (b.x + b.width));
+      const dy = Math.max(b.y - p.y, 0, p.y - (b.y + b.height));
+      const d = Math.hypot(dx, dy);
+      if (d <= padLocal && d < bestDist) { best = link; bestDist = d; }
+    }
+    return best;
+  }
+
+  /** Hover (Maus): Link unter dem Zeiger rot färben + Hand-Cursor. */
+  let hoverLink = null;
+  function updateLinkHover(segId, pt) {
+    const link = segId ? spouseLinkAt(segId, pt, 0) : null;
+    if (link === hoverLink) return;
+    if (hoverLink) hoverLink.classList.remove('is-hover');
+    hoverLink = link;
+    if (hoverLink) hoverLink.classList.add('is-hover');
+    svg.style.cursor = hoverLink ? 'pointer' : '';
+  }
+
   /** Person in die Bildmitte holen, ohne den Zoom zu ändern. */
   function panTo(memberId) {
     ensureFamilyFor(memberId);
@@ -1251,7 +1326,7 @@ const Fan = (() => {
     let moved = 0, prevPinch = null;
     // Ziel beim Drücken merken: nach setPointerCapture ist e.target beim
     // pointerup das <svg>, nicht mehr das Segment unter dem Finger.
-    let downTarget = null;
+    let downTarget = null, downPt = null;
 
     svg.addEventListener('pointerdown', e => {
       if (e.button !== undefined && e.button !== 0) return;
@@ -1263,6 +1338,7 @@ const Fan = (() => {
       if (pts.size === 1) {
         moved = 0;
         downTarget = e.target.closest ? e.target.closest('[data-id]') : null;
+        downPt = { x: e.clientX, y: e.clientY };
       } else {
         downTarget = null;   // zweiter Finger → Pinch, kein Tap
       }
@@ -1271,7 +1347,14 @@ const Fan = (() => {
     });
 
     svg.addEventListener('pointermove', e => {
-      if (!pts.has(e.pointerId)) return;
+      if (!pts.has(e.pointerId)) {
+        // Maus ohne Taste: Partner-Link unter dem Zeiger hervorheben
+        if (e.pointerType === 'mouse') {
+          const seg = e.target.closest ? e.target.closest('.fan-seg') : null;
+          updateLinkHover(seg ? seg.getAttribute('data-id') : null, { x: e.clientX, y: e.clientY });
+        }
+        return;
+      }
       const p = pts.get(e.pointerId);
       const dx = e.clientX - p.x, dy = e.clientY - p.y;
       moved += Math.abs(dx) + Math.abs(dy);
@@ -1306,8 +1389,12 @@ const Fan = (() => {
       if (pts.size === 0 && e.type === 'pointerup' && moved < 10 && downTarget) {
         let id = downTarget.getAttribute('data-id');
         const add = downTarget.getAttribute('data-add');
-        // Partner nur bei präzisem Treffer auf den Namens-Link (tspan mit
-        // eigener data-id); alles andere im Feld führt zur Person selbst.
+        // Partner nur bei Treffer auf den Namens-Link: Maus exakt auf dem
+        // Text, Finger mit 6 px Toleranz. Alles andere im Feld → Person.
+        if (!add && downTarget.classList.contains('fan-seg') && downPt) {
+          const link = spouseLinkAt(id, downPt, e.pointerType === 'mouse' ? 0 : 6);
+          if (link) id = link.getAttribute('data-id');
+        }
         downTarget = null;
         if (add === 'connect') {
           if (onConnectCallback) onConnectCallback(id);
@@ -1334,7 +1421,7 @@ const Fan = (() => {
 
   return { init, onTap, onAddRelative, onConnect, setCanEdit, isActive, show, hide, toggle, render, fit, centerOn, panTo, highlightConnection, clearHighlight,
            getFamilies, setFamily, familyOf, buildFamiliesFrom,
-           setColorMode, getColorMode: () => colorMode, getYearScale,
+           setColorMode, getColorMode: () => colorMode, getYearScale, familySurname,
            getTimeline, setTimelineYear, startPlayback, stopPlayback, isPlaying: () => !!playing,
            setPreferredFamily: (id) => { preferredFamilyId = id; },
            onFamilyChange: (cb) => { onFamilyChangeCallback = cb; },

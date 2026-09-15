@@ -201,12 +201,18 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
 
 ## Fächer-Ansicht (`fan.js`) — Standardansicht
 
-- **Vier Ansichten** über den **Umschalter unten mittig** (`#view-switch`,
-  Pille mit 4 Icons — Fächer (Geschlecht), Fächer nach Geburtsjahr,
+- **Fünf Ansichten** über den **Umschalter unten mittig** (`#view-switch`,
+  Pille mit 5 Icons — Fächer (Geschlecht), Fächer nach Geburtsjahr,
+  **Fächer nach Familienname** (`fan-name`: `Fan.setColorMode('name')`,
+  nur wer aktuell den Nachnamen der Zweig-Wurzel trägt (`carriesName`,
+  exakter Vergleich mit `lastName`) behält Farbe, alle anderen grau bzw.
+  Labels/Partner-Zeilen `.fan-muted`; Legende nennt den Namen — die
+  Aussagekraft hängt davon ab, dass verheiratete Töchter mit ihrem
+  Ehenamen in `lastName` und dem Geburtsnamen in `birthName` erfasst sind),
   **Gotha-Verzeichnis**, **Stammtafel**; aktive Ansicht dunkel, gleiche
   Optik wie der Familien-Umschalter oben; der alte Zyklus-Button in der
   Top-Bar ist seit 14.09.2026 weg), gemerkt in
-  `localStorage.stammbaum_view` (`fan`, `fan-years`, `gotha`, `tree`;
+  `localStorage.stammbaum_view` (`fan`, `fan-years`, `fan-name`, `gotha`, `tree`;
   alte Werte `generational`/`temporal` werden auf `tree` gemappt).
   Stapel unten mittig von unten nach oben: Ansichts-Pille (16 px) →
   Gast-/Offline-Pille (66 px, nur wenn sichtbar; `body.has-status`) →
@@ -247,10 +253,15 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   Nachkommen-Blätter, Geschwister nach Geburtsjahr. Blutsverwandte
   bekommen Segmente; **Angeheiratete stehen als „∞ Name" im Segment des
   Partners** (`hostOf`-Map) und sind dort als blauer Link antippbar
-  (Hover: rot) → eigenes Profil — **nur bei präzisem Treffer auf den
-  Namens-tspan** (`.fan-spouse-link`, `pointer-events: auto`); der Rest
-  des Feldes inkl. Name/Daten führt zur Person. Eine frühere ±8-px-Toleranz
-  (`spouseLinkNear`) öffnete zu oft den Partner und ist entfernt. Lücken: `SEG_GAP` (konstante Breite, je Radius in Winkel
+  (Hover: rot) → eigenes Profil. **Treffer per Geometrie, nicht per
+  DOM-Hit-Test** (`spouseLinkAt`: Textbox des Link-tspans im lokalen
+  Label-Koordinatensystem, Maus 0 px Toleranz, Finger 6 px) — WebKit
+  ignoriert `pointer-events` auf `<tspan>`, deshalb waren Links auf dem
+  iPhone sonst gar nicht antippbar; `.fan-spouse-link` hat darum
+  `pointer-events: none`. Der Maus-Hover (`updateLinkHover`, Klasse
+  `is-hover`, Hand-Cursor) nutzt dieselbe Funktion, damit Hervorhebung und
+  Klickziel exakt übereinstimmen. Der Rest des Feldes führt zur Person.
+  Lücken: `SEG_GAP` (konstante Breite, je Radius in Winkel
   umgerechnet) und `RING_GAP`.
 - **Farben:** Männer hellblau, Frauen rosa, unbekannt grau, Verstorbene
   entsättigt; registrierte Profile dunkler Rand, aktueller Nutzer rot.

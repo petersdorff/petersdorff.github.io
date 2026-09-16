@@ -49,6 +49,27 @@ const App = (() => {
     });
     Admin.initEmailJS();
 
+    // Familientag-Aushang: der QR-Code trägt den Code als ?zugang=… — Gäste
+    // landen ohne Tippen direkt im Stammbaum, bei der Registrierung ist das
+    // Code-Feld vorausgefüllt. Einmal gelesen, dann aus der URL entfernt.
+    // (Nicht ?code=, das ist bei Supabase für den PKCE-Login reserviert.)
+    let urlCode = '';
+    try {
+      const params = new URLSearchParams(window.location.search);
+      urlCode = (params.get('zugang') || '').trim();
+      if (params.has('zugang')) {
+        params.delete('zugang');
+        const q = params.toString();
+        window.history.replaceState(null, '', window.location.pathname + (q ? '?' + q : '') + window.location.hash);
+      }
+    } catch { /* egal */ }
+    if (urlCode) {
+      for (const id of ['guest-code', 'reg-code', 'pending-code']) {
+        const el = document.getElementById(id);
+        if (el) el.value = urlCode;
+      }
+    }
+
     // Register auth state listener BEFORE Auth.init()
     Auth.onAuthChange(async (user, member, event) => {
       if (event === 'TOKEN_REFRESHED') return;
@@ -121,6 +142,13 @@ const App = (() => {
         }
       } else {
         authHandled = false;
+        // Code aus dem QR-Link (Aushang): sofort als Gast hinein; bei
+        // ungültigem Code zeigt enter() die Code-Abfrage (vorausgefüllt).
+        if (urlCode) {
+          const code = urlCode; urlCode = '';
+          if (await Guest.enter(code)) return;
+          return;
+        }
         // Familientag: wer schon mal als Gast drin war (Code gespeichert),
         // landet direkt wieder im Stammbaum statt auf dem Login — solange
         // der Code noch gilt (sonst zeigt enter() die Code-Abfrage).

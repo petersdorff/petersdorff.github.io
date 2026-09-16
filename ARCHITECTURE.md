@@ -553,6 +553,15 @@ Widersprüche beim manuellen Anlegen räumt `cleanConflictingRelations` ab.
   `localStorage.stammbaum_guestCode` (Auto-Wiedereinstieg beim nächsten
   Öffnen, bis der Code abläuft), `DB.isOffline()` = „nur lesen aus
   guestRows". Login-Seite: Familientag-Knopf blendet das Code-Feld ein.
+- **QR-Link mit Code:** `https://petersdorff.github.io/?zugang=<Code>`
+  (Aushang, Namensschilder). `App.init` liest `zugang` einmal aus der URL,
+  entfernt ihn per `replaceState`, füllt `#guest-code`/`#reg-code`/
+  `#pending-code` vor und geht ohne Session direkt per `Guest.enter(code)`
+  in den Gastmodus (ungültig → Login mit vorausgefülltem Code-Feld).
+  Bewusst nicht `?code=` — das nutzt Supabase für den PKCE-Login. Der
+  DIN-A4-Aushang liegt privat unter `stammbaum-private/aushang/`
+  (`aushang.html` + `render.js` → `Aushang-Familientag-2026.pdf`; enthält
+  Code und Screenshots mit Namen, darum nicht im Repo).
 - **Jedes Konto hängt an genau einem Profil:** nach der Freigabe zeigt der
   Login ohne verknüpftes Profil zwingend die Willkommen-Seite (kein
   Überspringen) mit zwei Wegen — bestehendes Profil verknüpfen oder

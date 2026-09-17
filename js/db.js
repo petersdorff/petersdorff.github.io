@@ -109,12 +109,28 @@ const DB = (() => {
 
   // ─── Members ───
 
+  /**
+   * Alle Zeilen einer Tabelle — PostgREST liefert pro Anfrage höchstens 1000
+   * (Supabase-Voreinstellung). Seit dem Pommern-Import gibt es über 1000
+   * Beziehungen; ohne Seitenweise-Laden fehlten 66 Kanten und der Baum
+   * zerfiel in Dutzende „Familien". Der Gastmodus (guest_graph-RPC) ist
+   * davon nicht betroffen.
+   */
+  async function fetchAll(table, order) {
+    const PAGE = 1000;
+    const rows = [];
+    for (let from = 0; ; from += PAGE) {
+      let q = supabase.from(table).select('*').range(from, from + PAGE - 1);
+      if (order) q = q.order(order);
+      const { data, error } = await q;
+      if (error) throw error;
+      rows.push(...data);
+      if (data.length < PAGE) return rows;
+    }
+  }
+
   async function getAllMembers() {
-    const { data, error } = await supabase
-      .from('members')
-      .select('*')
-      .order('last_name');
-    if (error) throw error;
+    const data = await fetchAll('members', 'last_name');
     return data.map(mapMember);
   }
 
@@ -234,10 +250,7 @@ const DB = (() => {
   // ─── Relationships ───
 
   async function getAllRelationships() {
-    const { data, error } = await supabase
-      .from('relationships')
-      .select('*');
-    if (error) throw error;
+    const data = await fetchAll('relationships', 'id');
     return data.map(mapRelationship);
   }
 

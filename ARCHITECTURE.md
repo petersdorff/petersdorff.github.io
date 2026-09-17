@@ -311,7 +311,12 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   in der Notiz und „(?)" im Vornamen: Adolf (1808–1840) als Vater eines 1862
   Geborenen; Jacob Ernst (* 1693) als Vater von 1771/1773 Geborenen. Drei
   Abschrift-interne Dubletten (Nachtrag wiederholt Hauptteil) wurden
-  zusammengeführt. Tägliches Backup vor dem Import: `57236a4`. `centerOn`/`panTo`/`highlightConnection`
+  zusammengeführt. Tägliches Backup vor dem Import: `57236a4`.
+  **Falle danach:** PostgREST liefert höchstens 1000 Zeilen je Anfrage —
+  mit 1066 Beziehungen fehlten eingeloggten Nutzern 66 Kanten und der
+  Umschalter zeigte Dutzende „Familien" (Gastmodus über `guest_graph`
+  war nicht betroffen). Seit db.js v33 lädt `fetchAll()` seitenweise
+  (`.range()`), `getAllMembers`/`getAllRelationships` nutzen es. `centerOn`/`panTo`/`highlightConnection`
   wechseln bei Bedarf automatisch in die Familie der Person. Heiraten
   zwischen Zweigen erscheinen in beiden Fächern als „∞"-Partner.
   Waisen-Ablage = in keiner Familie erreichbar.

@@ -1767,6 +1767,11 @@ a {
 @supports (padding: env(safe-area-inset-top)) {
   .family-switch { top: max(70px, calc(env(safe-area-inset-top) + 62px)); }
 }
+/* Schmale Handys: „(Pomm)" weglassen, dann bleiben drei Zweige einzeilig */
+@media (max-width: 480px) {
+  .family-btn { padding: 5px 9px; }
+  .family-btn-suffix { display: none; }
+}
 
 /* ═══════════════════════════════════════════════════════════
    ANSICHTS-UMSCHALTER (unten mittig, 4 Icons)

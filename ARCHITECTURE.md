@@ -272,9 +272,12 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   bekommt als Wurzel den ältesten elternlosen, nicht eingeheirateten
   Namensträger — so reicht ein Stammvater ohne Kinder, um den Zweig zu
   starten; Nachkommen kommen über „+ Kind" im Fächer. Kein Zweig-Feld in
-  der DB — Zweige sind aus den Beziehungen abgeleitet. Drei Zweige → der
-  Umschalter (`width: max-content; flex-wrap`) bricht auf dem Handy
-  zweizeilig um. `Fan.setFamily` setzt auch `preferredFamilyId`, sonst
+  der DB — Zweige sind aus den Beziehungen abgeleitet. Drei Zweige → im
+  Umschalter steht der Klammerzusatz „(Pomm)" in `.family-btn-suffix`, der
+  unter 480 px ausgeblendet wird (dann „Jacobsdorf"/„Großenhagen", alles
+  einzeilig); zur Sicherheit `width: max-content; flex-wrap` (ein absolut
+  positioniertes Element mit `left: 50%` sähe sonst nur die halbe Breite
+  und bräche jeden Knopf in eine eigene Zeile). `Fan.setFamily` setzt auch `preferredFamilyId`, sonst
   zieht `render()` → `pickFamily()` den alten Wunsch-Zweig zurück (Fächer
   und Umschalter zeigten verschiedene Zweige, wenn der Fächer beim
   Zentrieren selbst gewechselt hat). `centerOn`/`panTo`/`highlightConnection`

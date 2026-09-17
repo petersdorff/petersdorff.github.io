@@ -559,7 +559,11 @@ const App = (() => {
       b.className = 'family-btn' + (active ? ' active' : '');
       b.setAttribute('role', 'tab');
       b.setAttribute('aria-selected', String(active));
-      b.textContent = f.short;
+      // Zusatz in Klammern („Jacobsdorf (Pomm)") als eigener Span — auf
+      // schmalen Handys ausgeblendet, damit drei Zweige in eine Zeile passen.
+      const m = /^(.*?)(\s\(.*\))$/.exec(f.short);
+      b.textContent = m ? m[1] : f.short;
+      if (m) b.appendChild(Object.assign(document.createElement('span'), { className: 'family-btn-suffix', textContent: m[2] }));
       b.title = `${f.name} · ${f.size} Personen`;
       b.addEventListener('click', () => setActiveFamily(f.rootId));
       sw.appendChild(b);

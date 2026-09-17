@@ -1737,6 +1737,12 @@ a {
   border-radius: 20px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.06);
   max-width: calc(100vw - 24px);
+  /* drei Zweige: auf dem Handy zweizeilig. width: max-content, weil ein
+     absolut positioniertes Element mit left: 50% sonst nur die halbe
+     Breite als Platz sieht und jeden Knopf in eine eigene Zeile bricht. */
+  width: max-content;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .family-btn {

@@ -257,14 +257,27 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   Fächer wählt ihn per `setPreferredFamily`/`setFamily` (interner
   Auto-Wechsel meldet über `onFamilyChange` zurück). Zentrieren/„Im
   Stammbaum zeigen"/Verwandtschaft wechseln bei Bedarf in den Zweig der
-  Person. Waisen-Ablage = in keiner Familie erreichbar (einheitlich). Namen per `FAMILY_NAMES` nach
-  Nachname der Wurzel („…-Campen" → Märkische, „Petersdorff" → Pommersche,
-  sonst „Familie <Nachname>"). Eine bekannte Familie ohne Wurzel bekommt
-  als Wurzel den ältesten elternlosen, nicht eingeheirateten Namensträger —
-  so reicht ein Platzhalter-Stammvater ohne Kinder, um den Zweig zu
-  starten (Pommersche Linie: Platzhalter „Stammvater von Petersdorff",
-  angelegt 13.09.2026). Kein Zweig-Feld in der DB — Zweige sind aus den
-  Beziehungen abgeleitet. `centerOn`/`panTo`/`highlightConnection`
+  Person. Waisen-Ablage = in keiner Familie erreichbar (einheitlich). Namen per `FAMILY_NAMES`,
+  erkannt an der **Wurzel** (Tests bekommen das Member-Objekt): „…-Campen"
+  → Märkische Familie; die Pommersche Familie hat **zwei Stammväter**
+  (beide „von Petersdorff"), darum je Linie ein Test auf Stammsitz im
+  `location`-Feld oder Vorname des Stammvaters — „Jacobsdorf"/„Dahme…" →
+  **Jacobsdorf (Pomm)**, „Großenhagen"/„Jannike…" → **Großenhagen (Pomm)**;
+  sonst „Familie <Nachname>". Angelegt 17.09.2026 (Platzhalter „Stammvater
+  von Petersdorff" von 2026-09-13 gelöscht): Dahme (Daniel) von Petersdorff,
+  * 1464, Jacobsdorf (Pommern), ID `bed5c986-…`; Jannike der Jüngere
+  (Johannes) von Petersdorff, * 1470, Großenhagen (Pommern), ID
+  `6f3dce22-…` — Jahreszahlen als `YYYY-01-01` (Konvention für „nur Jahr
+  bekannt"), `is_deceased`, ohne Kinder. Eine bekannte Familie ohne Wurzel
+  bekommt als Wurzel den ältesten elternlosen, nicht eingeheirateten
+  Namensträger — so reicht ein Stammvater ohne Kinder, um den Zweig zu
+  starten; Nachkommen kommen über „+ Kind" im Fächer. Kein Zweig-Feld in
+  der DB — Zweige sind aus den Beziehungen abgeleitet. Drei Zweige → der
+  Umschalter (`width: max-content; flex-wrap`) bricht auf dem Handy
+  zweizeilig um. `Fan.setFamily` setzt auch `preferredFamilyId`, sonst
+  zieht `render()` → `pickFamily()` den alten Wunsch-Zweig zurück (Fächer
+  und Umschalter zeigten verschiedene Zweige, wenn der Fächer beim
+  Zentrieren selbst gewechselt hat). `centerOn`/`panTo`/`highlightConnection`
   wechseln bei Bedarf automatisch in die Familie der Person. Heiraten
   zwischen Zweigen erscheinen in beiden Fächern als „∞"-Partner.
   Waisen-Ablage = in keiner Familie erreichbar.

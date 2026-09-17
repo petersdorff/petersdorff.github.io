@@ -55,13 +55,19 @@ const Fan = (() => {
   let preferredFamilyId = null;
   let onFamilyChangeCallback = null;
 
-  // Anzeigenamen der Familienzweige nach Nachname der Wurzel
+  // Anzeigenamen der Familienzweige, erkannt an der Wurzel. Die Pommersche
+  // Familie hat zwei Stammväter (beide „von Petersdorff"), darum je Linie
+  // ein Test auf Stammsitz (Ort) oder Vorname des Stammvaters — sonst wären
+  // beide Zweige gleich beschriftet. Reihenfolge: speziell vor allgemein.
   const FAMILY_NAMES = [
-    { test: ln => /campen/i.test(ln), name: 'Märkische Familie (von Petersdorff-Campen)', short: 'Märkische Familie' },
-    { test: ln => /petersdorff/i.test(ln), name: 'Pommersche Familie (von Petersdorff)', short: 'Pommersche Familie' },
+    { test: m => /jacobsdorf/i.test(m.location || '') || /^dahme\b/i.test(m.firstName || ''),
+      name: 'Pommersche Familie, Linie Jacobsdorf (von Petersdorff)', short: 'Jacobsdorf (Pomm)' },
+    { test: m => /gro(ß|ss)enhagen/i.test(m.location || '') || /^jannike\b/i.test(m.firstName || ''),
+      name: 'Pommersche Familie, Linie Großenhagen (von Petersdorff)', short: 'Großenhagen (Pomm)' },
+    { test: m => /campen/i.test(m.lastName || ''), name: 'Märkische Familie (von Petersdorff-Campen)', short: 'Märkische Familie' },
   ];
   function familyLabel(root) {
-    const hit = FAMILY_NAMES.find(f => f.test(root.lastName || ''));
+    const hit = FAMILY_NAMES.find(f => f.test(root));
     return hit ? { name: hit.name, short: hit.short } : { name: `Familie ${root.lastName}`, short: `Familie ${root.lastName}` };
   }
   let hlAnchors = [];       // Ankerpunkte des aktiven Pfads (für fitToHighlight)
@@ -195,9 +201,10 @@ const Fan = (() => {
       roots.push(h);
     }
 
-    // Bekannte Familie ohne Wurzel (z.B. frisch angelegter Platzhalter-
-    // Stammvater ohne Kinder): ältester elternloser Namensträger, der nicht
-    // in eine dokumentierte Linie eingeheiratet ist, wird ihre Wurzel.
+    // Bekannte Familie ohne Wurzel (z.B. Stammvater ohne eingetragene
+    // Kinder, wie die beiden Pommerschen Linien zu Beginn): ältester
+    // elternloser Namensträger, der nicht in eine dokumentierte Linie
+    // eingeheiratet ist, wird ihre Wurzel.
     for (const fam of FAMILY_NAMES) {
       if (roots.some(r => familyLabel(r).name === fam.name)) continue;
       const seed = members
@@ -281,6 +288,7 @@ const Fan = (() => {
   function setFamily(rootId) {
     if (!families.some(f => f.rootId === rootId) || rootId === activeFamilyId) return false;
     activeFamilyId = rootId;
+    preferredFamilyId = rootId;   // sonst holt render() → pickFamily() den alten Wunsch-Zweig zurück
     ghostFor = null;
     if (members.length) render(members, relationships);
     if (onFamilyChangeCallback) onFamilyChangeCallback(rootId);

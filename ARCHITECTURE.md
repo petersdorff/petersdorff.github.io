@@ -284,7 +284,34 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   und bräche jeden Knopf in eine eigene Zeile). `Fan.setFamily` setzt auch `preferredFamilyId`, sonst
   zieht `render()` → `pickFamily()` den alten Wunsch-Zweig zurück (Fächer
   und Umschalter zeigten verschiedene Zweige, wenn der Fächer beim
-  Zentrieren selbst gewechselt hat). `centerOn`/`panTo`/`highlightConnection`
+  Zentrieren selbst gewechselt hat).
+- **Datenbestand Pommern (Import 17.09.2026):** beide Linien stammen aus
+  der Gotha-Abschrift `vPetersdorff-Pom5.xlsx` (GHdA-Grundausgabe + Nachtrag
+  einer neueren Ausgabe, 396 Zeilen), importiert per
+  `stammbaum-private/pommern-import/import_pommern.py` (`--plan` /
+  `--apply` / `--rollback`, IDs in `import_ids.json`; idempotent über feste
+  UUIDv5 aus der Blattnummer). Übernommen: Blutlinie + Ehepartner (335
+  Personen, davon 20 schon von Hand vorhanden und nur ergänzt), **nicht**
+  übernommen: Schwiegereltern (stehen als Text beim Partner), Adressen,
+  drei nicht angebundene Namensträger durch Adoption. Konventionen: Namen
+  „v." → „von"; Ehefrauen/verheiratete Töchter vor 1980 tragen den Namen
+  des (letzten) Mannes, eigener Name in `birth_name` (außer „führt den
+  Geburtsnamen"); Jahr-nur-Daten als `YYYY-01-01`; `is_deceased` bei
+  Sterbedatum oder Geburt vor 1925; Beruf aus dem Gotha-Text, Rest in
+  `notes` (mit `Quelle: Gotha-Abschrift (Familientag 2026), Nr. N`);
+  Geschlecht aus Eltern-/Partnerrolle, sonst Vornamen-Heuristik.
+  **Lücken** (Stammvater 1464/1470 → erste Belegte 1746/1693, Kurt 1695 →
+  1797, Johann Albrecht 1752 → 1863) überbrückt je ein Platzhalter
+  „… unbekannte Generationen" (blaugrau, verstorben) — wer Zwischenglieder
+  kennt, hängt sie dort ein und löscht den Platzhalter. Beim Import
+  korrigiert (Notiz „Korrigiert beim Import" im Profil): Axel Paul Julius →
+  Sohn von Bernd Julius Friedrich; Johann Albrecht → Bruder statt Sohn von
+  Christian Friedrich; Renate Charlotte → Tochter von Joachim & Adele; Fritz
+  Hugo Max * 1834 (Handeingabe hatte 1862). Nicht auflösbar, mit „⚠ Prüfen"
+  in der Notiz und „(?)" im Vornamen: Adolf (1808–1840) als Vater eines 1862
+  Geborenen; Jacob Ernst (* 1693) als Vater von 1771/1773 Geborenen. Drei
+  Abschrift-interne Dubletten (Nachtrag wiederholt Hauptteil) wurden
+  zusammengeführt. Tägliches Backup vor dem Import: `57236a4`. `centerOn`/`panTo`/`highlightConnection`
   wechseln bei Bedarf automatisch in die Familie der Person. Heiraten
   zwischen Zweigen erscheinen in beiden Fächern als „∞"-Partner.
   Waisen-Ablage = in keiner Familie erreichbar.

@@ -1245,10 +1245,13 @@ const Fan = (() => {
     apply();
   }
 
+  /** Radius, den fit()/Zoomgrenzen ansetzen: mindestens zwei Ringe, sonst
+      füllt eine Ein-Personen-Familie (nur Stammvater) den Bildschirm. */
+  function fitRadius() { return Math.max(chartRadius, CENTER_R + 2 * RING) + PAD; }
+
   function fit() {
     const cw = container.clientWidth || 1, ch = container.clientHeight || 1;
-    // Mindestens Platz für zwei Ringe, sonst füllt eine Ein-Personen-Familie den Bildschirm
-    const R = Math.max(chartRadius, CENTER_R + 2 * RING) + PAD;
+    const R = fitRadius();
     let w = 2 * R, h = 2 * R;
     if (cw >= ch) w = h * cw / ch; else h = w * ch / cw;
     vb = { x: -w / 2, y: -h / 2, w, h };
@@ -1262,7 +1265,10 @@ const Fan = (() => {
     // Weit genug rein, dass JEDES Segment sein kFit erreicht (alle Zeilen
     // sichtbar) — mindestens aber bis ein knapper halber Ring den Bildschirm füllt
     const minW = Math.min(RING * 0.4, (svg.clientWidth || 1) / (maxKFit() * 1.15));
-    const maxW = (chartRadius + PAD) * 6;
+    // Rauszoomen bis 6× die Einpass-Größe — mit demselben Mindestradius wie
+    // fit(), sonst lag bei einem Zweig aus nur dem Stammvater die Grenze
+    // ENGER als die Einpassung und „rauszoomen" sprang hinein.
+    const maxW = fitRadius() * 6;
     const nw = Math.min(maxW, Math.max(minW, vb.w / f));
     const rf = vb.w / nw;
     vb.x = sx - (sx - vb.x) / rf;

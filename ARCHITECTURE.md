@@ -205,7 +205,11 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   Vorname + Jahre bzw. „∞ Vorname (* Jahr)", nah (≥ 1.1) voller Name,
   Geburtsname, Daten. Schrift schrumpft bis Minimum, dann Ellipse. Farben
   wie im Fächer (Männer hellblau, Frauen rosa, Verstorbene blass; Partner
-  heller), Rahmen: registriert dunkel, Platzhalter ohne, Du rot.
+  heller), Rahmen: registriert dunkel, Platzhalter ohne, Du rot. Zoom:
+  `fitAll` höchstens 1.6 px/Einheit, rein bis 3, raus bis 3× die Tafel —
+  mindestens aber bis 0.35 px/Einheit, damit auch eine Tafel aus einer
+  Karte (neuer Zweig) die Stufen fern/mittel erreicht statt beim
+  Rauszoomen hineinzuspringen.
 - **Pfad-Highlight:** beteiligte Einheiten `.tree-hl` (roter Rahmen),
   Kanten dazwischen `.tree-edge.hl`, alle anderen `.tree-dim`; danach
   `fitToHighlight` mit Platz fürs Panel (rechts Desktop / unten Mobil).
@@ -317,7 +321,12 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   Stufenwechsel und auf der nahen Stufe bei >4 % Zoomänderung neu gebaut
   (nicht mehr, sobald alle Segmente über ihrem kFit sind). Maximal-Zoom
   `minW = min(RING*0.4, Breite / (max kFit · 1.15))` — jedes Segment ist
-  erreichbar. `Fan._spec(id)` liefert die Label-Geometrie zum Debuggen.
+  erreichbar. Minimal-Zoom `maxW = fitRadius() · 6` mit demselben
+  Mindestradius wie `fit()` (zwei Ringe) — bei einem Zweig aus nur dem
+  Stammvater lag die Grenze sonst enger als die Einpassung und „rauszoomen"
+  sprang hinein; so erreichen auch Ein-Personen-Zweige fern/mittel/nah
+  (Desktop bis 0.59 px/Einheit = mittel, Handy bis 0.22 = fern).
+  `Fan._spec(id)` liefert die Label-Geometrie zum Debuggen.
 - **Verwandtschaftspfad:** `Fan.highlightConnection` (wird von
   `connection.js` parallel zu `Tree.highlightConnection` gerufen) umrandet
   Beteiligte rot und dimmt alle anderen (`.fan-dim`) — keine Linie, kein

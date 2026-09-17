@@ -503,7 +503,11 @@ const Tree = (() => {
     const sx = vb.x + (client.x - rect.left) / rect.width * vb.w;
     const sy = vb.y + (client.y - rect.top) / rect.height * vb.h;
     const minW = (svg.clientWidth || 1) / 3;          // max. 3 px je Einheit
-    const maxW = Math.max(bbox.w, bbox.h) * 3 + PAD * 2;
+    // Rauszoomen bis 3× die Tafel — aber mindestens bis die Karten klein
+    // werden (0.35 px/Einheit, Stufe „fern"): bei einer Tafel aus nur dem
+    // Stammvater lag die Grenze sonst ENGER als fitAll() und „rauszoomen"
+    // sprang hinein.
+    const maxW = Math.max(Math.max(bbox.w, bbox.h) * 3 + PAD * 2, (svg.clientWidth || 1) / 0.35);
     const nw = Math.min(maxW, Math.max(minW, vb.w / fac));
     const rf = vb.w / nw;
     vb.x = sx - (sx - vb.x) / rf; vb.y = sy - (sy - vb.y) / rf;

@@ -58,17 +58,21 @@ const Fan = (() => {
   // Anzeigenamen der Familienzweige, erkannt an der Wurzel. Die Pommersche
   // Familie hat zwei Stammväter (beide „von Petersdorff"), darum je Linie
   // ein Test auf Stammsitz (Ort) oder Vorname des Stammvaters — sonst wären
-  // beide Zweige gleich beschriftet. Reihenfolge: speziell vor allgemein.
+  // beide Zweige gleich beschriftet. Die Reihenfolge hier ist zugleich die
+  // Reihenfolge im Zweig-Umschalter (Märkisch links, dann die Pommerschen
+  // Linien I und II); unbekannte Familien folgen nach Größe.
   const FAMILY_NAMES = [
+    { test: m => /campen/i.test(m.lastName || ''), name: 'Märkische Familie (von Petersdorff-Campen)', short: 'Märkische Familie' },
     { test: m => /jacobsdorf/i.test(m.location || '') || /^dahme\b/i.test(m.firstName || ''),
       name: 'Pommersche Familie, Linie Jacobsdorf (von Petersdorff)', short: 'Jacobsdorf (Pomm)' },
     { test: m => /gro(ß|ss)enhagen/i.test(m.location || '') || /^jannike\b/i.test(m.firstName || ''),
       name: 'Pommersche Familie, Linie Großenhagen (von Petersdorff)', short: 'Großenhagen (Pomm)' },
-    { test: m => /campen/i.test(m.lastName || ''), name: 'Märkische Familie (von Petersdorff-Campen)', short: 'Märkische Familie' },
   ];
   function familyLabel(root) {
-    const hit = FAMILY_NAMES.find(f => f.test(root));
-    return hit ? { name: hit.name, short: hit.short } : { name: `Familie ${root.lastName}`, short: `Familie ${root.lastName}` };
+    const idx = FAMILY_NAMES.findIndex(f => f.test(root));
+    const hit = FAMILY_NAMES[idx];
+    return hit ? { name: hit.name, short: hit.short, order: idx }
+               : { name: `Familie ${root.lastName}`, short: `Familie ${root.lastName}`, order: FAMILY_NAMES.length };
   }
   let hlAnchors = [];       // Ankerpunkte des aktiven Pfads (für fitToHighlight)
   let involved = null;      // Set der beteiligten Segment-IDs; alle anderen werden gedimmt
@@ -236,7 +240,7 @@ const Fan = (() => {
       const assigned = new Set([rootMember.id]);
       const root = makeNode(rootMember, 0, 0, assigned);
       return { rootId: rootMember.id, ...familyLabel(rootMember), root, assigned, size: assigned.size };
-    }).sort((a, b) => b.size - a.size);
+    }).sort((a, b) => (a.order - b.order) || (b.size - a.size));
     // Zwei Wurzeln mit demselben Familiennamen (noch nicht verbunden):
     // im Umschalter per Vorname der Wurzel unterscheiden.
     for (const f of fams) {

@@ -262,7 +262,10 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   Auto-Wechsel meldet über `onFamilyChange` zurück). Zentrieren/„Im
   Stammbaum zeigen"/Verwandtschaft wechseln bei Bedarf in den Zweig der
   Person. Waisen-Ablage = in keiner Familie erreichbar (einheitlich). Namen per `FAMILY_NAMES`,
-  erkannt an der **Wurzel** (Tests bekommen das Member-Objekt): „…-Campen"
+  erkannt an der **Wurzel** (Tests bekommen das Member-Objekt); die
+  Reihenfolge der Tabelle ist die Reihenfolge im Umschalter (Märkisch,
+  Jacobsdorf, Großenhagen — `familyLabel().order`, unbekannte Familien
+  danach nach Größe): „…-Campen"
   → Märkische Familie; die Pommersche Familie hat **zwei Stammväter**
   (beide „von Petersdorff"), darum je Linie ein Test auf Stammsitz im
   `location`-Feld oder Vorname des Stammvaters — „Jacobsdorf"/„Dahme…" →

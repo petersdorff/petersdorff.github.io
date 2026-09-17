@@ -83,6 +83,14 @@ const Connection = (() => {
     const crossBranch = !!(famA && famB && famA.rootId !== famB.rootId && !connection.commonAncestor && generic);
 
     relationEl.textContent = crossBranch ? 'Verschiedene Zweige' : (connection.term || 'Unbekannt');
+    // Klartext zum Grad (z.B. „Jobst ist ein Sohn von Friedrich, deinem Cousin 2. Grades.")
+    let explEl = document.getElementById('conn-explanation');
+    if (!explEl) {
+      explEl = Utils.createEl('div', { className: 'conn-explanation', id: 'conn-explanation' });
+      relationEl.closest('.conn-detail').appendChild(explEl);
+    }
+    explEl.textContent = crossBranch ? '' : (connection.explanation || '');
+    explEl.classList.toggle('hidden', !explEl.textContent);
     dnaEl.textContent = !crossBranch && connection.sharedDNA !== null && connection.sharedDNA !== undefined
       ? `~${connection.sharedDNA}%` : '—';
     ancestorEl.textContent = crossBranch ? '—' : (connection.commonAncestor || '—');

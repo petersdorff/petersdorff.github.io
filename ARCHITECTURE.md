@@ -681,6 +681,13 @@ Schwager/Schwägerin, Schwiegereltern/-kinder, Stiefeltern/-kinder, sonst
   gemeinsamen Vorfahren **und** ohne nahes Angeheiraten-Wort (Schwager über
   die Zweiggrenze bleibt Schwager; die generische Kette wird als „über
   Heiraten in N Schritten verbunden, nicht blutsverwandt" erklärt).
+- **Klartext unter dem Begriff** (`explainBlood` → `connection.explanation`,
+  `#conn-explanation`): „Cousin 3. Grades" und „Neffe 3. Grades" tragen
+  dieselbe Zahl, meinen aber Verschiedenes (Cousin-Grad = gemeinsame
+  Vorfahren minus 1; Onkel/Neffe-Grad = Grad des Cousins, über den es
+  läuft, plus 1). Darum ein Satz mit Namen: „Ihr habt dieselben
+  Ururgroßeltern." / „Jobst ist ein Sohn von Friedrich, deinem Cousin
+  2. Grades." / „Heyno ist ein Cousin deines Großvaters Werner."
 - Test: `node tools/test-terms.js` (und `… sib`), 41 Fälle.
 
 ## Entwicklung & Betrieb

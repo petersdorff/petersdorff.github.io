@@ -1933,6 +1933,14 @@ a {
 .conn-detail-main .conn-value {
   font-size: 15px;
 }
+.conn-detail-main { flex-wrap: wrap; }
+.conn-explanation {
+  flex-basis: 100%;
+  margin-top: 6px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
 
 .conn-steps-wrap {
   padding: 10px 12px;

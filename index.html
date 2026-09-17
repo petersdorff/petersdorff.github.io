@@ -615,6 +615,10 @@
 
       <div class="profile-section">
         <h3>Details</h3>
+        <div class="profile-field" id="profile-callname-row">
+          <span class="field-label">Rufname</span>
+          <span class="field-value" id="profile-callname">—</span>
+        </div>
         <div class="profile-field">
           <span class="field-label">Geburtsdatum</span>
           <span class="field-value" id="profile-birthdate">—</span>
@@ -740,6 +744,10 @@
         <div class="input-group">
           <label>Vorname *</label>
           <input type="text" id="edit-firstname">
+        </div>
+        <div class="input-group">
+          <label>Rufname</label>
+          <input type="text" id="edit-callname" placeholder="wie im Fächer angezeigt – leer = erster Vorname">
         </div>
         <div class="input-group">
           <label>Nachname *</label>
@@ -920,16 +928,16 @@
   <script defer src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
   <!-- App modules -->
-  <script src="js/utils.js?v=8"></script>
-  <script src="js/db.js?v=33"></script>
+  <script src="js/utils.js?v=9"></script>
+  <script src="js/db.js?v=34"></script>
   <script src="js/auth.js?v=30"></script>
   <script src="js/relationship.js?v=30"></script>
   <script src="js/tree.js?v=85"></script>
   <script src="js/markdown.js?v=1"></script>
-  <script src="js/article.js?v=3"></script>
+  <script src="js/article.js?v=4"></script>
   <script src="js/gotha.js?v=2"></script>
   <script src="js/babycry.js?v=6"></script>
-  <script src="js/fan.js?v=52"></script>
+  <script src="js/fan.js?v=53"></script>
   <script src="js/qr.js?v=23"></script>
   <script src="js/search.js?v=22"></script>
   <script src="js/admin.js?v=10"></script>
@@ -937,7 +945,7 @@
   <script src="js/guest.js?v=7"></script>
   <script src="js/connection.js?v=14"></script>
   <script src="js/relations.js?v=15"></script>
-  <script src="js/profile.js?v=35"></script>
+  <script src="js/profile.js?v=36"></script>
   <script src="js/app.js?v=69"></script>
 </body>
 </html>

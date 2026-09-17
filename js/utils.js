@@ -22,6 +22,12 @@ const Utils = (() => {
 
   // ─── Input Sanitization (for DB writes) ───
 
+  /** Rufname-Vorbelegung: erster der eingetragenen Vornamen
+      („Hans Karl Adolf" → „Hans", „Jutta-Dorothee" bleibt ganz). */
+  function defaultCallName(firstName) {
+    return String(firstName || '').trim().split(/\s+/)[0] || '';
+  }
+
   function sanitizeInput(str) {
     if (!str) return '';
     // Trim and remove control characters (except newlines/tabs in notes)
@@ -245,6 +251,7 @@ const Utils = (() => {
 
   return {
     escapeHtml,
+    defaultCallName,
     sanitizeInput,
     validateLength,
     isValidEmail,

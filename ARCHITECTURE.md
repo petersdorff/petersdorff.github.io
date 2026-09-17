@@ -135,6 +135,22 @@ durchgezogener Rahmen, sonst gestrichelt (Legende: ⓘ-Button).
 **Badge-Logik in `profile.js` prüft nur `isPlaceholder`** — nie
 `claimedByUid` (historisch: im früheren Snapshot immer `null`).
 
+**Rufname `call_name`** (Migration 011, 17.09.2026): der Name, mit dem
+die Person gerufen wird — `first_name` trägt seit dem Gotha-Import oft
+alle Vornamen („Hans Karl Adolf"). Vorbelegt mit dem ersten Vornamen
+(`split_part`, Bindestrich-Namen bleiben ganz), im Editor frei änderbar
+(`#edit-callname`; leer gelassen → `Utils.defaultCallName(firstName)`,
+dasselbe macht `DB.createMember` für alle Anlegewege). **Nur der Fächer**
+beschriftet mit dem Rufnamen (`callName(m)` in `fan.js`, auch Partner-
+Links und Zentrum); Stammtafel, Gotha, Suche, Profil-Kopf und Verwandt-
+schafts-Overlay zeigen weiter den vollen Vornamen. Profil-Panel und
+Artikelseite zeigen die Zeile „Rufname" nur, wenn er vom Vornamen
+abweicht. Suche trifft auch den Rufnamen. Die App verträgt eine fehlende
+Spalte: `DB.hasCallName()` (aus geladenen Zeilen erkannt) steuert die
+Server-Suche, `writeWithColumnFallback` lässt `call_name` beim Speichern
+weg, Anzeige fällt auf den Vornamen zurück — volle Funktion erst nach
+Migration 011 (die auch `guest_graph` um `call_name` ergänzt).
+
 `relationships`: gerichtete Kanten `from_id → to_id` mit `rel_type`:
 - `parent_child` (Eltern → Kind; **hartes Limit: max. 2 Eltern pro Kind**)
 - `spouse` (ungerichtet gespeichert, dedupe in beide Richtungen;

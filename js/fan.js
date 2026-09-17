@@ -68,6 +68,9 @@ const Fan = (() => {
     { test: m => /gro(ß|ss)enhagen/i.test(m.location || '') || /^jannike\b/i.test(m.firstName || ''),
       name: 'Pommersche Familie, Linie Großenhagen (von Petersdorff)', short: 'Großenhagen (Pomm)' },
   ];
+  /** Anzeigename im Fächer: Rufname, sonst (alte Daten, Gastmodus vor
+      Migration 011) der volle Vorname. */
+  const callName = m => m.callName || m.firstName;
   function familyLabel(root) {
     const idx = FAMILY_NAMES.findIndex(f => f.test(root));
     const hit = FAMILY_NAMES[idx];
@@ -569,17 +572,17 @@ const Fan = (() => {
     // Zentrum (Stammvater) folgt demselben Muster wie die Segmente:
     // Vorname groß, Nachname eigene Zeile — nur nie ganz ohne Nachname.
     // Übersicht (fern/mittel): nur Vorname — Nachnamen erst auf der nahen Stufe
-    const first = center ? m.firstName : me + m.firstName;
+    const first = center ? callName(m) : me + callName(m);
     if (tier === 'far') {
       // fern: überall nur der Vorname, auch im Zentrum
-      lines.push({ ...fitText(me + m.firstName, along, 18, 6.5), weight: 600 });
+      lines.push({ ...fitText(me + callName(m), along, 18, 6.5), weight: 600 });
     } else if (tier === 'mid') {
       lines.push({ ...fitText(first, along, 13, 6.5), weight: 600 });
-      if (spouses.length) lines.push(...spouseLines(spouses, along, 9.5, 6, sp => sp.firstName));
+      if (spouses.length) lines.push(...spouseLines(spouses, along, 9.5, 6, sp => callName(sp)));
     } else {
       // nah: voller Name — Nachname als eigene Zeile, damit er in die
       // Ringbreite passt; Geburtsname zuletzt (niedrigste Priorität)
-      lines.push({ ...fitText(center ? `${m.firstName} ${m.lastName}` : me + m.firstName, along, cap(11, 15), cap(6.5, 11)), weight: 600 });
+      lines.push({ ...fitText(center ? `${callName(m)} ${m.lastName}` : me + callName(m), along, cap(11, 15), cap(6.5, 11)), weight: 600 });
       // Nachname darf etwas dichter an den Rand und kleiner werden,
       // damit „von Petersdorff-Campen" auch radial in die Ringbreite passt
       if (m.lastName && !center) lines.push({ ...fitText(m.lastName, along + 6, cap(8.5, 12), cap(5.5, 10)), weight: 500 });
@@ -604,9 +607,9 @@ const Fan = (() => {
     const me = isMe ? '➤ ' : '';
     const items = [];
     if (center) {
-      items.push({ text: `${m.firstName} ${m.lastName}`, px: 15, along });
+      items.push({ text: `${callName(m)} ${m.lastName}`, px: 15, along });
     } else {
-      items.push({ text: me + m.firstName, px: 15, along });
+      items.push({ text: me + callName(m), px: 15, along });
       if (m.lastName) items.push({ text: m.lastName, px: 12, along: along + 6 });
     }
     for (const sp of spouses) items.push({ text: (sp.former ? '⚮ ' : '∞ ') + spouseName(sp), px: 12, along });
@@ -1215,7 +1218,7 @@ const Fan = (() => {
   /** Angeheiratete: Vorname + Geburtsname (falls vorhanden), sonst Nachname. */
   function spouseName(s) {
     const maiden = (s.birthName || '').replace(/^geb\.\s*/i, '').trim();
-    return `${s.firstName} ${maiden || s.lastName}`.trim();
+    return `${callName(s)} ${maiden || s.lastName}`.trim();
   }
 
   function yearLabel(m) {

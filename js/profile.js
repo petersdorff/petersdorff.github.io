@@ -31,6 +31,12 @@ const Profile = (() => {
     const badgesEl = document.getElementById('profile-badges');
 
     nameEl.textContent = `${member.firstName} ${member.lastName}`;
+    // Rufname nur zeigen, wenn er sich vom Vornamen unterscheidet
+    // (bei einem einzigen Vornamen wäre die Zeile reine Wiederholung)
+    const callRow = document.getElementById('profile-callname-row');
+    const showCall = member.callName && member.callName !== member.firstName;
+    callRow.style.display = showCall ? '' : 'none';
+    document.getElementById('profile-callname').textContent = showCall ? member.callName : '';
     birthnameEl.textContent = member.birthName || '';
     birthnameEl.style.display = member.birthName ? '' : 'none';
 
@@ -130,6 +136,7 @@ const Profile = (() => {
 
     // Fill form
     document.getElementById('edit-firstname').value = member?.firstName || '';
+    document.getElementById('edit-callname').value = member?.callName || Utils.defaultCallName(member?.firstName);
     document.getElementById('edit-lastname').value = member?.lastName || '';
     document.getElementById('edit-birthname').value = member?.birthName || '';
     document.getElementById('edit-birthdate').value = member?.birthDate || '';
@@ -160,7 +167,7 @@ const Profile = (() => {
     const coreEditable = !member?.claimedByUid || isClaimer || isAdmin;
 
     const coreFieldIds = [
-      'edit-firstname', 'edit-lastname', 'edit-birthname', 'edit-gender',
+      'edit-firstname', 'edit-callname', 'edit-lastname', 'edit-birthname', 'edit-gender',
       'edit-birthdate', 'edit-deathdate', 'edit-occupation', 'edit-location',
       'edit-email', 'edit-phone', 'edit-photo', 'edit-notes',
     ];
@@ -281,8 +288,17 @@ const Profile = (() => {
     const saveBtn = document.getElementById('btn-edit-save');
     Utils.setButtonLoading(saveBtn, true);
 
+    // Rufname leer gelassen → erster Vorname (wie die Vorbelegung in der DB)
+    const callName = Utils.sanitizeInput(document.getElementById('edit-callname').value) || Utils.defaultCallName(firstName);
+    if (!Utils.validateLength(callName, 100)) {
+      App.toast('Rufname darf maximal 100 Zeichen lang sein', 'error');
+      Utils.setButtonLoading(saveBtn, false);
+      return;
+    }
+
     const data = {
       firstName,
+      callName,
       lastName,
       birthName: Utils.sanitizeInput(document.getElementById('edit-birthname').value),
       birthDate,

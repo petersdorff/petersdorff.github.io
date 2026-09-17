@@ -18,6 +18,7 @@ const DB = (() => {
   // in Repo oder Website. "offlineMode" heißt hier: nur lesen, aus guestRows.
 
   let guestRows = null;   // { members: [rows], relationships: [rows], generated_at }
+  let callNameSupported = false;   // Spalte call_name vorhanden (Migration 011)? Aus geladenen Zeilen erkannt.
 
   function isOffline() {
     return offlineMode;
@@ -154,7 +155,7 @@ const DB = (() => {
       const all = guestRows.members.map(mapMember);
       if (!q) return all;
       return all.filter(m =>
-        `${m.firstName} ${m.lastName} ${m.birthName || ''}`.toLowerCase().includes(q));
+        `${m.firstName} ${m.callName || ''} ${m.lastName} ${m.birthName || ''}`.toLowerCase().includes(q));
     }
     if (!q) return getAllMembers();
 
@@ -164,7 +165,7 @@ const DB = (() => {
     const { data, error } = await supabase
       .from('members')
       .select('*')
-      .or(`first_name.ilike.%${escaped}%,last_name.ilike.%${escaped}%,birth_name.ilike.%${escaped}%`);
+      .or(`first_name.ilike.%${escaped}%,${callNameSupported ? `call_name.ilike.%${escaped}%,` : ''}last_name.ilike.%${escaped}%,birth_name.ilike.%${escaped}%`);
     if (error) throw error;
     return data.map(mapMember);
   }
@@ -208,6 +209,8 @@ const DB = (() => {
 
   async function createMember(memberData) {
     assertWritable();
+    // Rufname nie leer lassen: Vorbelegung wie Migration 011 (erster Vorname)
+    if (!memberData.callName) memberData = { ...memberData, callName: Utils.defaultCallName(memberData.firstName) };
     const row = unmapMember(memberData);
     const data = await writeWithColumnFallback(row, r =>
       supabase.from('members').insert(r).select().single());
@@ -532,10 +535,12 @@ const DB = (() => {
 
   function mapMember(row) {
     if (!row) return null;
+    if ('call_name' in row) callNameSupported = true;
     return {
       id: row.id,
       firstName: row.first_name,
       lastName: row.last_name,
+      callName: row.call_name || '',
       birthName: row.birth_name || '',
       birthDate: row.birth_date || '',
       deathDate: row.death_date || '',
@@ -561,6 +566,7 @@ const DB = (() => {
     const row = {};
     if (m.firstName !== undefined) row.first_name = m.firstName;
     if (m.lastName !== undefined) row.last_name = m.lastName;
+    if (m.callName !== undefined) row.call_name = m.callName || null;
     if (m.birthName !== undefined) row.birth_name = m.birthName;
     if (m.birthDate !== undefined) row.birth_date = m.birthDate || null;
     if (m.deathDate !== undefined) row.death_date = m.deathDate || null;
@@ -620,6 +626,7 @@ const DB = (() => {
     removeRelationship,
     getRelationshipsForMember,
     getFullGraph,
+    hasCallName: () => callNameSupported,
     seedDemoData,
     createApprovalRequest,
     getApprovalStatus,

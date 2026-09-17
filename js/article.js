@@ -66,6 +66,7 @@ const Article = (() => {
     const fmt = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('de-DE') : '';
     const gender = { m: 'Männlich', f: 'Weiblich', d: 'Divers' }[m.gender] || '';
     const rows = [
+      ['Rufname', m.callName && m.callName !== m.firstName ? m.callName : ''],
       ['Geboren', fmt(m.birthDate)],
       ['Gestorben', m.isDeceased ? fmt(m.deathDate) : ''],
       ['Geschlecht', gender],

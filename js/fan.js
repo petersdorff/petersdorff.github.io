@@ -239,7 +239,12 @@ const Fan = (() => {
     const fams = roots.map(rootMember => {
       const assigned = new Set([rootMember.id]);
       const root = makeNode(rootMember, 0, 0, assigned);
-      return { rootId: rootMember.id, ...familyLabel(rootMember), root, assigned, size: assigned.size };
+      // Blutsverwandte (Segmente) getrennt von Angeheirateten merken: wer in
+      // einen anderen Zweig eingeheiratet hat, gehört für Zweig-Fragen zu
+      // seinem Geburtszweig, nicht zu dem, in dem er als Partner steht.
+      const blood = new Set();
+      (function walk(n) { blood.add(n.m.id); n.children.forEach(walk); })(root);
+      return { rootId: rootMember.id, ...familyLabel(rootMember), root, assigned, blood, size: assigned.size };
     }).sort((a, b) => (a.order - b.order) || (b.size - a.size));
     // Zwei Wurzeln mit demselben Familiennamen (noch nicht verbunden):
     // im Umschalter per Vorname der Wurzel unterscheiden.

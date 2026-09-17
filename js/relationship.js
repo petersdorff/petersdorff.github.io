@@ -256,13 +256,14 @@ const Relationship = (() => {
       return { term: genderTerm(gender, 'Stiefsohn', 'Stieftochter', 'Stiefkind'), degree: 0, path };
     }
 
-    // ─── Direct sibling edge ───
-    if (edges.length === 1 && edges[0] === 'sibling') {
+    // ─── Blood relationship via common ancestor ───
+    // (auch bei direkter Geschwister-Kante: erst die Eltern entscheiden, ob
+    // „Halb-" — die Regel-Engine legt Geschwister-Kanten für alle Kinder
+    // eines Elternteils an, Halbgeschwister eingeschlossen)
+    const common = findCommonAncestor(fromId, toId, graph);
+    if (!common && edges.length === 1 && edges[0] === 'sibling') {
       return { term: genderTerm(gender, 'Bruder', 'Schwester', 'Geschwister'), degree: 1, path };
     }
-
-    // ─── Blood relationship via common ancestor ───
-    const common = findCommonAncestor(fromId, toId, graph);
     if (common) {
       const stepsA = common.stepsA;  // steps from person A to common ancestor
       const stepsB = common.stepsB;  // steps from person B to common ancestor
@@ -271,9 +272,55 @@ const Relationship = (() => {
       // the shortest BFS path happens to take a shortcut over a marriage.
       // "halbbürtig" (single shared ancestor) is noted for siblings.
       const result = getTermFromAncestorSteps(stepsA, stepsB, gender);
-      const halb = !common.isCouple && stepsA === 1 && stepsB === 1 ? 'Halb' : '';
+      // „Halb-" nur, wenn bei BEIDEN zwei Eltern bekannt sind und sie genau
+      // einen teilen — fehlt nur die Mutter im Datenbestand (Gotha nennt
+      // Kinder je Ehe, die Mutter ist oft nicht erfasst), sind es keine
+      // Halbgeschwister, sondern unvollständige Daten.
+      const bothParentsKnown = (graph.childOf.get(fromId) || []).length === 2 && (graph.childOf.get(toId) || []).length === 2;
+      const halb = !common.isCouple && stepsA === 1 && stepsB === 1 && bothParentsKnown ? 'Halb' : '';
       const term = halb ? halb + result.term.toLowerCase() : result.term;
       return { term, degree: result.degree, path };
+    }
+
+    // ─── In-law fallback: strip spouse edge at start/end ───
+    // If path starts or ends with a spouse edge, determine the blood
+    // relationship to the partner and append "(angeheiratet)"
+    if (hasSpouse && path.length >= 3) {
+      const lastEdge = edges[edges.length - 1];
+      const firstEdge = edges[0];
+
+      // Nahe Angeheiratete haben eigene Wörter (auch wenn keine Geschwister-
+      // Kante im Datenbestand liegt und der Pfad über die Eltern läuft):
+      //   Partner meines Geschwisters / Geschwister meines Partners → Schwager
+      //   Partner meines Kindes → Schwiegerkind, Eltern meines Partners → Schwiegereltern
+      //   Partner meines Elternteils → Stiefelternteil, Kind meines Partners → Stiefkind
+      const inLaw = (base, viaMySide) => {
+        const b = base.replace(/^Halb/, '');
+        const g = gender;
+        if (/^(Bruder|Schwester|Geschwister)$/i.test(b)) return genderTerm(g, 'Schwager', 'Schwägerin', 'Schwager/Schwägerin');
+        if (/^(Sohn|Tochter|Kind)$/.test(b)) return viaMySide ? genderTerm(g, 'Schwiegersohn', 'Schwiegertochter', 'Schwiegerkind') : genderTerm(g, 'Stiefsohn', 'Stieftochter', 'Stiefkind');
+        if (/^(Vater|Mutter|Elternteil)$/.test(b)) return viaMySide ? genderTerm(g, 'Stiefvater', 'Stiefmutter', 'Stiefelternteil') : genderTerm(g, 'Schwiegervater', 'Schwiegermutter', 'Schwiegerelternteil');
+        return base + ' (angeheiratet)';
+      };
+      if (lastEdge === 'spouse') {
+        // Target is the spouse of someone we're blood-related to.
+        // Compute the blood relation to the partner, but word it with the
+        // TARGET's gender (Onkels Frau ist die "Tante", nicht der "Onkel").
+        const partnerId = path[path.length - 2].id;
+        const bloodResult = getRelationshipTerm(fromId, partnerId, graph, membersMap, gender || 'x');
+        if (bloodResult.term && !bloodResult.term.startsWith('Verwandt')) {
+          const base = bloodResult.term.replace(' (angeheiratet)', '');
+          return { term: inLaw(base, true), degree: bloodResult.degree, path };
+        }
+      } else if (firstEdge === 'spouse') {
+        // We start by going to our spouse, then follow blood from there
+        const spouseId = path[1].id;
+        const bloodResult = getRelationshipTerm(spouseId, toId, graph, membersMap);
+        if (bloodResult.term && !bloodResult.term.startsWith('Verwandt')) {
+          const base = bloodResult.term.replace(' (angeheiratet)', '');
+          return { term: inLaw(base, false), degree: bloodResult.degree, path };
+        }
+      }
     }
 
     // ─── Path-based fallback (no common ancestor found) ───
@@ -290,34 +337,6 @@ const Relationship = (() => {
     if (ups === 0 && downs > 0) {
       const term = getDescendantTerm(downs, gender);
       return { term: hasSpouse ? term + ' (angeheiratet)' : term, degree: downs, path };
-    }
-
-    // ─── In-law fallback: strip spouse edge at start/end ───
-    // If path starts or ends with a spouse edge, determine the blood
-    // relationship to the partner and append "(angeheiratet)"
-    if (hasSpouse && path.length >= 3) {
-      const lastEdge = edges[edges.length - 1];
-      const firstEdge = edges[0];
-
-      if (lastEdge === 'spouse') {
-        // Target is the spouse of someone we're blood-related to.
-        // Compute the blood relation to the partner, but word it with the
-        // TARGET's gender (Onkels Frau ist die "Tante", nicht der "Onkel").
-        const partnerId = path[path.length - 2].id;
-        const bloodResult = getRelationshipTerm(fromId, partnerId, graph, membersMap, gender || 'x');
-        if (bloodResult.term && !bloodResult.term.startsWith('Verwandt')) {
-          const base = bloodResult.term.replace(' (angeheiratet)', '');
-          return { term: base + ' (angeheiratet)', degree: bloodResult.degree, path };
-        }
-      } else if (firstEdge === 'spouse') {
-        // We start by going to our spouse, then follow blood from there
-        const spouseId = path[1].id;
-        const bloodResult = getRelationshipTerm(spouseId, toId, graph, membersMap);
-        if (bloodResult.term && !bloodResult.term.startsWith('Verwandt')) {
-          const base = bloodResult.term.replace(' (angeheiratet)', '');
-          return { term: base + ' (angeheiratet)', degree: bloodResult.degree, path };
-        }
-      }
     }
 
     // Generic fallback
@@ -565,8 +584,16 @@ const Relationship = (() => {
       }
     }
 
+    // Läuft die Verbindung nur über einen Platzhalter „… unbekannte
+    // Generationen", ist der Grad geraten (die echten Zwischenglieder fehlen).
+    let term = relationship.term;
+    if (commonAncestor && commonAncestor.id) {
+      const anc = membersMap.get(commonAncestor.id);
+      if (anc && /^…/.test(anc.firstName || '')) term += ' (Grad unsicher – Lücke im Stammbaum)';
+    }
+
     return {
-      term: relationship.term,
+      term,
       degree: relationship.degree,
       sharedDNA: dna,
       path: path,

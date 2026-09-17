@@ -71,8 +71,16 @@ const Connection = (() => {
 
     // Verschiedene Familienzweige (z.B. Märkisch scannt Pommersch): keine
     // dokumentierte Verwandtschaft — freundlich sagen, nichts umschalten.
+    // Seit Heiraten zwischen den Zweigen (z.B. Märkisch ∞ Jacobsdorf) gilt:
+    // erst wenn es KEINEN gemeinsamen Vorfahren gibt, sind es „verschiedene
+    // Zweige" — sonst wären Geschwister, von denen eines in den anderen
+    // Zweig eingeheiratet hat, plötzlich „nicht verwandt".
+    // Nahe Angeheiratete über die Zweiggrenze (Schwager, Schwiegervater …)
+    // bekommen ihr Wort; nur die generische Kette „Verwandt über N
+    // Verbindungen" wird als „Verschiedene Zweige" erklärt.
     const famA = App.familyInfo(fromId), famB = App.familyInfo(toId);
-    const crossBranch = !!(famA && famB && famA.rootId !== famB.rootId);
+    const generic = !connection.path || /^Verwandt über/.test(connection.term || '');
+    const crossBranch = !!(famA && famB && famA.rootId !== famB.rootId && !connection.commonAncestor && generic);
 
     relationEl.textContent = crossBranch ? 'Verschiedene Zweige' : (connection.term || 'Unbekannt');
     dnaEl.textContent = !crossBranch && connection.sharedDNA !== null && connection.sharedDNA !== undefined
@@ -81,7 +89,7 @@ const Connection = (() => {
 
     // Step-by-step explanation of the path
     if (crossBranch) {
-      renderCrossBranch(memberA, memberB, famA, famB);
+      renderCrossBranch(memberA, memberB, famA, famB, connection.pathLength);
     } else {
       renderSteps(fromId, toId, cachedMembers, cachedRelationships);
     }
@@ -102,13 +110,16 @@ const Connection = (() => {
   }
 
   /** Hinweis statt Schrittliste, wenn beide aus verschiedenen Zweigen stammen. */
-  function renderCrossBranch(memberA, memberB, famA, famB) {
+  function renderCrossBranch(memberA, memberB, famA, famB, pathLength) {
     const stepsEl = document.getElementById('conn-steps');
     stepsEl.innerHTML = '';
+    const viaMarriage = pathLength
+      ? ` Über Heiraten zwischen den Zweigen seid ihr in ${pathLength} Schritten verbunden, aber nicht blutsverwandt.`
+      : ' Eine Verwandtschaft zwischen den Zweigen ist nicht dokumentiert.';
     stepsEl.appendChild(Utils.createEl('div', {
       className: 'conn-step-hint',
       textContent: `Ihr stammt aus verschiedenen Familienzweigen — ${memberA.firstName} (${famA.short}) `
-        + `und ${memberB.firstName} (${famB.short}). Eine Verwandtschaft zwischen den Zweigen ist nicht dokumentiert.`,
+        + `und ${memberB.firstName} (${famB.short}).` + viaMarriage,
     }));
     const btn = Utils.createEl('button', {
       className: 'btn btn-small btn-secondary conn-branch-btn',

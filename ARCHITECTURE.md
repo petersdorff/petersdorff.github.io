@@ -640,6 +640,33 @@ Widersprüche beim manuellen Anlegen räumt `cleanConflictingRelations` ab.
   +-Chips/FAB im Anfangszustand (nur „?"), wie beim ersten Test gesehen.
 - Familientag-Checkliste und QR-Namensschilder: siehe `RESTORE.md` §6.
 
+## Verwandtschaftsbezeichnungen (`js/relationship.js`)
+
+Grundlage ist der nächste gemeinsame Vorfahr (`findCommonAncestor`, minimale
+Summe der Schritte) mit `stepsA`/`stepsB`; Wörter nach Wikipedia
+„Verwandtschaftsbeziehung": gleiche Generation → Geschwister (min 1) bzw.
+**Cousin (min−1). Grades**; eine Generation Versatz → Onkel/Tante bzw.
+Neffe/Nichte, **Grad = min** (Onkel 2. Grades = Cousin eines Elternteils);
+je weiterer Generation Groß-/Ur-. Direkte Linie: Vater … Ururgroßvater,
+Sohn … Ururenkel. Angeheiratete: Blutsverwandtschaft zum Partner, dann
+Schwager/Schwägerin, Schwiegereltern/-kinder, Stiefeltern/-kinder, sonst
+„… (angeheiratet)". Regeln, die sich beim Pommern-Import bewährt haben:
+- **„Halb-"** nur, wenn bei beiden zwei Eltern bekannt sind und genau einer
+  geteilt wird — fehlt nur die Mutter im Datenbestand, sind es Geschwister.
+  Gilt auch bei direkter Geschwister-Kante (die Regel-Engine legt sie für
+  alle Kinder eines Elternteils an, Halbgeschwister eingeschlossen).
+- Angeheiratete werden **vor** dem pfadbasierten Fallback ausgewertet:
+  Pfade über Geschwister-Kanten sind kürzer und machten aus „Tante
+  (angeheiratet)" eine „Mutter (angeheiratet)".
+- Läuft die Verbindung nur über einen Platzhalter „… unbekannte
+  Generationen", steht „(Grad unsicher – Lücke im Stammbaum)" dahinter.
+- `App.familyInfo` nennt den **Geburtszweig** (Blut-Set der Familie), nicht
+  den Heiratszweig; „Verschiedene Zweige" zeigt `connection.js` nur ohne
+  gemeinsamen Vorfahren **und** ohne nahes Angeheiraten-Wort (Schwager über
+  die Zweiggrenze bleibt Schwager; die generische Kette wird als „über
+  Heiraten in N Schritten verbunden, nicht blutsverwandt" erklärt).
+- Test: `node tools/test-terms.js` (und `… sib`), 41 Fälle.
+
 ## Entwicklung & Betrieb
 
 - Lokal: statischer Server reicht (`python3 -m http.server -d .`);

@@ -942,7 +942,11 @@ const App = (() => {
     applyView,
     setActiveFamily,
     ensureFamilyFor,
-    familyInfo: (id) => { const f = families.find(x => x.assigned.has(id)); return f ? { rootId: f.rootId, short: f.short, name: f.name } : null; },
+    familyInfo: (id) => {
+      // Geburtszweig vor Heiratszweig (Angeheiratete stehen in beiden Fächern)
+      const f = families.find(x => x.blood && x.blood.has(id)) || families.find(x => x.assigned.has(id));
+      return f ? { rootId: f.rootId, short: f.short, name: f.name } : null;
+    },
     getFamilies: () => families.map(f => ({ rootId: f.rootId, short: f.short, name: f.name })),
     getActiveFamilyId: () => activeFamilyId,
     addRelative,

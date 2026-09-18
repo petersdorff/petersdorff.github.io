@@ -292,9 +292,10 @@ const Tree = (() => {
       n.spouses.forEach((sp, i) => {
         const y = CARD_H + SP_GAP + i * (SP_H + SP_GAP);
         const sg = el('g', { class: 'tree-spouse', 'data-id': sp.id, transform: `translate(0,${f(y)})` });
+        const spIsMe = sp.id === currentUserId;   // Angeheirateter mit eigenem Konto
         sg.appendChild(el('rect', {
           width: CARD_W, height: SP_H, rx: 4, fill: spouseColor(sp),
-          stroke: sp.isPlaceholder ? 'none' : '#1a1a1a', 'stroke-width': 1, 'stroke-dasharray': sp.former ? '3 2' : null,
+          stroke: spIsMe ? '#e63946' : sp.isPlaceholder ? 'none' : '#1a1a1a', 'stroke-width': spIsMe ? 2.6 : 1, 'stroke-dasharray': sp.former ? '3 2' : null,
         }));
         spouseText(sg, sp, tier);
         g.appendChild(sg);

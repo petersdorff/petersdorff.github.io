@@ -90,6 +90,7 @@ const Search = (() => {
       item.addEventListener('click', () => {
         hideResults();
         document.getElementById('search-input').value = '';
+        App.focusInFan(m.id);   // erst im Fächer hinspringen (ggf. Zweigwechsel), dann Profil
         Profile.show(m.id);
       });
       resultsEl.appendChild(item);

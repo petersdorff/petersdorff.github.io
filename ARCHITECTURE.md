@@ -688,7 +688,20 @@ Schwager/Schwägerin, Schwiegereltern/-kinder, Stiefeltern/-kinder, sonst
   läuft, plus 1). Darum ein Satz mit Namen: „Ihr habt dieselben
   Ururgroßeltern." / „Jobst ist ein Sohn von Friedrich, deinem Cousin
   2. Grades." / „Heyno ist ein Cousin deines Großvaters Werner."
+- **Linien-Rang** (`graph.lineRank` = Zahl dokumentierter Vorfahren):
+  `childOf` ist danach sortiert, `findCommonAncestor` bricht Gleichstand
+  danach — bei einem Elternpaar wird der Vertreter der Linie (Segment im
+  Fächer) genannt und der Pfad läuft über ihn, nicht über den
+  Angeheirateten (Launch-Bug: „Marie-Liane" statt „Werner").
 - Test: `node tools/test-terms.js` (und `… sib`), 41 Fälle.
+
+**Angeheiratete mit eigenem Konto** haben kein Segment: Fächer zeichnet den
+roten Rand am Segment des Partners und „➤" vor dem eigenen Namen in der
+Partnerzeile (`meIsSpouse`, `meId`), Stammtafel färbt die Partnerkarte rot,
+Gotha markiert die Zeile des Partners (`is-me`, „➤"); `Gotha.scrollTo`
+springt für Partner zur Zeile des Partners. **Suchtreffer** rufen
+`App.focusInFan(id)` (Zweig wechseln, ggf. aus Gotha/Stammtafel in den
+Fächer, zentrieren) und öffnen dann das Profil.
 
 ## Entwicklung & Betrieb
 

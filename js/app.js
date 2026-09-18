@@ -901,11 +901,24 @@ const App = (() => {
     });
   }
 
+  /**
+   * Person im Fächer zeigen: Zweig wechseln, wenn nötig, ggf. aus Gotha/
+   * Stammtafel in den Fächer (Geschlecht) wechseln, dann zentrieren.
+   * Für Suchtreffer — das Profil öffnet der Aufrufer danach als Seitenleiste.
+   */
+  function focusInFan(memberId) {
+    showView('view-main');
+    if (!Fan.isActive()) applyView('fan');
+    ensureFamilyFor(memberId);
+    Fan.centerOn(memberId);
+  }
+
   function centerOnMe() {
     const member = Auth.getMember();
     if (member) ensureFamilyFor(member.id);
     if (Gotha.isActive()) {
-      if (!member || !Gotha.scrollTo(member.id)) toast('Wähle zuerst, wer du bist', 'info');
+      if (!member) toast('Wähle zuerst, wer du bist', 'info');
+      else if (!Gotha.scrollTo(member.id)) toast('Du bist in dieser Liste nicht enthalten', 'info');
       return;
     }
     if (Fan.isActive()) {
@@ -942,6 +955,7 @@ const App = (() => {
     applyView,
     setActiveFamily,
     ensureFamilyFor,
+    focusInFan,
     familyInfo: (id) => {
       // Geburtszweig vor Heiratszweig (Angeheiratete stehen in beiden Fächern)
       const f = families.find(x => x.blood && x.blood.has(id)) || families.find(x => x.assigned.has(id));

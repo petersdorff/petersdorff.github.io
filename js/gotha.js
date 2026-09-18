@@ -106,7 +106,7 @@ const Gotha = (() => {
   /** Eine Zeile: [Toggle] [Gen] Name Nachname, * 1953 † 2001; ∞ Partner (* 1954) */
   function renderRow(m, depth, spouses, me, hasKids, isCollapsed) {
     const row = el('div', 'gotha-row');
-    if (m.id === me) row.classList.add('is-me');
+    if (m.id === me || (spouses || []).some(sp => sp.id === me)) row.classList.add('is-me');   // auch als Partner
     if (!m.isPlaceholder) row.classList.add('is-registered');
     if (m.isDeceased) row.classList.add('is-deceased');
 
@@ -140,7 +140,7 @@ const Gotha = (() => {
       s.appendChild(document.createTextNode(`; ${sp.former ? '⚮' : '∞'} `));
       const a = el('a', 'gotha-name gotha-spouse-name');
       a.href = '#'; a.dataset.open = sp.id;
-      a.textContent = `${sp.firstName} ${sp.birthName ? sp.birthName.replace(/^geb\.\s*/i, '') : sp.lastName}`;
+      a.textContent = (sp.id === me ? '➤ ' : '') + `${sp.firstName} ${sp.birthName ? sp.birthName.replace(/^geb\.\s*/i, '') : sp.lastName}`;
       s.appendChild(a);
       const sd = yearLabel(sp);
       if (sd) s.appendChild(document.createTextNode(` (${sd})`));
@@ -174,7 +174,9 @@ const Gotha = (() => {
 
   /** Zeile einer Person sichtbar machen (Eltern ausklappen), kurz hervorheben. */
   function scrollTo(memberId) {
-    const li = container.querySelector(`.gotha-item[data-id="${memberId}"]`);
+    // Angeheiratete haben keine eigene Zeile → zur Zeile des Partners
+    const li = container.querySelector(`.gotha-item[data-id="${memberId}"]`)
+      || container.querySelector(`.gotha-spouse-name[data-open="${memberId}"]`)?.closest('.gotha-item');
     if (!li) return false;
     // alle eingeklappten Vorfahren öffnen
     let p = li.parentElement;

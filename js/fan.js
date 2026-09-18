@@ -357,13 +357,18 @@ const Fan = (() => {
 
     // Segmente (innere Ringe zuerst, aktueller Nutzer zuletzt = oben)
     items.sort((p, q) => p.node.depth - q.node.depth);
+    // Angeheiratete haben kein eigenes Segment: wer sich als Partner
+    // verknüpft hat, bekommt den roten Rand am Segment des Partners und
+    // das ➤ vor dem eigenen Namen in der Partnerzeile.
+    meId = currentUserId;
     const deferred = [];
     for (const it of items) {
       const isMe = it.node.m.id === currentUserId;
-      const g = drawSegment(it, familyName, isMe);
-      if (isMe) deferred.push(g); else segLayer.appendChild(g);
+      const meIsSpouse = !isMe && !!currentUserId && it.node.spouses.some(sp => sp.id === currentUserId);
+      const g = drawSegment(it, familyName, isMe, meIsSpouse);
+      if (isMe || meIsSpouse) deferred.push(g); else segLayer.appendChild(g);
     }
-    drawCenter(root, familyName, root.m.id === currentUserId);
+    drawCenter(root, familyName, root.m.id === currentUserId, !!currentUserId && root.spouses.some(sp => sp.id === currentUserId));
     deferred.forEach(g => segLayer.appendChild(g));
 
     applyRotation();
@@ -373,7 +378,7 @@ const Fan = (() => {
     applyTimeline();
   }
 
-  function drawSegment({ node, a0, a1 }, familyName, isMe) {
+  function drawSegment({ node, a0, a1 }, familyName, isMe, meIsSpouse = false) {
     const r0 = CENTER_R + RING_GAP + (node.depth - 1) * RING;
     const r1 = r0 + RING - RING_GAP;
     const thick = r1 - r0;
@@ -382,8 +387,8 @@ const Fan = (() => {
 
     const g = el('g', { class: 'fan-seg', 'data-id': m.id });
     const fill = segColor(m, node.depth);
-    const stroke = isMe ? '#e63946' : (m.isPlaceholder ? 'none' : '#1a1a1a');
-    const sw = isMe ? 3 : (m.isPlaceholder ? 0 : 1.6);
+    const stroke = (isMe || meIsSpouse) ? '#e63946' : (m.isPlaceholder ? 'none' : '#1a1a1a');
+    const sw = (isMe || meIsSpouse) ? 3 : (m.isPlaceholder ? 0 : 1.6);
     const d = arcPath(r0, r1, a0, a0 + span, SEG_GAP);
     g.appendChild(el('path', { d, fill, stroke, 'stroke-width': sw, 'stroke-linejoin': 'round' }));
 
@@ -405,13 +410,13 @@ const Fan = (() => {
     return g;
   }
 
-  function drawCenter(root, familyName, isMe) {
+  function drawCenter(root, familyName, isMe, meIsSpouse = false) {
     const m = root.m;
     const g = el('g', { class: 'fan-seg fan-center', 'data-id': m.id });
     g.appendChild(el('circle', {
       r: CENTER_R, fill: segColor(m, 0),
-      stroke: isMe ? '#e63946' : (m.isPlaceholder ? 'none' : '#1a1a1a'),
-      'stroke-width': isMe ? 3 : (m.isPlaceholder ? 0 : 1.6),
+      stroke: (isMe || meIsSpouse) ? '#e63946' : (m.isPlaceholder ? 'none' : '#1a1a1a'),
+      'stroke-width': (isMe || meIsSpouse) ? 3 : (m.isPlaceholder ? 0 : 1.6),
     }));
     labelSpecs.push({
       m, spouses: root.spouses, familyName, isMe, center: true,
@@ -639,9 +644,10 @@ const Fan = (() => {
   /** Eine Zeile je Partner/in: „∞ Name" bzw. „⚮ Name" (ehemalig), der
       Name ist klickbar (eigenes Profil). Gekürzt wird nur innerhalb des
       eigenen Namens — so bleibt jede Partnerin einzeln erreichbar. */
+  let meId = null;   // aktueller Nutzer (für ➤ in der Partnerzeile)
   function spouseLines(spouses, along, fs, minFs, nameFn) {
     return spouses.map(sp => {
-      const glyph = sp.former ? '⚮ ' : '∞ ';
+      const glyph = (sp.former ? '⚮ ' : '∞ ') + (sp.id === meId ? '➤ ' : '');
       const fit = fitText(glyph + nameFn(sp), along, fs, minFs);
       const name = fit.text.slice(glyph.length);
       return { fs: fit.fs, weight: 400, dim: true, parts: [{ text: glyph }, { text: name, id: sp.id }] };

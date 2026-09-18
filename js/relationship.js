@@ -38,7 +38,21 @@ const Relationship = (() => {
       }
     }
 
-    return { parentOf, childOf, spouseOf, siblingOf, formerCouples };
+    // Linien-Rang: Zahl der dokumentierten Vorfahren. Damit bevorzugen
+    // Pfadsuche und Vorfahren-Wahl bei einem Elternpaar den Vertreter der
+    // Linie (steht im Fächer als Segment) vor dem Angeheirateten (ohne
+    // eigene Vorfahren) — sonst hieß der gemeinsame Vorfahr je nach
+    // Reihenfolge der Kanten mal Werner, mal Marie-Liane.
+    const lineRank = new Map();
+    for (const m of members) {
+      let n = 0; const seen = new Set([m.id]); const q = [m.id];
+      while (q.length) { for (const p of childOf.get(q.shift()) || []) { if (!seen.has(p)) { seen.add(p); q.push(p); n++; } } }
+      lineRank.set(m.id, n);
+    }
+    const byLine = ids => ids.slice().sort((a, b) => (lineRank.get(b) || 0) - (lineRank.get(a) || 0));
+    for (const [id, ps] of childOf) if (ps.length > 1) childOf.set(id, byLine(ps));
+
+    return { parentOf, childOf, spouseOf, siblingOf, formerCouples, lineRank };
   }
 
   /**
@@ -152,11 +166,14 @@ const Relationship = (() => {
     let bestAncestor = null;
     let bestTotal = Infinity;
 
+    const rank = id => (graph.lineRank && graph.lineRank.get(id)) || 0;
     for (const [ancestorId, distA] of ancestorsA) {
       if (ancestorsB.has(ancestorId)) {
         const distB = ancestorsB.get(ancestorId);
-        if (distA + distB < bestTotal) {
-          bestTotal = distA + distB;
+        const total = distA + distB;
+        // Gleichstand (Elternpaar): der Vertreter der Linie, nicht der Angeheiratete
+        if (total < bestTotal || (total === bestTotal && bestAncestor && rank(ancestorId) > rank(bestAncestor.id))) {
+          bestTotal = total;
           bestAncestor = { id: ancestorId, stepsA: distA, stepsB: distB };
         }
       }
@@ -674,7 +691,7 @@ const Relationship = (() => {
         const curId = path[i].id;
         const parentsA = graph.childOf.get(prevId) || [];
         const parentsB = graph.childOf.get(curId) || [];
-        const sharedParent = parentsA.find(p => parentsB.includes(p));
+        const sharedParent = parentsA.find(p => parentsB.includes(p));   // childOf ist nach Linien-Rang sortiert
         if (sharedParent) {
           expanded.push({ id: sharedParent, edgeType: 'parent' });
           expanded.push({ id: curId, edgeType: 'child' });

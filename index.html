@@ -12,7 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=52">
+  <link rel="stylesheet" href="css/style.css?v=53">
 </head>
 <body>
 
@@ -204,6 +204,9 @@
   <!-- ═══════════════════════════════════════ -->
   <div id="view-admin-approve" class="view">
     <div class="admin-container">
+      <div class="admin-head">
+        <button id="btn-admin-back" class="btn btn-small btn-secondary">← Zurück zum Stammbaum</button>
+      </div>
       <h2>Nutzerverwaltung</h2>
       <p class="admin-subtitle" id="admin-summary">Konten, Freigaben und Profil-Verknüpfungen</p>
 
@@ -229,6 +232,11 @@
         <p class="admin-hint">Lade…</p>
       </div>
 
+      <div class="admin-search mt-24">
+        <input type="search" id="admin-search" placeholder="Konten suchen: Name, Profil, E-Mail …" autocomplete="off" aria-label="Konten durchsuchen">
+        <span id="admin-search-count" class="admin-hint"></span>
+      </div>
+
       <h3 class="admin-section-title mt-24">Offene Anträge <span id="admin-pending-count" class="admin-count"></span></h3>
       <div id="admin-pending-list"></div>
 
@@ -242,7 +250,6 @@
         Konten endgültig löschen geht nur im Supabase-Dashboard (Authentication → Users).
         „Sperren" entzieht sofort jeden Zugriff, das Konto bleibt bestehen.
       </p>
-      <button id="btn-admin-back" class="btn btn-secondary" style="margin-top:16px;">Zurück zum Stammbaum</button>
     </div>
   </div>
 
@@ -940,7 +947,7 @@
   <script src="js/fan.js?v=54"></script>
   <script src="js/qr.js?v=23"></script>
   <script src="js/search.js?v=23"></script>
-  <script src="js/admin.js?v=10"></script>
+  <script src="js/admin.js?v=11"></script>
   <script src="js/claim.js?v=8"></script>
   <script src="js/guest.js?v=7"></script>
   <script src="js/connection.js?v=15"></script>

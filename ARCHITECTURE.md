@@ -563,6 +563,15 @@ Zweig ohne Pfad (Waise): weiterhin „Keine Verbindung gefunden".
   Familientag-Code gegen Durchprobieren (`invite_code_valid` ist anonym
   aufrufbar, ohne Rate-Limit); Vita (`notes`) im Gastmodus.
 
+## Nutzerverwaltung (Admin)
+
+`Admin.showAdminPanel()` — Kopf mit „← Zurück zum Stammbaum" (`#btn-admin-back`,
+oben), Familientag-Code, Nutzung, dann die drei Listen (offen /
+freigegeben / gesperrt). **Konten-Suche** `#admin-search` filtert rein
+clientseitig: jede Karte trägt `data-search` (Kontoname, E-Mail, Profilname
+inkl. Geburtsname, Status), jedes Suchwort muss vorkommen (Groß/Klein egal),
+Treffer-Zähler `#admin-search-count`, leere Liste zeigt „Keine Treffer".
+
 ## Nutzungsstatistik (Migration 009)
 
 Tabelle `usage_events` (`created_at`, `user_uid` NULL = Gast, `kind`,

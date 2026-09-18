@@ -145,6 +145,7 @@ const Admin = (() => {
 
   async function showAdminPanel() {
     App.showView('view-admin-approve');
+    bindSearch();
     loadInviteCode();
     loadUsage();
     const lists = {
@@ -174,6 +175,7 @@ const Admin = (() => {
         }
         for (const r of groups[key]) el.appendChild(userCard(r, claimedBy.get(r.user_uid)));
       }
+      applySearch();
       const hasOwnRow = rows.some(r => r.user_uid === Auth.getUser()?.id);
       const extra = hasOwnRow ? 0 : 1;
       const summary = document.getElementById('admin-summary');
@@ -185,6 +187,43 @@ const Admin = (() => {
         el.appendChild(Utils.createEl('p', { style: { color: 'var(--red)', fontSize: '13px' }, textContent: 'Fehler beim Laden.' }));
       }
     }
+  }
+
+  /**
+   * Konten-Suche: jedes Wort muss in Kontoname, Profilname (inkl.
+   * Geburtsname) oder E-Mail vorkommen (Groß/Klein egal). Rein
+   * clientseitig über data-search an den Karten; leere Listen zeigen
+   * „keine Treffer" statt zu verschwinden.
+   */
+  function applySearch() {
+    const input = document.getElementById('admin-search');
+    const words = (input ? input.value : '').toLowerCase().split(/\s+/).filter(Boolean);
+    let shown = 0, total = 0;
+    for (const key of ['pending', 'approved', 'blocked']) {
+      const list = document.getElementById(`admin-${key}-list`);
+      if (!list) continue;
+      let visible = 0;
+      for (const card of list.querySelectorAll('.admin-user-card')) {
+        total++;
+        const hay = card.dataset.search || '';
+        const hit = words.every(w => hay.includes(w));
+        card.classList.toggle('is-filtered', !hit);
+        if (hit) visible++;
+      }
+      shown += visible;
+      let empty = list.querySelector('.admin-no-hit');
+      if (words.length && !visible && list.querySelector('.admin-user-card')) {
+        if (!empty) list.appendChild(Utils.createEl('p', { className: 'admin-no-hit admin-hint', textContent: 'Keine Treffer.' }));
+      } else if (empty) empty.remove();
+    }
+    const count = document.getElementById('admin-search-count');
+    if (count) count.textContent = words.length ? `${shown} von ${total}` : '';
+  }
+  let searchBound = false;
+  function bindSearch() {
+    if (searchBound) return;
+    const input = document.getElementById('admin-search');
+    if (input) { input.addEventListener('input', applySearch); searchBound = true; }
   }
 
   function adminCard() {
@@ -202,7 +241,9 @@ const Admin = (() => {
       meta,
     ];
     if (!myMember && me) children.push(Utils.createEl('div', { className: 'admin-actions' }, [linkWidget(me.id, 'Admin')]));
-    return Utils.createEl('div', { className: 'admin-user-card is-admin' }, children);
+    const card = Utils.createEl('div', { className: 'admin-user-card is-admin' }, children);
+    card.dataset.search = [me?.email || ADMIN_EMAIL, myMember && `${myMember.firstName} ${myMember.lastName}`, 'admin'].filter(Boolean).join(' ').toLowerCase();
+    return card;
   }
 
   /**
@@ -354,12 +395,15 @@ const Admin = (() => {
 
     const badges = [Utils.createEl('span', { className: `status-badge ${req.status}`, textContent: STATUS_LABEL[req.status] || req.status })];
     if (req.role === 'admin' || bootstrap) badges.push(Utils.createEl('span', { className: 'status-badge admin', textContent: bootstrap ? 'Admin · fest' : 'Admin' }));
-    return Utils.createEl('div', { className: 'admin-user-card' + (req.role === 'admin' || bootstrap ? ' is-admin' : '') }, [
+    const card = Utils.createEl('div', { className: 'admin-user-card' + (req.role === 'admin' || bootstrap ? ' is-admin' : '') }, [
       Utils.createEl('div', { className: 'user-name' }, [document.createTextNode(displayName), ...badges]),
       Utils.createEl('div', { className: 'user-email', textContent: req.email }),
       meta,
       actions,
     ]);
+    card.dataset.search = [displayName, req.email, member && `${member.firstName} ${member.lastName} ${member.birthName || ''}`, STATUS_LABEL[req.status]]
+      .filter(Boolean).join(' ').toLowerCase();
+    return card;
   }
 
   function sendAdminNotification(userEmail, displayName) {

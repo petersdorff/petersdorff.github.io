@@ -486,6 +486,24 @@ a {
   margin-bottom: 24px;
 }
 
+.admin-head { margin-bottom: 14px; }
+
+/* Konten-Suche: filtert die drei Listen clientseitig (Name, Profil, E-Mail) */
+.admin-search { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.admin-search input {
+  flex: 1 1 220px;
+  font-family: var(--font);
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 2px solid var(--trace-faint);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+.admin-search input:focus { border-color: var(--trace); }
+.admin-user-card.is-filtered { display: none; }
+
 .admin-user-card {
   border: 2px solid var(--trace-faint);
   border-radius: var(--radius);

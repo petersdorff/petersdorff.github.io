@@ -19,6 +19,7 @@ const STATIC_ASSETS = [
   '/assets/img/wappen-petersdorff-campen.png',
   '/js/fan.js',
   '/js/gotha.js',
+  '/js/map.js',
   '/js/markdown.js',
   '/js/article.js',
   '/js/qr.js',

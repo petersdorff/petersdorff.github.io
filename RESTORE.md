@@ -27,7 +27,7 @@ das Projekt aktiv ist (Keep-alive-Workflow läuft, `RESTORE.md` §1).
    dann `supabase-migration-approvals.sql`,
    dann `migrations/002_add_occupation_and_storage.sql`,
    dann `migrations/003_enforce_approvals_rls.sql`,
-   dann der Reihe nach `migrations/004_…` bis `migrations/011_call_name.sql`.
+   dann der Reihe nach `migrations/004_…` bis `migrations/012_places.sql`.
 3. Storage: Bucket `photos` anlegen (public).
 4. Authentication → Provider → E-Mail aktivieren.
 5. Daten importieren:

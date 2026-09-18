@@ -160,6 +160,7 @@
           <li>Stammdaten aus dem Gothaischen Genealogischen Taschenbuch (veröffentlichte Quelle) sowie Ergänzungen durch Familienmitglieder.</li>
           <li>Bei einem Konto: E-Mail-Adresse und Anzeigename, gespeichert beim Anbieter Supabase (Rechenzentrum Frankfurt, EU).</li>
           <li>Nutzungszähler (z.&nbsp;B. Aufrufe pro Tag) ohne Inhalte — kein Tracking durch Dritte, keine Werbung, keine Weitergabe.</li>
+          <li>Kartenansicht: Kartenkacheln kommen von OpenStreetMap, die Ortssuche im Editor von Photon (komoot). Diese Dienste sehen dabei die IP-Adresse und den Kartenausschnitt bzw. den getippten Ortsnamen — keine Personendaten. Wohnorte werden nur auf Stadt-Ebene gespeichert, keine Anschriften.</li>
         </ul>
 
         <h3>Deine Rechte</h3>
@@ -335,6 +336,7 @@
       <div id="tree-container"></div>
       <div id="fan-container" class="hidden"></div>
       <div id="gotha-container" class="hidden"></div>
+      <div id="map-container" class="hidden"></div>
     </div>
 
     <!-- Familienzweige (nur sichtbar, wenn es mehrere gibt) -->
@@ -375,6 +377,12 @@
           <line x1="6" y1="10" x2="18" y2="10"/>
           <line x1="6" y1="10" x2="6" y2="14"/><circle cx="6" cy="16" r="2"/>
           <line x1="18" y1="10" x2="18" y2="14"/><circle cx="18" cy="16" r="2"/>
+        </svg>
+      </button>
+      <button class="view-btn" data-view="map" role="tab" title="Karte: Wohnorte aller Zweige" aria-label="Karte">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 21s-6-5.2-6-10.5a6 6 0 0 1 12 0C18 15.8 12 21 12 21z"/>
+          <circle cx="12" cy="10.5" r="2.2"/>
         </svg>
       </button>
     </div>
@@ -463,6 +471,25 @@
         <div class="legend-item">
           <span class="legend-swatch legend-swatch-tree-stack"></span>
           <span>Kinderlose Geschwister stehen gestapelt an einer Sammel-Linie</span>
+        </div>
+      </div>
+      <div id="legend-map" class="hidden">
+        <div id="legend-map-branches"></div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-map-cluster">7</span>
+          <span>Mehrere Orte gebündelt – antippen zoomt hinein</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-map-pin">3</span>
+          <span>Ein Ort mit Personenzahl – antippen zeigt die Liste</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-tree-spouse"></span>
+          <span>Paare als ein Eintrag, wenn am selben Ort</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-swatch legend-swatch-fan-deceased"></span>
+          <span>Zweige oben ein-/ausblenden · „auch Verstorbene" = letzter Wohnort</span>
         </div>
       </div>
       <div id="legend-fan" class="hidden">
@@ -787,7 +814,12 @@
         </div>
         <div class="input-group">
           <label>Wohnort</label>
-          <input type="text" id="edit-location" placeholder="Stadt, Land">
+          <input type="text" id="edit-location" placeholder="Stadt eingeben und aus der Liste wählen" autocomplete="off" autocapitalize="words">
+          <div id="edit-location-results" class="mini-results"></div>
+          <input type="hidden" id="edit-place-name">
+          <input type="hidden" id="edit-place-lat">
+          <input type="hidden" id="edit-place-lng">
+          <div id="edit-location-hint" class="input-hint"></div>
         </div>
         <div class="input-group">
           <label>E-Mail</label>
@@ -936,13 +968,14 @@
 
   <!-- App modules -->
   <script src="js/utils.js?v=9"></script>
-  <script src="js/db.js?v=34"></script>
+  <script src="js/db.js?v=35"></script>
   <script src="js/auth.js?v=30"></script>
   <script src="js/relationship.js?v=32"></script>
   <script src="js/tree.js?v=86"></script>
   <script src="js/markdown.js?v=1"></script>
   <script src="js/article.js?v=4"></script>
   <script src="js/gotha.js?v=3"></script>
+  <script src="js/map.js?v=1"></script>
   <script src="js/babycry.js?v=6"></script>
   <script src="js/fan.js?v=54"></script>
   <script src="js/qr.js?v=23"></script>
@@ -952,7 +985,7 @@
   <script src="js/guest.js?v=7"></script>
   <script src="js/connection.js?v=15"></script>
   <script src="js/relations.js?v=15"></script>
-  <script src="js/profile.js?v=36"></script>
-  <script src="js/app.js?v=70"></script>
+  <script src="js/profile.js?v=37"></script>
+  <script src="js/app.js?v=71"></script>
 </body>
 </html>

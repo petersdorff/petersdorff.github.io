@@ -151,6 +151,10 @@ Server-Suche, `writeWithColumnFallback` lässt `call_name` beim Speichern
 weg, Anzeige fällt auf den Vornamen zurück — volle Funktion erst nach
 Migration 011 (die auch `guest_graph` um `call_name` ergänzt).
 
+**Wohnort-Geodaten `place_name`/`place_lat`/`place_lng`** (Migration 012):
+siehe Kartenansicht. `guest_graph` liefert sie mit (Stadt-Ebene, wie
+`location` unkritisch).
+
 `relationships`: gerichtete Kanten `from_id → to_id` mit `rel_type`:
 - `parent_child` (Eltern → Kind; **hartes Limit: max. 2 Eltern pro Kind**)
 - `spouse` (ungerichtet gespeichert, dedupe in beide Richtungen;
@@ -270,7 +274,8 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   Familie (ältester Partner ist Wurzel). Jede Familie bekommt ihren
   eigenen Fächer. **Die Zweig-Auswahl ist App-weit** (`app.js`:
   `computeFamilies`, `activeFamilyId`, `setActiveFamily`, `ensureFamilyFor`,
-  `familySubset`) und gilt in allen fünf Ansichten: Umschalter
+  `familySubset`) und gilt in allen Baum-Ansichten (die Karte zeigt alle
+  Zweige und nutzt den Umschalter als Filter, s. Kartenansicht): Umschalter
   `#family-switch` oben (nur bei ≥2), Auswahl in
   `localStorage.stammbaum_family`; Baum-Ansichten bekommen nur die
   Personen/Beziehungen des aktiven Zweigs, Gotha rendert nur ihn, der
@@ -480,6 +485,47 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   das getroffene Segment wird deshalb beim `pointerdown` gemerkt. Tests
   dafür immer mit **echten** Klicks (Computer-Tool) machen — synthetische
   Events bubbeln nicht durch die Capture und verdecken beide Fehler.
+
+## Kartenansicht (`map.js`) — Ansicht `map`
+
+- **Datenbasis:** `members.place_name` / `place_lat` / `place_lng`
+  (Migration 012). `location` bleibt der angezeigte Freitext; auf die
+  Karte kommt nur, wer Koordinaten hat. Die kommen aus dem **Orts-Picker im
+  Editor** (`profile.js`: Photon-Autocomplete `photon.komoot.io`, nur
+  city/town/village/hamlet, Bias auf Deutschland, Städte zuerst; Auswahl
+  setzt `location` auf „Hamburg" bzw. „Milwaukee, USA" und die versteckten
+  Felder `#edit-place-*`; wird der Text danach geändert, verfallen die
+  Koordinaten — Hinweis unter dem Feld) oder aus der einmaligen
+  Geokodierung der Altbestände (`tools/geocode-locations.py`, Service-Key
+  per Umgebung; normalisiert Gotha-Schreibweisen wie „Quaal über Bad
+  Segeberg", „Berlin-Charlottenburg", „Wien XV."; exakter Namensvergleich
+  gegen Photons Unschärfe, Städte vor Dörfern, Deutschland zuerst;
+  mehrdeutige Namen wie „Bergen"/„Brühl" werden gelistet statt geraten;
+  `--dry-run`, `--json`). Historische Stammsitze (Pommern) bleiben
+  bewusst ohne Koordinaten.
+- **Leaflet 1.9.4** (cdnjs, SRI) wird erst beim ersten Öffnen der Ansicht
+  nachgeladen; Kacheln von `tile.openstreetmap.org` (Attribution Pflicht;
+  Datenschutzseite nennt OSM/Photon). Kein Marker-Plugin: eigene
+  **Bündelung** je Zoomstufe über 64-px-Rasterzellen (`clusterEntries`) —
+  mehrere Orte in einer Zelle → Kreis mit Personenzahl (Tipp: `fitBounds`
+  auf die Orte), ein Ort → Pin mit Zahl + Ortsname (Tipp: Personenliste
+  `.map-list`, Tipp auf Person → `Profile.show`).
+- **Einträge** (`buildEntries`): nur Lebende, Schalter „auch Verstorbene"
+  (letzter Wohnort). **Paare** (aktuelle `spouse`-Kante, nicht `isFormer`)
+  als ein Eintrag „Kai & Johanna Nachname", wenn beide ≤ 2 km auseinander
+  wohnen oder nur einer einen Ort hat; sonst getrennt.
+- **Alle Zweige zugleich**, Farbe je Zweig (`BRANCH_COLORS` in
+  Zweig-Reihenfolge, „ohne Zweig" grau; Legende dynamisch aus
+  `MapView.getLegend()`). Der Zweig-Umschalter oben wird in dieser Ansicht
+  zum **Mehrfach-Filter** (`app.js`: `mapBranchFilter`, `toggleMapBranch`,
+  `updateFamilySwitch` baut `role="switch"`, Klasse `.is-filter`, ✓ vor
+  aktiven Zweigen — auf schmalen Handys ohne ✓, sonst bricht die Zeile);
+  der aktive Zweig der anderen Ansichten bleibt davon unberührt.
+- Erste Einpassung ignoriert Ausreißer: liegt ≥ 60 % der Personen in
+  1500 km um den Medoid, wird nur dieser Kern eingepasst (Neuseeland/
+  Südafrika zwingen die Karte sonst auf Weltgröße); Ränder für
+  Umschalter/Status-Pille freigehalten. `#map-container` z-index 26 (über
+  Gotha 25), Waisen-Ablage in der Karte ausgeblendet.
 
 ## Gotha-Verzeichnis (`gotha.js`)
 

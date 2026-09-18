@@ -31,6 +31,8 @@ const App = (() => {
     Article.init();
     Gotha.init('gotha-container');
     Gotha.onTap((memberId) => Profile.show(memberId));
+    MapView.init('map-container');
+    MapView.onTap((memberId) => Profile.show(memberId));
     Fan.init('fan-container');
     Fan.onTap((memberId) => {
       Fan.panTo(memberId);
@@ -328,6 +330,7 @@ const App = (() => {
       }
     });
     document.getElementById('btn-edit-save').addEventListener('click', Profile.save);
+    document.getElementById('edit-location').addEventListener('input', Profile.onLocationInput);
     const debouncedRelSearch = Utils.debounce((query) => {
       Relations.searchForRelation(query);
     }, 200);
@@ -477,7 +480,9 @@ const App = (() => {
       Fan.setColorMode(fanColorMode(name));
       setFanMode(isFan);
       Gotha.render(cachedMembers, cachedRelationships, { familyId: activeFamilyId });
+      MapView.setData(cachedMembers, cachedRelationships, families);
       if (name === 'gotha') Gotha.show();
+      if (name === 'map') MapView.show();
       updateViewSwitch();
       updateLegendBlocks();
       updateFamilySwitch();
@@ -487,6 +492,7 @@ const App = (() => {
     Tree.render(sub.members, sub.relationships);
     if (Fan.isActive()) Fan.render(cachedMembers, cachedRelationships);
     Gotha.render(cachedMembers, cachedRelationships, { familyId: activeFamilyId });
+    MapView.setData(cachedMembers, cachedRelationships, families);
     updateFamilySwitch();
     updateOrphanTray();
   }
@@ -548,24 +554,39 @@ const App = (() => {
 
   // ─── Familienzweige (Fächer) ───
 
+  // Karte: der Zweig-Umschalter wird zum Mehrfach-Filter (an/aus je
+  // Zweig); null = alle. Unabhängig vom aktiven Zweig der anderen Ansichten.
+  let mapBranchFilter = null;
+  function toggleMapBranch(rootId) {
+    const all = families.map(f => f.rootId);
+    const cur = mapBranchFilter ? new Set(mapBranchFilter) : new Set(all);
+    if (cur.has(rootId)) cur.delete(rootId); else cur.add(rootId);
+    mapBranchFilter = cur.size === all.length ? null : cur;
+    MapView.setFilter(mapBranchFilter);
+    updateFamilySwitch();
+  }
+
   function updateFamilySwitch() {
     const sw = document.getElementById('family-switch');
     if (!sw) return;
     sw.classList.toggle('hidden', families.length < 2);
     sw.innerHTML = '';
+    const mapMode = MapView.isActive();
+    sw.classList.toggle('is-filter', mapMode);
+    sw.setAttribute('aria-label', mapMode ? 'Zweige ein-/ausblenden' : 'Familienzweig');
     for (const f of families) {
-      const active = f.rootId === activeFamilyId;
+      const active = mapMode ? (!mapBranchFilter || mapBranchFilter.has(f.rootId)) : f.rootId === activeFamilyId;
       const b = document.createElement('button');
       b.className = 'family-btn' + (active ? ' active' : '');
-      b.setAttribute('role', 'tab');
-      b.setAttribute('aria-selected', String(active));
+      b.setAttribute('role', mapMode ? 'switch' : 'tab');
+      b.setAttribute(mapMode ? 'aria-checked' : 'aria-selected', String(active));
       // Zusatz in Klammern („Jacobsdorf (Pomm)") als eigener Span — auf
       // schmalen Handys ausgeblendet, damit drei Zweige in eine Zeile passen.
       const m = /^(.*?)(\s\(.*\))$/.exec(f.short);
       b.textContent = m ? m[1] : f.short;
       if (m) b.appendChild(Object.assign(document.createElement('span'), { className: 'family-btn-suffix', textContent: m[2] }));
-      b.title = `${f.name} · ${f.size} Personen`;
-      b.addEventListener('click', () => setActiveFamily(f.rootId));
+      b.title = `${f.name} · ${f.size} Personen` + (mapMode ? ' · auf der Karte ein-/ausblenden' : '');
+      b.addEventListener('click', () => (mapMode ? toggleMapBranch(f.rootId) : setActiveFamily(f.rootId)));
       sw.appendChild(b);
     }
   }
@@ -596,7 +617,7 @@ const App = (() => {
       .filter(m => !m.familyHint || !families.some(f => f.rootId === m.familyHint) || m.familyHint === activeFamilyId)
       .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`));
     document.getElementById('orphan-count').textContent = orphans.length;
-    tray.classList.toggle('hidden', orphans.length === 0);
+    tray.classList.toggle('hidden', orphans.length === 0 || MapView.isActive());   // Karte: Ablage stört nur
     updateConnectHint(ids);
     const list = document.getElementById('orphan-list');
     list.innerHTML = '';
@@ -647,7 +668,7 @@ const App = (() => {
   // ─── Ansichten: fan | fan-years | fan-name | gotha | tree (Stammtafel) ───
 
   let appOpenLogged = false;   // Nutzungsstatistik: ein App-Start je Seitenaufruf
-  const VIEW_ORDER = ['fan', 'fan-years', 'fan-name', 'gotha', 'tree'];
+  const VIEW_ORDER = ['fan', 'fan-years', 'fan-name', 'gotha', 'tree', 'map'];
   const fanColorMode = name => name === 'fan-years' ? 'year' : name === 'fan-name' ? 'name' : 'gender';
 
   function getStoredView() {
@@ -658,6 +679,7 @@ const App = (() => {
   }
 
   function getCurrentView() {
+    if (MapView.isActive()) return 'map';
     if (Gotha.isActive()) return 'gotha';
     if (!Fan.isActive()) return 'tree';
     const m = Fan.getColorMode();
@@ -666,14 +688,21 @@ const App = (() => {
 
   /** Ansicht umschalten und merken. */
   function applyView(name) {
-    if (name === 'gotha') {
+    if (name === 'map') {
+      Gotha.hide();
+      MapView.show();        // vor setFanMode: der Zweig-Umschalter wird dann als Filter gebaut
+      setFanMode(false);
+    } else if (name === 'gotha') {
+      MapView.hide();
       setFanMode(false);
       Gotha.show();
     } else if (name.startsWith('fan')) {
+      MapView.hide();
       Gotha.hide();
       Fan.setColorMode(fanColorMode(name));
       setFanMode(true);
     } else {
+      MapView.hide();
       Gotha.hide();
       setFanMode(false);
     }
@@ -684,9 +713,20 @@ const App = (() => {
 
   /** Legende passend zur Ansicht: Baum / Fächer (Geschlecht) / Fächer (Geburtsjahr). */
   function updateLegendBlocks() {
-    const fan = Fan.isActive(), year = fan && Fan.getColorMode() === 'year', nameMode = fan && Fan.getColorMode() === 'name', gotha = Gotha.isActive();
+    const fan = Fan.isActive(), year = fan && Fan.getColorMode() === 'year', nameMode = fan && Fan.getColorMode() === 'name', gotha = Gotha.isActive(), mapOn = MapView.isActive();
     document.getElementById('legend-gotha').classList.toggle('hidden', !gotha);
-    document.getElementById('legend-tree').classList.toggle('hidden', fan || gotha);
+    document.getElementById('legend-map').classList.toggle('hidden', !mapOn);
+    if (mapOn) {
+      const box = document.getElementById('legend-map-branches');
+      box.innerHTML = '';
+      for (const l of MapView.getLegend()) {
+        const item = document.createElement('div'); item.className = 'legend-item';
+        const sw = document.createElement('span'); sw.className = 'legend-swatch legend-swatch-map'; sw.style.background = l.color;
+        const t = document.createElement('span'); t.textContent = l.short;
+        item.append(sw, t); box.appendChild(item);
+      }
+    }
+    document.getElementById('legend-tree').classList.toggle('hidden', fan || gotha || mapOn);
     document.getElementById('legend-fan').classList.toggle('hidden', !fan || year || nameMode);
     document.getElementById('legend-fan-name').classList.toggle('hidden', !nameMode);
     if (nameMode) document.getElementById('legend-name-surname').textContent = Fan.familySurname() || 'Familienname';

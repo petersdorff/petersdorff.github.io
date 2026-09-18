@@ -143,6 +143,7 @@ const Profile = (() => {
     document.getElementById('edit-deathdate').value = member?.deathDate || '';
     document.getElementById('edit-occupation').value = member?.occupation || '';
     document.getElementById('edit-location').value = member?.location || '';
+    setPickedPlace(member?.placeName || '', member?.placeLat, member?.placeLng, member?.location || '');
     document.getElementById('edit-email').value = member?.contact || member?.email || '';
     document.getElementById('edit-phone').value = member?.phone || '';
     document.getElementById('edit-photo').value = member?.photo || '';
@@ -306,6 +307,7 @@ const Profile = (() => {
       isDeceased: !!deathDate,
       occupation: Utils.sanitizeInput(document.getElementById('edit-occupation').value),
       location: Utils.sanitizeInput(document.getElementById('edit-location').value),
+      ...pickedPlaceData(),
       contact: email,
       phone: Utils.sanitizePhone(document.getElementById('edit-phone').value),
       photo: photoUrl,
@@ -381,6 +383,105 @@ const Profile = (() => {
     return editingMemberId;
   }
 
+  // ─── Orts-Picker (Wohnort → Stadt mit Koordinaten, Photon/OpenStreetMap) ───
+  //
+  // Der Freitext bleibt, was der Nutzer sieht; auf der Karte landet nur,
+  // wer einen Vorschlag gewählt hat (placeName/placeLat/placeLng). Wird der
+  // Text nach der Auswahl geändert, verfallen die Koordinaten wieder.
+
+  const PHOTON = 'https://photon.komoot.io/api/';
+  let placeTimer = null, placeAbort = null, pickedText = '';
+
+  function setPickedPlace(name, lat, lng, text) {
+    document.getElementById('edit-place-name').value = name || '';
+    document.getElementById('edit-place-lat').value = typeof lat === 'number' ? String(lat) : '';
+    document.getElementById('edit-place-lng').value = typeof lng === 'number' ? String(lng) : '';
+    pickedText = name ? (text || '') : '';
+    updatePlaceHint();
+  }
+
+  function pickedPlaceData() {
+    const name = document.getElementById('edit-place-name').value;
+    const lat = parseFloat(document.getElementById('edit-place-lat').value);
+    const lng = parseFloat(document.getElementById('edit-place-lng').value);
+    const text = document.getElementById('edit-location').value.trim();
+    // Text geändert oder geleert → Koordinaten verfallen
+    if (!name || !text || text !== pickedText || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return { placeName: null, placeLat: null, placeLng: null };
+    }
+    return { placeName: name, placeLat: lat, placeLng: lng };
+  }
+
+  function updatePlaceHint() {
+    const hint = document.getElementById('edit-location-hint');
+    const text = document.getElementById('edit-location').value.trim();
+    const p = pickedPlaceData();
+    hint.className = 'input-hint';
+    if (!text) { hint.textContent = ''; return; }
+    if (p.placeName) { hint.classList.add('ok'); hint.textContent = `✓ auf der Karte: ${p.placeName}`; }
+    else { hint.classList.add('warn'); hint.textContent = 'Nicht auf der Karte – Ort aus der Vorschlagsliste wählen.'; }
+  }
+
+  /** Anzeigeform: deutsche Orte nur der Name, sonst „Ort, Land". */
+  function placeDisplay(props) {
+    const name = props.name || '';
+    const country = props.country || '';
+    return country && !/^(Deutschland|Germany)$/i.test(country) ? `${name}, ${country}` : name;
+  }
+
+  async function searchPlaces(q) {
+    if (placeAbort) placeAbort.abort();
+    placeAbort = new AbortController();
+    const url = PHOTON + '?' + new URLSearchParams({ q, limit: '6', lang: 'de', lat: '51', lon: '10' })
+      + '&osm_tag=place:city&osm_tag=place:town&osm_tag=place:village&osm_tag=place:hamlet';
+    const res = await fetch(url, { signal: placeAbort.signal });
+    if (!res.ok) throw new Error(String(res.status));
+    const data = await res.json();
+    // Doppelte (gleicher Name + Land + Bundesland) einmal
+    const seen = new Set(); const out = [];
+    for (const f of data.features || []) {
+      const p = f.properties || {};
+      const key = `${p.name}|${p.state || ''}|${p.country || ''}`;
+      if (!p.name || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ name: p.name, state: p.state || '', country: p.country || '', kind: p.osm_value || '',
+                 lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] });
+    }
+    // Städte vor Dörfern/Weilern (Photon setzt sonst „Hamb" vor „Hamburg"); Reihenfolge sonst wie geliefert
+    const rank = { city: 0, town: 1 };
+    return out.map((p, i) => ({ p, i })).sort((a, b) => ((rank[a.p.kind] ?? 2) - (rank[b.p.kind] ?? 2)) || (a.i - b.i)).map(x => x.p);
+  }
+
+  function renderPlaceResults(list) {
+    const box = document.getElementById('edit-location-results');
+    box.innerHTML = '';
+    for (const p of list) {
+      const item = Utils.createEl('div', { className: 'mini-result-item' });
+      item.appendChild(document.createTextNode(p.name));
+      const sub = [p.state, p.country].filter(Boolean).join(', ');
+      if (sub) item.appendChild(Utils.createEl('span', { className: 'place-sub', textContent: sub }));
+      item.addEventListener('click', () => {
+        const text = placeDisplay(p);
+        document.getElementById('edit-location').value = text;
+        setPickedPlace(`${p.name}, ${p.country || ''}`.replace(/, $/, ''), p.lat, p.lng, text);
+        box.innerHTML = '';
+      });
+      box.appendChild(item);
+    }
+  }
+
+  function onLocationInput() {
+    const q = document.getElementById('edit-location').value.trim();
+    updatePlaceHint();
+    clearTimeout(placeTimer);
+    const box = document.getElementById('edit-location-results');
+    if (q.length < 2 || q === pickedText) { box.innerHTML = ''; return; }
+    placeTimer = setTimeout(async () => {
+      try { renderPlaceResults(await searchPlaces(q)); }
+      catch (err) { if (err.name !== 'AbortError') box.innerHTML = ''; }
+    }, 250);
+  }
+
   // ─── Helpers ───
 
   function formatDate(dateStr) {
@@ -401,6 +502,7 @@ const Profile = (() => {
     show,
     edit,
     save,
+    onLocationInput,
     getCurrentProfileId,
     getEditingMemberId,
   };

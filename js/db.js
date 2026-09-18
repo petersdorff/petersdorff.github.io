@@ -553,6 +553,9 @@ const DB = (() => {
       phone: row.phone || '',
       email: row.email || '',
       location: row.location || '',
+      placeName: row.place_name || '',
+      placeLat: typeof row.place_lat === 'number' ? row.place_lat : null,
+      placeLng: typeof row.place_lng === 'number' ? row.place_lng : null,
       notes: row.notes || '',
       gender: row.gender || null,
       occupation: row.occupation || '',
@@ -579,6 +582,9 @@ const DB = (() => {
     if (m.phone !== undefined) row.phone = m.phone;
     if (m.email !== undefined) row.email = m.email;
     if (m.location !== undefined) row.location = m.location;
+    if (m.placeName !== undefined) row.place_name = m.placeName || null;
+    if (m.placeLat !== undefined) row.place_lat = typeof m.placeLat === 'number' ? m.placeLat : null;
+    if (m.placeLng !== undefined) row.place_lng = typeof m.placeLng === 'number' ? m.placeLng : null;
     if (m.notes !== undefined) row.notes = m.notes;
     if (m.gender !== undefined) row.gender = m.gender || null;
     if (m.occupation !== undefined) row.occupation = m.occupation || '';

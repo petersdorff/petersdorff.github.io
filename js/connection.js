@@ -47,10 +47,15 @@ const Connection = (() => {
 
     DB.logEvent('connection', { guest: Guest.isActive() });
 
+    // Betrachter beteiligt („Wie sind wir verwandt?") oder Verwandtschaft
+    // zwischen zwei anderen Personen → Texte in dritter Person
+    const me = Auth.getMember();
+    const third = !(me && (me.id === fromId || me.id === toId));
+
     // Calculate connection
     const cachedRelationships = App.getCachedRelationships();
     const connection = Relationship.getConnection(
-      fromId, toId, cachedMembers, cachedRelationships
+      fromId, toId, cachedMembers, cachedRelationships, { thirdPerson: third }
     );
 
     // Fill overlay
@@ -83,6 +88,10 @@ const Connection = (() => {
     const crossBranch = !!(famA && famB && famA.rootId !== famB.rootId && !connection.commonAncestor && generic);
 
     relationEl.textContent = crossBranch ? 'Verschiedene Zweige' : (connection.term || 'Unbekannt');
+    // Begriff gilt aus Sicht der linken Person: „Henrik ist für Kai: Cousin 3. Grades"
+    const callA = memberA.callName || memberA.firstName, callB = memberB.callName || memberB.firstName;
+    relationEl.closest('.conn-detail').querySelector('.conn-label').textContent = third ? `${callB} ist für ${callA}` : 'Verwandtschaft';
+    document.querySelector('.conn-steps-wrap .conn-label').textContent = third ? 'So sind sie verbunden' : 'So seid ihr verbunden';
     // Klartext zum Grad (z.B. „Jobst ist ein Sohn von Friedrich, deinem Cousin 2. Grades.")
     let explEl = document.getElementById('conn-explanation');
     if (!explEl) {
@@ -97,7 +106,7 @@ const Connection = (() => {
 
     // Step-by-step explanation of the path
     if (crossBranch) {
-      renderCrossBranch(memberA, memberB, famA, famB, connection.pathLength);
+      renderCrossBranch(memberA, memberB, famA, famB, connection.pathLength, third);
     } else {
       renderSteps(fromId, toId, cachedMembers, cachedRelationships);
     }
@@ -118,15 +127,15 @@ const Connection = (() => {
   }
 
   /** Hinweis statt Schrittliste, wenn beide aus verschiedenen Zweigen stammen. */
-  function renderCrossBranch(memberA, memberB, famA, famB, pathLength) {
+  function renderCrossBranch(memberA, memberB, famA, famB, pathLength, third = false) {
     const stepsEl = document.getElementById('conn-steps');
     stepsEl.innerHTML = '';
     const viaMarriage = pathLength
-      ? ` Über Heiraten zwischen den Zweigen seid ihr in ${pathLength} Schritten verbunden, aber nicht blutsverwandt.`
+      ? ` Über Heiraten zwischen den Zweigen ${third ? 'sind sie' : 'seid ihr'} in ${pathLength} Schritten verbunden, aber nicht blutsverwandt.`
       : ' Eine Verwandtschaft zwischen den Zweigen ist nicht dokumentiert.';
     stepsEl.appendChild(Utils.createEl('div', {
       className: 'conn-step-hint',
-      textContent: `Ihr stammt aus verschiedenen Familienzweigen — ${memberA.firstName} (${famA.short}) `
+      textContent: `${third ? 'Sie stammen' : 'Ihr stammt'} aus verschiedenen Familienzweigen — ${memberA.firstName} (${famA.short}) `
         + `und ${memberB.firstName} (${famB.short}).` + viaMarriage,
     }));
     const btn = Utils.createEl('button', {

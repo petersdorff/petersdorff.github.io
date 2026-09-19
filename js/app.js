@@ -302,6 +302,8 @@ const App = (() => {
     });
     document.getElementById('btn-profile-article').addEventListener('click', () => Article.show(Profile.getCurrentProfileId()));
     document.getElementById('btn-show-connection').addEventListener('click', Connection.showConnectionToMe);
+    document.getElementById('btn-connect-other').addEventListener('click', Profile.toggleConnectOther);
+    document.getElementById('connect-other-search').addEventListener('input', Profile.onConnectOtherInput);
     document.getElementById('btn-show-qr').addEventListener('click', () => {
       const profileId = Profile.getCurrentProfileId();
       if (profileId) {

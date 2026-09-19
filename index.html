@@ -12,7 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=53">
+  <link rel="stylesheet" href="css/style.css?v=54">
 </head>
 <body>
 
@@ -645,6 +645,14 @@
 
       <div id="profile-connection-action" style="padding:0 16px 8px;">
         <button id="btn-show-connection" class="btn btn-primary" style="width:100%;">Wie sind wir verwandt?</button>
+        <!-- Verwandtschaft zwischen dieser Person und einer beliebigen anderen -->
+        <button id="btn-connect-other" class="btn btn-secondary connect-other-btn" style="width:100%;">Wie ist … mit jemand anderem verwandt?</button>
+        <div id="connect-other-box" class="connect-other-box hidden">
+          <div class="input-group" style="margin-bottom:0;">
+            <input type="text" id="connect-other-search" placeholder="Name der anderen Person eingeben…" autocomplete="off">
+          </div>
+          <div id="connect-other-results" class="mini-results"></div>
+        </div>
       </div>
 
       <div class="profile-section">
@@ -970,7 +978,7 @@
   <script src="js/utils.js?v=9"></script>
   <script src="js/db.js?v=35"></script>
   <script src="js/auth.js?v=30"></script>
-  <script src="js/relationship.js?v=32"></script>
+  <script src="js/relationship.js?v=33"></script>
   <script src="js/tree.js?v=86"></script>
   <script src="js/markdown.js?v=1"></script>
   <script src="js/article.js?v=4"></script>
@@ -983,9 +991,9 @@
   <script src="js/admin.js?v=11"></script>
   <script src="js/claim.js?v=8"></script>
   <script src="js/guest.js?v=7"></script>
-  <script src="js/connection.js?v=15"></script>
+  <script src="js/connection.js?v=16"></script>
   <script src="js/relations.js?v=15"></script>
-  <script src="js/profile.js?v=37"></script>
-  <script src="js/app.js?v=71"></script>
+  <script src="js/profile.js?v=38"></script>
+  <script src="js/app.js?v=72"></script>
 </body>
 </html>

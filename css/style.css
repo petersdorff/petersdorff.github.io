@@ -2821,6 +2821,11 @@ body.has-status .fan-timeline { bottom: 112px; }
 }
 .legend-swatch-map-cluster { box-shadow: 0 0 0 3px rgba(69,123,157,0.3); }
 
+/* „Wie ist X mit … verwandt?" im Profil-Panel */
+.connect-other-btn { margin-top: 8px; }
+.connect-other-box { margin-top: 8px; }
+.connect-other-box .mini-results { max-height: 220px; }
+
 /* Orts-Picker im Editor */
 .input-hint { margin-top: 4px; font-size: 11px; color: var(--text-muted); min-height: 14px; }
 .input-hint.ok { color: #2a7f62; }

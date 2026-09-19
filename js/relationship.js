@@ -573,8 +573,13 @@ const Relationship = (() => {
    *   „Ihr habt dieselben Ururgroßeltern."
    *   „Jobst ist ein Sohn von Friedrich, deinem Cousin 2. Grades."
    *   „Eckhard ist ein Cousin deines Großvaters Werner."
+   * third = keiner der beiden ist der Betrachter (Verwandtschaft zwischen
+   * zwei anderen Personen): dann mit Namen statt „du/dein":
+   *   „Kai und Henrik haben dieselben Ururgroßeltern."
+   *   „Jobst ist ein Sohn von Friedrich, einem Cousin 2. Grades von Kai."
+   *   „Eckhard ist ein Cousin von Werner, dem Großvater von Kai."
    */
-  function explainBlood(fromId, toId, common, graph, membersMap) {
+  function explainBlood(fromId, toId, common, graph, membersMap, third = false) {
     const { stepsA, stepsB } = common;
     if (stepsA === 0 || stepsB === 0) return '';
     const min = Math.min(stepsA, stepsB), genDiff = Math.abs(stepsA - stepsB);
@@ -593,8 +598,9 @@ const Relationship = (() => {
     };
     const ancWord = n => n === 1 ? 'Eltern' : n === 2 ? 'Großeltern' : 'Ur' + 'ur'.repeat(n - 3) + 'großeltern';
     const cousinOf = (id, deg) => gt(id, 'Cousin', 'Cousine', 'Cousin/Cousine') + (deg >= 2 ? ` ${deg}. Grades` : '');
+    const who = third ? `${name(fromId)} und ${name(toId)} haben` : 'Ihr habt';
     if (genDiff === 0) {
-      return min === 1 ? 'Ihr habt dieselben Eltern.' : `Ihr habt dieselben ${ancWord(min)}.`;
+      return min === 1 ? `${who} dieselben Eltern.` : `${who} dieselben ${ancWord(min)}.`;
     }
     const below = stepsB > stepsA;            // Ziel liegt eine Generation (oder mehr) unter mir
     const childWord = (id, n) => n === 1 ? gt(id, 'ein Sohn', 'eine Tochter', 'ein Kind')
@@ -602,22 +608,28 @@ const Relationship = (() => {
     const parentWord = (id, n) => n === 1 ? gt(id, 'deines Vaters', 'deiner Mutter', 'deines Elternteils')
       : n === 2 ? gt(id, 'deines Großvaters', 'deiner Großmutter', 'deines Großelternteils')
       : gt(id, 'deines Ur' + 'ur'.repeat(n - 3) + 'großvaters', 'deiner Ur' + 'ur'.repeat(n - 3) + 'großmutter', 'deines Ur' + 'ur'.repeat(n - 3) + 'großelternteils');
+    const parentWord3 = (id, n) => n === 1 ? gt(id, 'dem Vater', 'der Mutter', 'dem Elternteil')
+      : n === 2 ? gt(id, 'dem Großvater', 'der Großmutter', 'dem Großelternteil')
+      : gt(id, 'dem Ur' + 'ur'.repeat(n - 3) + 'großvater', 'der Ur' + 'ur'.repeat(n - 3) + 'großmutter', 'dem Ur' + 'ur'.repeat(n - 3) + 'großelternteil');
     if (below) {
       const link = towards(toId, genDiff);   // Vorfahr des Ziels auf meiner Generation
       if (!link) return '';
-      const rel = min === 1 ? gt(link, 'deinem Bruder', 'deiner Schwester', 'deinem Geschwister') : `${gt(link, 'deinem', 'deiner', 'deinem')} ${cousinOf(link, min - 1)}`;
+      const rel = third
+        ? (min === 1 ? gt(link, 'einem Bruder', 'einer Schwester', 'einem Geschwister') : `${gt(link, 'einem', 'einer', 'einem')} ${cousinOf(link, min - 1)}`) + ` von ${name(fromId)}`
+        : (min === 1 ? gt(link, 'deinem Bruder', 'deiner Schwester', 'deinem Geschwister') : `${gt(link, 'deinem', 'deiner', 'deinem')} ${cousinOf(link, min - 1)}`);
       return `${name(toId)} ist ${childWord(toId, genDiff)} von ${name(link)}, ${rel}.`;
     }
     const link = towards(fromId, genDiff);   // mein Vorfahr auf der Generation des Ziels
     if (!link) return '';
     const rel = min === 1 ? gt(toId, 'ein Bruder', 'eine Schwester', 'ein Geschwister') : `${gt(toId, 'ein', 'eine', 'ein')} ${cousinOf(toId, min - 1)}`;
+    if (third) return `${name(toId)} ist ${rel} von ${name(link)}, ${parentWord3(link, genDiff)} von ${name(fromId)}.`;
     return `${name(toId)} ist ${rel} ${parentWord(link, genDiff)} ${name(link)}.`;
   }
 
   /**
    * Get full connection info between two people.
    */
-  function getConnection(fromId, toId, members, relationships) {
+  function getConnection(fromId, toId, members, relationships, opts = {}) {
     const graph = buildGraph(members, relationships);
     const membersMap = new Map(members.map(m => [m.id, m]));
 
@@ -665,7 +677,7 @@ const Relationship = (() => {
       path: path,
       pathLength: path ? path.length - 1 : null,
       commonAncestor: commonAncestorName,
-      explanation: commonAncestor ? explainBlood(fromId, toId, commonAncestor, graph, membersMap) : '',
+      explanation: commonAncestor ? explainBlood(fromId, toId, commonAncestor, graph, membersMap, !!opts.thirdPerson) : '',
     };
   }
 

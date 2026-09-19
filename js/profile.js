@@ -110,6 +110,9 @@ const Profile = (() => {
     const myMember = Auth.getMember();
     const showConnBtn = (myMember && myMember.id !== memberId) || (Guest.isActive() && !myMember);
     document.getElementById('btn-show-connection').style.display = showConnBtn ? '' : 'none';
+    // „Wie ist Kai mit … verwandt?" — Suche über alle Personen, Ergebnis im Verwandtschafts-Overlay
+    document.getElementById('btn-connect-other').textContent = `Wie ist ${member.callName || member.firstName} mit … verwandt?`;
+    resetConnectOther();
 
     // Show/hide delete button
     const isTruePlaceholder = member.isPlaceholder && !member.claimedByUid;
@@ -383,6 +386,58 @@ const Profile = (() => {
     return editingMemberId;
   }
 
+  // ─── Verwandtschaft zu einer beliebigen anderen Person ───
+  //
+  // Unter „Wie sind wir verwandt?": Suchfeld über alle Personen; Tipp auf
+  // einen Treffer öffnet das Overlay zwischen der Profilperson und dem
+  // Treffer (Texte dort in dritter Person). Funktioniert auch als Gast.
+
+  function resetConnectOther() {
+    const box = document.getElementById('connect-other-box');
+    box.classList.add('hidden');
+    document.getElementById('connect-other-search').value = '';
+    document.getElementById('connect-other-results').innerHTML = '';
+  }
+
+  function toggleConnectOther() {
+    const box = document.getElementById('connect-other-box');
+    box.classList.toggle('hidden');
+    if (!box.classList.contains('hidden')) setTimeout(() => document.getElementById('connect-other-search').focus(), 50);
+  }
+
+  function onConnectOtherInput() {
+    const q = document.getElementById('connect-other-search').value.trim().toLowerCase();
+    const box = document.getElementById('connect-other-results');
+    box.innerHTML = '';
+    if (q.length < 2 || !currentProfileId) return;
+    const norm = s => (s || '').toLowerCase();
+    const scored = [];
+    for (const m of App.getCachedMembers()) {
+      if (m.id === currentProfileId) continue;
+      const full = `${m.firstName} ${m.lastName}`, call = `${m.callName || ''} ${m.lastName}`;
+      const hay = [full, call, m.birthName].map(norm);
+      if (!hay.some(h => h.includes(q))) continue;
+      // Treffer am Wortanfang zuerst, dann alphabetisch
+      const starts = hay.some(h => h.split(/\s+/).some(w => w.startsWith(q)));
+      scored.push({ m, key: `${starts ? 0 : 1}${full}` });
+    }
+    scored.sort((a, b) => a.key.localeCompare(b.key, 'de'));
+    for (const { m } of scored.slice(0, 8)) {
+      const fam = App.familyInfo(m.id);
+      const yr = m.birthDate ? ` · * ${m.birthDate.substring(0, 4)}` : '';
+      const item = Utils.createEl('div', { className: 'mini-result-item' });
+      item.appendChild(document.createTextNode(`${m.firstName} ${m.lastName}${m.isDeceased ? ' †' : ''}`));
+      item.appendChild(Utils.createEl('span', { className: 'place-sub', textContent: `${fam ? fam.short : 'ohne Zweig'}${yr}` }));
+      item.addEventListener('click', () => {
+        const fromId = currentProfileId;
+        resetConnectOther();
+        Connection.showOverlay(fromId, m.id);
+      });
+      box.appendChild(item);
+    }
+    if (!scored.length) box.appendChild(Utils.createEl('div', { className: 'mini-result-item is-taken', textContent: 'Niemand gefunden' }));
+  }
+
   // ─── Orts-Picker (Wohnort → Stadt mit Koordinaten, Photon/OpenStreetMap) ───
   //
   // Der Freitext bleibt, was der Nutzer sieht; auf der Karte landet nur,
@@ -503,6 +558,8 @@ const Profile = (() => {
     edit,
     save,
     onLocationInput,
+    toggleConnectOther,
+    onConnectOtherInput,
     getCurrentProfileId,
     getEditingMemberId,
   };

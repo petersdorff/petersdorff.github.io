@@ -577,6 +577,19 @@ kein Pfad-Highlight, und **der aktive Zweig wird nicht umgeschaltet**
 (sonst würde `ensureFamilyFor(toId)` den fremden Zweig öffnen). Gleicher
 Zweig ohne Pfad (Waise): weiterhin „Keine Verbindung gefunden".
 
+**Verwandtschaft zwischen zwei beliebigen Personen:** im Profil-Panel unter
+„Wie sind wir verwandt?" der Knopf „Wie ist <Rufname> mit … verwandt?"
+(`#btn-connect-other`, `profile.js: toggleConnectOther/onConnectOtherInput`)
+klappt ein Suchfeld über alle Personen auf (Vor-/Ruf-/Nach-/Geburtsname,
+Wortanfang zuerst, max. 8 Treffer mit Zweig und Jahr); Tipp auf einen
+Treffer → `Connection.showOverlay(profilId, trefferId)`. Auch als Gast ohne
+Identität nutzbar. `showOverlay` erkennt, ob der Betrachter beteiligt ist
+(`third`): sonst dritte Person — Label „Henrik ist für Werner" statt
+„Verwandtschaft" (der Begriff gilt immer aus Sicht der linken Person), „So
+sind sie verbunden", Klartext mit Namen (`explainBlood(…, third)`: „Kai und
+Henrik haben dieselben Ururgroßeltern.", „Jobst ist ein Sohn von Friedrich,
+einem Cousin 2. Grades von Kai."), Zweig-Hinweis „Sie stammen aus …".
+
 ## Sicherheit & Datenschutz — Stand nach Review 15.09.2026
 
 - **Wer sieht was:** Anonym: nichts (alle Tabellen RLS, anon-Probe liefert

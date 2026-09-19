@@ -73,14 +73,17 @@ const Fan = (() => {
   // 19.09.2026 hat ein Mitglied den beiden Pommerschen Stammvätern
   // gemeinsame Eltern (Paul & Anna, ~1450) und einen Großvater (Janike der
   // Ältere, ~1400) gegeben — plötzlich gab es nur noch einen Zweig mit
-  // Janike im Zentrum. Die Vorfahren oberhalb bleiben erhalten und bilden
-  // einen eigenen kleinen Zweig (BRANCH_ANCESTORS); Verwandtschaft über die
-  // Linien hinweg wird weiter über sie berechnet.
+  // Janike im Zentrum. Die Vorfahren oberhalb bleiben in den Daten (und
+  // damit für Profil, Suche und Verwandtschaftsrechnung über die Linien
+  // hinweg), werden aber in keinem Fächer/keiner Tafel gezeichnet: sie
+  // zählen zu den Zweigen ihrer Nachkommen (`assigned`), stehen dort in
+  // `ancestors` und werden von den Ansichten ausgelassen — kein eigener
+  // Mini-Zweig, keine Waisen.
   const BRANCH_ROOTS = {
     'bed5c986-d2b1-4101-b2b4-a099ca58fc40': 1,   // Dahme (Daniel), Jacobsdorf — Index in FAMILY_NAMES
     '6f3dce22-f3e7-4f39-93bc-35b003b50e22': 2,   // Jannike der Jüngere (Johannes), Großenhagen
   };
-  const BRANCH_ANCESTORS = { name: 'Pommersche Stammväter (vor den Linien)', short: 'Stammväter (Pomm)', order: FAMILY_NAMES.length };
+  const BRANCH_ANCESTORS = { name: 'Vorfahren der festen Zweig-Wurzeln', short: 'Vorfahren', order: FAMILY_NAMES.length, ancestorsOnly: true };
   /** Anzeigename im Fächer: Rufname, sonst (alte Daten, Gastmodus vor
       Migration 011) der volle Vorname. */
   const callName = m => m.callName || m.firstName;
@@ -273,8 +276,17 @@ const Fan = (() => {
       } else if ([...designated].some(d => (parentsOf.get(d) || []).some(p => assigned.has(p)))) {
         label = { ...BRANCH_ANCESTORS };
       } else label = familyLabel(rootMember);
-      return { rootId: rootMember.id, ...label, root, assigned, blood, size: assigned.size };
+      return { rootId: rootMember.id, ...label, root, assigned, blood, ancestors: new Set(), size: assigned.size };
     }).sort((a, b) => (a.order - b.order) || (b.size - a.size));
+    // Vorfahren-Familien auflösen: ihre Personen den Linien darunter zuschlagen
+    for (const anc of fams.filter(f => f.ancestorsOnly)) {
+      for (const d of designated) {
+        const line = fams.find(f => f.rootId === d);
+        if (!line || !(parentsOf.get(d) || []).some(p => anc.assigned.has(p))) continue;
+        anc.assigned.forEach(id => { line.assigned.add(id); line.ancestors.add(id); });
+      }
+    }
+    for (let i = fams.length - 1; i >= 0; i--) if (fams[i].ancestorsOnly) fams.splice(i, 1);
     // Zwei Wurzeln mit demselben Familiennamen (noch nicht verbunden):
     // im Umschalter per Vorname der Wurzel unterscheiden.
     for (const f of fams) {

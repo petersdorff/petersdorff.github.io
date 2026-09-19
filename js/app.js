@@ -522,9 +522,12 @@ const App = (() => {
   function familySubset() {
     const f = families.find(x => x.rootId === activeFamilyId);
     if (!f) return { members: cachedMembers, relationships: cachedRelationships };
+    // Vorfahren oberhalb einer festen Zweig-Wurzel gehören zum Zweig, werden
+    // aber nicht gezeichnet (sonst stünde in der Stammtafel jemand über dem Stammvater)
+    const shown = id => f.assigned.has(id) && !(f.ancestors && f.ancestors.has(id));
     return {
-      members: cachedMembers.filter(m => f.assigned.has(m.id)),
-      relationships: cachedRelationships.filter(r => f.assigned.has(r.fromId) && f.assigned.has(r.toId)),
+      members: cachedMembers.filter(m => shown(m.id)),
+      relationships: cachedRelationships.filter(r => shown(r.fromId) && shown(r.toId)),
     };
   }
 

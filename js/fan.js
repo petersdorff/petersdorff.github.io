@@ -85,9 +85,11 @@ const Fan = (() => {
     '6f3dce22-f3e7-4f39-93bc-35b003b50e22': 2,   // Jannike der Jüngere (Johannes), Großenhagen
   };
   const BRANCH_ANCESTORS = { name: 'Vorfahren der festen Zweig-Wurzeln', short: 'Vorfahren', order: FAMILY_NAMES.length, ancestorsOnly: true };
-  // Temporäre Stammperson („Als Stammperson anzeigen"): ist sie gesetzt,
-  // gibt es genau EINE Familie mit ihr als Wurzel — alles darüber und
-  // daneben bleibt aus, in jeder Ansicht (alle nutzen buildFamiliesFrom).
+  // Temporäre Stammperson („Als Stammperson anzeigen"): ihr Zweig wird auf
+  // ihren Teilbaum reduziert (sie im Zentrum, alles darüber und daneben
+  // aus) — in jeder Ansicht, weil alle buildFamiliesFrom nutzen. Die
+  // anderen Zweige bleiben vollständig, der Zweig-Umschalter funktioniert
+  // weiter; der Filter bleibt bis zum × in der Leiste.
   let tempRoot = null;
   /** Anzeigename im Fächer: Rufname, sonst (alte Daten, Gastmodus vor
       Migration 011) der volle Vorname. */
@@ -224,19 +226,13 @@ const Fan = (() => {
     const heads = candidates.filter(m => !(spousesOf.get(m.id) || []).some(id => parentsOf.has(id)));
     const used = new Set();
     const roots = [];
-    if (forcedRoot && byId.has(forcedRoot)) {
-      // Temporäre Stammperson: nur ihr Teilbaum
-      used.add(forcedRoot); roots.push(byId.get(forcedRoot));
-      designated.clear();
-    } else {
-      // Feste Wurzeln zuerst (unabhängig von eingetragenen Eltern)
-      for (const id of designated) { used.add(id); roots.push(byId.get(id)); }
-      for (const h of heads) {
-        if (used.has(h.id)) continue;
-        used.add(h.id);
-        for (const sp of (spousesOf.get(h.id) || [])) used.add(sp);
-        roots.push(h);
-      }
+    // Feste Wurzeln zuerst (unabhängig von eingetragenen Eltern)
+    for (const id of designated) { used.add(id); roots.push(byId.get(id)); }
+    for (const h of heads) {
+      if (used.has(h.id)) continue;
+      used.add(h.id);
+      for (const sp of (spousesOf.get(h.id) || [])) used.add(sp);
+      roots.push(h);
     }
 
     // Bekannte Familie ohne Wurzel (z.B. Stammvater ohne eingetragene
@@ -244,7 +240,6 @@ const Fan = (() => {
     // elternloser Namensträger, der nicht in eine dokumentierte Linie
     // eingeheiratet ist, wird ihre Wurzel.
     for (const fam of FAMILY_NAMES) {
-      if (forcedRoot) break;   // temporäre Stammperson: keine weiteren Familien
       if (roots.some(r => familyLabel(r).name === fam.name)) continue;
       const seed = members
         .filter(m => familyLabel(m).name === fam.name && !parentsOf.has(m.id) && !used.has(m.id)
@@ -283,9 +278,7 @@ const Fan = (() => {
       // Beschriftung: feste Wurzel → ihr Eintrag; Vorfahren einer festen
       // Wurzel → „Stammväter"; sonst nach Wurzel erkennen
       let label;
-      if (forcedRoot && rootMember.id === forcedRoot) {
-        label = { name: `Stammperson: ${rootMember.firstName} ${rootMember.lastName}`, short: `${callName(rootMember)} ${rootMember.lastName}`, order: 0 };
-      } else if (designated.has(rootMember.id)) {
+      if (designated.has(rootMember.id)) {
         const f = FAMILY_NAMES[BRANCH_ROOTS[rootMember.id]];
         label = { name: f.name, short: f.short, tiny: f.tiny, order: BRANCH_ROOTS[rootMember.id] };
       } else if ([...designated].some(d => (parentsOf.get(d) || []).some(p => assigned.has(p)))) {
@@ -302,6 +295,25 @@ const Fan = (() => {
       }
     }
     for (let i = fams.length - 1; i >= 0; i--) if (fams[i].ancestorsOnly) fams.splice(i, 1);
+
+    // Temporäre Stammperson: ihr Zweig wird durch ihren Teilbaum ersetzt —
+    // rootId bleibt die Zweig-Wurzel (Umschalter, gespeicherte Auswahl),
+    // root/assigned/size sind der Teilbaum. Ohne Zweig (Waise): eigener Zweig.
+    if (forcedRoot && byId.has(forcedRoot)) {
+      const fresh = new Set([forcedRoot]);
+      const sub = makeNode(byId.get(forcedRoot), 0, 0, fresh);
+      const blood = new Set();
+      (function walk(n) { blood.add(n.m.id); n.children.forEach(walk); })(sub);
+      const host = fams.find(f => f.assigned.has(forcedRoot));
+      const person = byId.get(forcedRoot);
+      const entry = { root: sub, assigned: fresh, blood, ancestors: new Set(), size: fresh.size, tempRoot: forcedRoot };
+      if (host) {
+        Object.assign(host, entry, { name: `${host.name} · Stammperson ${person.firstName} ${person.lastName}` });
+      } else {
+        fams.push({ rootId: forcedRoot, name: `Stammperson: ${person.firstName} ${person.lastName}`,
+                    short: `${callName(person)} ${person.lastName}`, order: FAMILY_NAMES.length, ...entry });
+      }
+    }
     // Zwei Wurzeln mit demselben Familiennamen (noch nicht verbunden):
     // im Umschalter per Vorname der Wurzel unterscheiden.
     for (const f of fams) {

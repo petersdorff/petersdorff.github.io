@@ -521,7 +521,6 @@ const App = (() => {
     families = res.families;
     unreachableIds = res.unreachable;
     const valid = id => id && families.some(f => f.rootId === id);
-    if (tempRootId && valid(tempRootId)) activeFamilyId = tempRootId;
     if (!valid(activeFamilyId)) {
       let stored = null;
       try { stored = localStorage.getItem('stammbaum_family'); } catch { /* egal */ }
@@ -567,23 +566,23 @@ const App = (() => {
 
   // ─── Temporäre Stammperson ───
   //
-  // „Als Stammperson anzeigen": die Person wird Wurzel der einzigen Familie
-  // (Fan.setTempRoot → buildFamiliesFrom), alle Ansichten zeigen nur ihren
-  // Teilbaum; oben eine Leiste mit × zurück zum vollständigen Bild. Nicht
-  // gespeichert — nach einem Neuladen ist alles wie vorher.
+  // „Als Stammperson anzeigen": ihr Zweig wird auf ihren Teilbaum reduziert
+  // (Fan.setTempRoot → buildFamiliesFrom), die anderen Zweige bleiben ganz,
+  // der Zweig-Umschalter funktioniert weiter. Der Filter bleibt über
+  // Zweigwechsel hinweg, bis das × in der Leiste unter dem Umschalter
+  // gedrückt wird. Nicht gespeichert — nach einem Neuladen ist alles wie vorher.
   let tempRootId = null;
-  let familyBeforeTemp = null;
 
   function setTempRoot(memberId) {
     const m = cachedMembers.find(x => x.id === memberId);
     if (!m) return;
-    if (!tempRootId) familyBeforeTemp = activeFamilyId;
+    const branch = familyOf(memberId);          // Zweig der Person vor dem Filtern bestimmen
     tempRootId = memberId;
     Fan.setTempRoot(memberId);
-    activeFamilyId = memberId;
-    Fan.setPreferredFamily(memberId);
+    if (branch) { activeFamilyId = branch; Fan.setPreferredFamily(branch); }
     document.getElementById('temp-root-name').textContent = `${m.firstName} ${m.lastName}`;   // voller Name, eindeutiger als der Rufname
     document.getElementById('temp-root-bar').classList.remove('hidden');
+    document.body.classList.add('temp-root');
     DB.logEvent('temp_root');
     showView('view-main');
     renderTree();
@@ -596,8 +595,7 @@ const App = (() => {
     tempRootId = null;
     Fan.setTempRoot(null);
     document.getElementById('temp-root-bar').classList.add('hidden');
-    activeFamilyId = familyBeforeTemp;
-    familyBeforeTemp = null;
+    document.body.classList.remove('temp-root');
     renderTree();
     // Zurück im vollständigen Bild: die bisherige Stammperson bleibt im Blick
     revealInCanvas(prev);
@@ -690,7 +688,8 @@ const App = (() => {
     const el = document.getElementById('connect-hint');
     if (!el) return;
     const me = Auth.getMember();
-    const show = !!me && !Guest.isActive() && !DB.isOffline() && unreachable.includes(me.id);
+    // Bei gesetzter Stammperson ist „unerreichbar" nur der Filter, keine Lücke im Baum
+    const show = !!me && !Guest.isActive() && !DB.isOffline() && !tempRootId && unreachable.includes(me.id);
     el.classList.toggle('hidden', !show);
   }
 

@@ -612,15 +612,20 @@ einem Cousin 2. Grades von Kai."), Zweig-Hinweis „Sie stammen aus …".
 Knopf im Profil unter „Im Stammbaum zeigen" (`#btn-show-as-root`; ist die
 Person schon Stammperson, heißt er „Vollständigen Stammbaum zeigen").
 `App.setTempRoot(id)` setzt `Fan.setTempRoot(id)`: `buildFamiliesFrom`
-(von Fächer, Stammtafel, Gotha, App und Karte gemeinsam genutzt) liefert
-dann genau **eine** Familie mit dieser Person als Wurzel — alles darüber und
-daneben ist in allen Ansichten aus (Fächer-Zentrum, Gotha „I", oberste
-Karte der Stammtafel; Karte nur ihr Teilbaum via `setData(…, { onlyAssigned })`).
-Oben mittig statt des Zweig-Umschalters die schwarze Leiste `#temp-root-bar`
-(Name → Profil, × → `clearTempRoot()`: alter Zweig zurück, `revealInCanvas`
-auf die bisherige Stammperson). Waisen-Ablage in dem Modus aus,
-`revealInCanvas` ignoriert Personen außerhalb des Teilbaums. Nicht
-persistent (kein localStorage). Nutzungsereignis `temp_root`.
+(von Fächer, Stammtafel, Gotha, App und Karte gemeinsam genutzt) berechnet
+die Zweige wie immer und ersetzt dann **den Zweig der Person durch ihren
+Teilbaum** (`rootId` bleibt die Zweig-Wurzel — Umschalter und gespeicherte
+Auswahl funktionieren weiter; `root`/`assigned`/`size` sind der Teilbaum,
+`name` bekommt „· Stammperson …"). Die anderen Zweige bleiben vollständig;
+der Filter bleibt über Zweigwechsel hinweg bestehen. In ihrem Zweig: Fächer-
+Zentrum, Gotha „I", oberste Karte der Stammtafel; Karte nur ihr Teilbaum
+(`setData(…, { onlyAssigned })`). Waise ohne Zweig → eigener Zweig.
+Schwarze Leiste `#temp-root-bar` **unter** dem Zweig-Umschalter (Name →
+Profil, × → `clearTempRoot()` mit `revealInCanvas` auf die Person);
+`body.temp-root` rückt auf dem Handy ⓘ/„zu mir", Legende und
+Kartenwerkzeuge eine Zeile tiefer. Waisen-Ablage und der Hinweis „Dein
+Profil ist noch nicht verbunden" sind in dem Modus aus (unerreichbar =
+Filter, keine Lücke). Nicht persistent. Nutzungsereignis `temp_root`.
 
 ## Panels schließen & Handy-Bedienung
 

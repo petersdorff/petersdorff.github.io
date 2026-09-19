@@ -291,7 +291,17 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   (beide „von Petersdorff"), darum je Linie ein Test auf Stammsitz im
   `location`-Feld oder Vorname des Stammvaters — „Jacobsdorf"/„Dahme…" →
   **Jacobsdorf (Pomm)**, „Großenhagen"/„Jannike…" → **Großenhagen (Pomm)**;
-  sonst „Familie <Nachname>". Angelegt 17.09.2026 (Platzhalter „Stammvater
+  sonst „Familie <Nachname>". **Feste Zweig-Wurzeln** `BRANCH_ROOTS`
+  (IDs von Dahme und Jannike d. J.): sie sind immer Wurzel ihres Zweigs,
+  auch wenn ihnen jemand Eltern einträgt, und werden nie als Kind in einen
+  anderen Zweig eingehängt — am 19.09.2026 hat ein Mitglied beiden
+  gemeinsame Eltern (Paul & Anna, ~1450) und einen Großvater (Janike der
+  Ältere, ~1400) gegeben, wodurch die Linien zu einem Zweig verschmolzen.
+  Solche Vorfahren oberhalb bilden den eigenen Mini-Zweig „Stammväter
+  (Pomm)" (`BRANCH_ANCESTORS`, erkannt daran, dass ein Elternteil einer
+  festen Wurzel darin liegt); Verwandtschaft über die Linien hinweg wird
+  weiter über sie berechnet (Dahme ↔ Jannike = Brüder). Zweige mit `tiny`
+  (Märkisch) zeigen auf schmalen Handys die Kurzform. Angelegt 17.09.2026 (Platzhalter „Stammvater
   von Petersdorff" von 2026-09-13 gelöscht): Dahme (Daniel) von Petersdorff,
   * 1464, Jacobsdorf (Pommern), ID `bed5c986-…`; Jannike der Jüngere
   (Johannes) von Petersdorff, * 1470, Großenhagen (Pommern), ID

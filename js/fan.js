@@ -62,19 +62,32 @@ const Fan = (() => {
   // Reihenfolge im Zweig-Umschalter (Märkisch links, dann die Pommerschen
   // Linien I und II); unbekannte Familien folgen nach Größe.
   const FAMILY_NAMES = [
-    { test: m => /campen/i.test(m.lastName || ''), name: 'Märkische Familie (von Petersdorff-Campen)', short: 'Märkische Familie' },
+    { test: m => /campen/i.test(m.lastName || ''), name: 'Märkische Familie (von Petersdorff-Campen)', short: 'Märkische Familie', tiny: 'Märkisch' },
     { test: m => /jacobsdorf/i.test(m.location || '') || /^dahme\b/i.test(m.firstName || ''),
       name: 'Pommersche Familie, Linie Jacobsdorf (von Petersdorff)', short: 'Jacobsdorf (Pomm)' },
     { test: m => /gro(ß|ss)enhagen/i.test(m.location || '') || /^jannike\b/i.test(m.firstName || ''),
       name: 'Pommersche Familie, Linie Großenhagen (von Petersdorff)', short: 'Großenhagen (Pomm)' },
   ];
+  // Feste Zweig-Wurzeln: diese Personen sind IMMER Wurzel ihres Zweigs, auch
+  // wenn ihnen jemand Eltern einträgt. Sonst verschmelzen die Linien: am
+  // 19.09.2026 hat ein Mitglied den beiden Pommerschen Stammvätern
+  // gemeinsame Eltern (Paul & Anna, ~1450) und einen Großvater (Janike der
+  // Ältere, ~1400) gegeben — plötzlich gab es nur noch einen Zweig mit
+  // Janike im Zentrum. Die Vorfahren oberhalb bleiben erhalten und bilden
+  // einen eigenen kleinen Zweig (BRANCH_ANCESTORS); Verwandtschaft über die
+  // Linien hinweg wird weiter über sie berechnet.
+  const BRANCH_ROOTS = {
+    'bed5c986-d2b1-4101-b2b4-a099ca58fc40': 1,   // Dahme (Daniel), Jacobsdorf — Index in FAMILY_NAMES
+    '6f3dce22-f3e7-4f39-93bc-35b003b50e22': 2,   // Jannike der Jüngere (Johannes), Großenhagen
+  };
+  const BRANCH_ANCESTORS = { name: 'Pommersche Stammväter (vor den Linien)', short: 'Stammväter (Pomm)', order: FAMILY_NAMES.length };
   /** Anzeigename im Fächer: Rufname, sonst (alte Daten, Gastmodus vor
       Migration 011) der volle Vorname. */
   const callName = m => m.callName || m.firstName;
   function familyLabel(root) {
     const idx = FAMILY_NAMES.findIndex(f => f.test(root));
     const hit = FAMILY_NAMES[idx];
-    return hit ? { name: hit.name, short: hit.short, order: idx }
+    return hit ? { name: hit.name, short: hit.short, tiny: hit.tiny, order: idx }
                : { name: `Familie ${root.lastName}`, short: `Familie ${root.lastName}`, order: FAMILY_NAMES.length };
   }
   let hlAnchors = [];       // Ankerpunkte des aktiven Pfads (für fitToHighlight)
@@ -197,10 +210,13 @@ const Fan = (() => {
     const formerKey = new Set(relationships.filter(r => r.type === 'spouse' && r.isFormer)
       .flatMap(r => [`${r.fromId}~${r.toId}`, `${r.toId}~${r.fromId}`]));
 
+    const designated = new Set(Object.keys(BRANCH_ROOTS).filter(id => byId.has(id)));
     const candidates = members.filter(m => !parentsOf.has(m.id) && childrenOf.has(m.id)).sort(byBirth);
     const heads = candidates.filter(m => !(spousesOf.get(m.id) || []).some(id => parentsOf.has(id)));
     const used = new Set();
     const roots = [];
+    // Feste Wurzeln zuerst (unabhängig von eingetragenen Eltern)
+    for (const id of designated) { used.add(id); roots.push(byId.get(id)); }
     for (const h of heads) {
       if (used.has(h.id)) continue;
       used.add(h.id);
@@ -225,11 +241,12 @@ const Fan = (() => {
     // deren Partner als Untertitel. Kinder hängen am ersten erreichten Elternteil.
     function makeNode(m, depth, branch, assigned) {
       const spouses = (spousesOf.get(m.id) || []).map(id => byId.get(id))
-        .filter(sp => sp && !assigned.has(sp.id)).sort(byBirth)
+        .filter(sp => sp && !assigned.has(sp.id) && !designated.has(sp.id)).sort(byBirth)
         .map(sp => ({ ...sp, former: formerKey.has(`${m.id}~${sp.id}`) }));
       spouses.forEach(sp => assigned.add(sp.id));
+      // Feste Zweig-Wurzeln werden nie als Kind eines anderen Zweigs eingehängt
       const kids = (childrenOf.get(m.id) || []).map(id => byId.get(id))
-        .filter(k => k && !assigned.has(k.id)).sort(byBirth);
+        .filter(k => k && !assigned.has(k.id) && !designated.has(k.id)).sort(byBirth);
       kids.forEach(k => assigned.add(k.id));
       const node = { m, depth, branch, spouses, children: [] };
       node.children = kids.map((k, i) => makeNode(k, depth + 1, depth === 0 ? i : branch, assigned));
@@ -247,7 +264,16 @@ const Fan = (() => {
       // seinem Geburtszweig, nicht zu dem, in dem er als Partner steht.
       const blood = new Set();
       (function walk(n) { blood.add(n.m.id); n.children.forEach(walk); })(root);
-      return { rootId: rootMember.id, ...familyLabel(rootMember), root, assigned, blood, size: assigned.size };
+      // Beschriftung: feste Wurzel → ihr Eintrag; Vorfahren einer festen
+      // Wurzel → „Stammväter"; sonst nach Wurzel erkennen
+      let label;
+      if (designated.has(rootMember.id)) {
+        const f = FAMILY_NAMES[BRANCH_ROOTS[rootMember.id]];
+        label = { name: f.name, short: f.short, tiny: f.tiny, order: BRANCH_ROOTS[rootMember.id] };
+      } else if ([...designated].some(d => (parentsOf.get(d) || []).some(p => assigned.has(p)))) {
+        label = { ...BRANCH_ANCESTORS };
+      } else label = familyLabel(rootMember);
+      return { rootId: rootMember.id, ...label, root, assigned, blood, size: assigned.size };
     }).sort((a, b) => (a.order - b.order) || (b.size - a.size));
     // Zwei Wurzeln mit demselben Familiennamen (noch nicht verbunden):
     // im Umschalter per Vorname der Wurzel unterscheiden.

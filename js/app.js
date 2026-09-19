@@ -587,6 +587,12 @@ const App = (() => {
       const m = /^(.*?)(\s\(.*\))$/.exec(f.short);
       b.textContent = m ? m[1] : f.short;
       if (m) b.appendChild(Object.assign(document.createElement('span'), { className: 'family-btn-suffix', textContent: m[2] }));
+      // Kurzform („Märkisch") für schmale Handys, wenn der Zweig eine hat
+      if (f.tiny && !m) {
+        b.textContent = '';
+        b.append(Object.assign(document.createElement('span'), { className: 'family-btn-full', textContent: f.short }),
+                 Object.assign(document.createElement('span'), { className: 'family-btn-tiny', textContent: f.tiny }));
+      }
       b.title = `${f.name} · ${f.size} Personen` + (mapMode ? ' · auf der Karte ein-/ausblenden' : '');
       b.addEventListener('click', () => (mapMode ? toggleMapBranch(f.rootId) : setActiveFamily(f.rootId)));
       sw.appendChild(b);
@@ -1003,7 +1009,7 @@ const App = (() => {
       const f = families.find(x => x.blood && x.blood.has(id)) || families.find(x => x.assigned.has(id));
       return f ? { rootId: f.rootId, short: f.short, name: f.name } : null;
     },
-    getFamilies: () => families.map(f => ({ rootId: f.rootId, short: f.short, name: f.name })),
+    getFamilies: () => families.map(f => ({ rootId: f.rootId, short: f.short, name: f.name, tiny: f.tiny })),
     getActiveFamilyId: () => activeFamilyId,
     addRelative,
     toast,

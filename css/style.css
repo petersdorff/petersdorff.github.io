@@ -1786,9 +1786,12 @@ a {
   .family-switch { top: max(70px, calc(env(safe-area-inset-top) + 62px)); }
 }
 /* Schmale Handys: „(Pomm)" weglassen, dann bleiben drei Zweige einzeilig */
+.family-btn-tiny { display: none; }
 @media (max-width: 480px) {
   .family-btn { padding: 5px 9px; }
   .family-btn-suffix { display: none; }
+  .family-btn-full { display: none; }
+  .family-btn-tiny { display: inline; }
 }
 
 /* ═══════════════════════════════════════════════════════════

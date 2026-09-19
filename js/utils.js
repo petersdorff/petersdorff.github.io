@@ -28,6 +28,31 @@ const Utils = (() => {
     return String(firstName || '').trim().split(/\s+/)[0] || '';
   }
 
+  /**
+   * Wegwischen zum Schließen (nur Touch/Stift, nicht Maus): `dir` 'down'
+   * für Bottom-Sheets (nur wenn der Inhalt oben steht, sonst wird
+   * gescrollt), 'right' für Vollbild-Ansichten (wie iOS-Zurück). Reine
+   * Geste, kein Verschieben-Feedback — 60 px in der Richtung, deutlich mehr
+   * als quer, und nicht vom Eingabefeld aus gestartet.
+   */
+  function attachSwipeClose(el, dir, onClose) {
+    let start = null;
+    el.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'mouse' || !e.isPrimary) { start = null; return; }
+      if (e.target.closest('input, textarea, select, button, a')) { start = null; return; }
+      if (dir === 'down' && el.scrollTop > 0) { start = null; return; }
+      start = { x: e.clientX, y: e.clientY };
+    }, { passive: true });
+    el.addEventListener('pointerup', e => {
+      if (!start) return;
+      const dx = e.clientX - start.x, dy = e.clientY - start.y;
+      start = null;
+      const hit = dir === 'down' ? (dy > 60 && dy > Math.abs(dx) * 1.5) : (dx > 70 && dx > Math.abs(dy) * 1.5);
+      if (hit) onClose();
+    }, { passive: true });
+    el.addEventListener('pointercancel', () => { start = null; }, { passive: true });
+  }
+
   function sanitizeInput(str) {
     if (!str) return '';
     // Trim and remove control characters (except newlines/tabs in notes)
@@ -258,6 +283,7 @@ const Utils = (() => {
     isValidUrl,
     sanitizePhone,
     createEl,
+    attachSwipeClose,
     debounce,
     setButtonLoading,
     validateDate,

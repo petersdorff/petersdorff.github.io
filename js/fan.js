@@ -27,6 +27,7 @@ const Fan = (() => {
   let vb = { x: -500, y: -500, w: 1000, h: 1000 };
   let chartRadius = 400;
   let onTapCallback = null;
+  let onBackgroundTapCallback = null;   // Tipp/Klick ins Leere (App schließt Panels)
   let segById = new Map();  // id → { x, y, shape } (Blutlinie, hat Segment)
   let hostOf = new Map();   // Angeheiratete → id des Partner-Segments
   let highlight = null;     // { fromId, toId } — Verwandtschaftspfad
@@ -1479,9 +1480,11 @@ const Fan = (() => {
       if (!pts.has(e.pointerId)) return;
       pts.delete(e.pointerId);
       try { svg.releasePointerCapture(e.pointerId); } catch { /* egal */ }
-      if (pts.size === 0 && e.type === 'pointerup' && moved < 10 && !downTarget && e.pointerType !== 'mouse') {
-        // Tipp ins Leere (Touch): Auswahl und Chips wegräumen
-        selectedId = null; showGhosts(null); clearHoverHalo();
+      if (pts.size === 0 && e.type === 'pointerup' && moved < 10 && !downTarget) {
+        // Tipp ins Leere: Touch räumt Auswahl und Chips weg; die App
+        // schließt offene Panels (Profil-Seitenleiste, Overlay, Legende)
+        if (e.pointerType !== 'mouse') { selectedId = null; showGhosts(null); clearHoverHalo(); }
+        if (onBackgroundTapCallback) onBackgroundTapCallback();
       }
       if (pts.size === 0 && e.type === 'pointerup' && moved < 10 && downTarget) {
         let id = downTarget.getAttribute('data-id');
@@ -1516,7 +1519,7 @@ const Fan = (() => {
     }, { passive: false });
   }
 
-  return { init, onTap, onAddRelative, onConnect, setCanEdit, isActive, show, hide, toggle, render, fit, centerOn, panTo, highlightConnection, clearHighlight,
+  return { init, onTap, onBackgroundTap: (cb) => { onBackgroundTapCallback = cb; }, onAddRelative, onConnect, setCanEdit, isActive, show, hide, toggle, render, fit, centerOn, panTo, highlightConnection, clearHighlight,
            getFamilies, setFamily, familyOf, buildFamiliesFrom,
            setColorMode, getColorMode: () => colorMode, getYearScale, familySurname,
            getTimeline, setTimelineYear, startPlayback, stopPlayback, isPlaying: () => !!playing,

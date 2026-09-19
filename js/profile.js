@@ -113,6 +113,11 @@ const Profile = (() => {
     // „Wie ist Kai mit … verwandt?" — Suche über alle Personen, Ergebnis im Verwandtschafts-Overlay
     document.getElementById('btn-connect-other').textContent = `Wie ist ${member.callName || member.firstName} mit … verwandt?`;
     resetConnectOther();
+    // Anlegen-Zeile (Handy): nur mit Schreibrecht; Partner-Knopf nur ohne eingetragenen Partner
+    const addRow = document.getElementById('profile-add-row');
+    addRow.classList.toggle('hidden', readOnly);
+    const hasSpouse = App.getCachedRelationships().some(r => r.type === 'spouse' && (r.fromId === memberId || r.toId === memberId));
+    addRow.querySelector('[data-add="spouse"]').style.display = hasSpouse ? 'none' : '';
 
     // Show/hide delete button
     const isTruePlaceholder = member.isPlaceholder && !member.claimedByUid;

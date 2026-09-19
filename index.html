@@ -12,7 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=55">
+  <link rel="stylesheet" href="css/style.css?v=56">
 </head>
 <body>
 
@@ -653,6 +653,14 @@
           </div>
           <div id="connect-other-results" class="mini-results"></div>
         </div>
+        <!-- Handy: Angehörige direkt aus dem Profil anlegen (auf dem Desktop
+             übernehmen das die Hover-Chips im Fächer; dort ausgeblendet) -->
+        <div id="profile-add-row" class="profile-add-row hidden">
+          <span class="profile-add-label">Anlegen:</span>
+          <button class="btn btn-small btn-secondary" data-add="child">+ Kind</button>
+          <button class="btn btn-small btn-secondary" data-add="sibling">+ Geschwister</button>
+          <button class="btn btn-small btn-secondary" data-add="spouse">∞ Partner</button>
+        </div>
       </div>
 
       <div class="profile-section">
@@ -975,17 +983,17 @@
   <script defer src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
   <!-- App modules -->
-  <script src="js/utils.js?v=9"></script>
+  <script src="js/utils.js?v=10"></script>
   <script src="js/db.js?v=35"></script>
   <script src="js/auth.js?v=30"></script>
   <script src="js/relationship.js?v=33"></script>
   <script src="js/tree.js?v=86"></script>
   <script src="js/markdown.js?v=1"></script>
   <script src="js/article.js?v=4"></script>
-  <script src="js/gotha.js?v=3"></script>
-  <script src="js/map.js?v=1"></script>
+  <script src="js/gotha.js?v=4"></script>
+  <script src="js/map.js?v=2"></script>
   <script src="js/babycry.js?v=6"></script>
-  <script src="js/fan.js?v=56"></script>
+  <script src="js/fan.js?v=57"></script>
   <script src="js/qr.js?v=23"></script>
   <script src="js/search.js?v=23"></script>
   <script src="js/admin.js?v=11"></script>
@@ -993,7 +1001,7 @@
   <script src="js/guest.js?v=7"></script>
   <script src="js/connection.js?v=16"></script>
   <script src="js/relations.js?v=15"></script>
-  <script src="js/profile.js?v=39"></script>
-  <script src="js/app.js?v=74"></script>
+  <script src="js/profile.js?v=40"></script>
+  <script src="js/app.js?v=75"></script>
 </body>
 </html>

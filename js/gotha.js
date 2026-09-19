@@ -154,9 +154,14 @@ const Gotha = (() => {
   //  INTERAKTION
   // ═══════════════════════════════════════════════════════════
 
+  let onBackgroundTapCallback = null;
   function onClick(e) {
     const t = e.target.closest('[data-toggle], [data-open]');
-    if (!t) return;
+    if (!t) {
+      // Klick neben den Einträgen (Rand/Leerraum): Panels schließen
+      if (!e.target.closest('button, a, input') && onBackgroundTapCallback) onBackgroundTapCallback();
+      return;
+    }
     e.preventDefault();
     if (t.dataset.toggle) {
       const id = t.dataset.toggle;
@@ -245,5 +250,5 @@ const Gotha = (() => {
   function el(tag, cls) { const e = document.createElement(tag); if (cls) e.className = cls; return e; }
   function btn(label, fn) { const b = el('button', 'btn btn-small btn-secondary'); b.type = 'button'; b.textContent = label; b.addEventListener('click', fn); return b; }
 
-  return { init, onTap, isActive, show, hide, render, scrollTo, highlightConnection, clearHighlight };
+  return { init, onTap, onBackgroundTap: (cb) => { onBackgroundTapCallback = cb; }, isActive, show, hide, render, scrollTo, highlightConnection, clearHighlight };
 })();

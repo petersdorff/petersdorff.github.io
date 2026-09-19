@@ -432,15 +432,26 @@ const App = (() => {
       Profile.show(nodeId);
     });
 
-    // Tree background tap — close overlays and side panels
-    Tree.onBackgroundTap(() => {
-      Connection.closeOverlay();
-      const profileView = document.getElementById('view-profile');
-      if (profileView.classList.contains('side-panel')) {
-        profileView.classList.remove('side-panel', 'active');
-        profileView.style.display = '';
-        document.body.classList.remove('side-panel-open');
-      }
+    // Tipp/Klick ins Leere (Stammtafel, Fächer, Gotha, Karte): Overlay,
+    // Legende und Profil-Seitenleiste schließen (Editor bewusst nicht)
+    Tree.onBackgroundTap(closeFloatingPanels);
+    Fan.onBackgroundTap(closeFloatingPanels);
+    Gotha.onBackgroundTap(closeFloatingPanels);
+    MapView.onBackgroundTap(closeFloatingPanels);
+
+    // Handy: Wegwischen — Overlay und Legende nach unten, Profil nach rechts
+    Utils.attachSwipeClose(document.getElementById('connection-overlay'), 'down', () => Connection.closeOverlay());
+    Utils.attachSwipeClose(document.getElementById('legend-panel'), 'down', () => document.getElementById('legend-panel').classList.add('hidden'));
+    Utils.attachSwipeClose(document.getElementById('view-profile'), 'right', () => {
+      if (!document.getElementById('view-profile').classList.contains('side-panel')) showView('view-main');
+    });
+
+    // Handy: Angehörige direkt aus dem Profil anlegen
+    document.querySelectorAll('#profile-add-row [data-add]').forEach(b => {
+      b.addEventListener('click', () => {
+        const id = Profile.getCurrentProfileId();
+        if (id) addRelative(b.dataset.add, id);
+      });
     });
   }
 
@@ -812,6 +823,18 @@ const App = (() => {
   // Auf dem Desktop öffnen Profil und Bearbeiten-Formular als Seitenpanel
   // über dem Baum/Fächer statt als Vollbild.
   const SIDE_PANEL_VIEWS = ['view-profile', 'view-edit'];
+
+  /** Schwebende Panels schließen (nicht den Editor — ungespeicherte Eingaben). */
+  function closeFloatingPanels() {
+    Connection.closeOverlay();
+    document.getElementById('legend-panel').classList.add('hidden');
+    const profileView = document.getElementById('view-profile');
+    if (profileView.classList.contains('side-panel')) {
+      profileView.classList.remove('side-panel', 'active');
+      profileView.style.display = '';
+      document.body.classList.remove('side-panel-open');
+    }
+  }
 
   function showView(viewId) {
     // Always close the connection overlay when switching views

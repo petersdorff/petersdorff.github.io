@@ -38,6 +38,7 @@ const MapView = (() => {
   let filter = null;            // Set von Zweig-Wurzeln (null = alle)
   let showDeceased = false;
   let onTapCallback = null;
+  let onBackgroundTapCallback = null;
   let entries = [];             // berechnete Karteneinträge (Person/Paar)
   let fitted = false;           // erste Einpassung erledigt
   let openPlace = null;         // Ort, dessen Liste offen ist (Schlüssel)
@@ -91,7 +92,7 @@ const MapView = (() => {
     layer = L.layerGroup().addTo(map);
     map.setView([HOME.lat, HOME.lng], HOME.zoom);
     map.on('zoomend', () => render(false));
-    map.on('click', closeList);
+    map.on('click', () => { closeList(); if (onBackgroundTapCallback) onBackgroundTapCallback(); });
   }
 
   function show() {
@@ -360,6 +361,7 @@ const MapView = (() => {
     setData, setFilter, getFilter: () => (filter ? new Set(filter) : null),
     setShowDeceased: (b) => { showDeceased = !!b; render(true); },
     onTap: (cb) => { onTapCallback = cb; },
+    onBackgroundTap: (cb) => { onBackgroundTapCallback = cb; },
     fitAll, centerOn, getLegend,
     getEntries: () => entries.slice(),
   };

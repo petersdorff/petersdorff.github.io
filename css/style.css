@@ -1835,6 +1835,12 @@ a {
 @supports (padding: env(safe-area-inset-bottom)) {
   .view-switch { bottom: max(16px, calc(env(safe-area-inset-bottom) + 8px)); }
 }
+/* Handy: sechs Ansichten passen nicht mehr zentriert neben die FAB-Spalte
+   rechts (überlappte den ⓘ-Knopf) → linksbündig und etwas schmaler */
+@media (max-width: 480px) {
+  .view-switch { left: 12px; transform: none; }
+  .view-btn { width: 36px; }
+}
 
 .admin-code-box { border: 1.5px solid var(--trace-faint); border-radius: var(--radius-lg); padding: 12px 14px; }
 .admin-code-row { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -2828,6 +2834,15 @@ body.has-status .fan-timeline { bottom: 112px; }
 .connect-other-btn { margin-top: 8px; }
 .connect-other-box { margin-top: 8px; }
 .connect-other-box .mini-results { max-height: 220px; }
+
+/* Anlegen-Zeile im Profil: nur auf dem Handy (Desktop hat die Hover-Chips) */
+.profile-add-row { display: none; align-items: center; flex-wrap: wrap; gap: 6px; margin: 10px 0 6px; }
+.profile-add-row.hidden { display: none; }
+.profile-add-label { font-size: 11px; color: var(--text-secondary); margin-right: 2px; }
+.profile-add-row .btn { width: auto; }
+@media (max-width: 599px) {
+  .profile-add-row:not(.hidden) { display: flex; }
+}
 
 /* Orts-Picker im Editor */
 .input-hint { margin-top: 4px; font-size: 11px; color: var(--text-muted); min-height: 14px; }

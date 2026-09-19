@@ -607,6 +607,26 @@ sind sie verbunden", Klartext mit Namen (`explainBlood(…, third)`: „Kai und
 Henrik haben dieselben Ururgroßeltern.", „Jobst ist ein Sohn von Friedrich,
 einem Cousin 2. Grades von Kai."), Zweig-Hinweis „Sie stammen aus …".
 
+## Panels schließen & Handy-Bedienung
+
+- **Tipp/Klick ins Leere** in jeder Ansicht (Stammtafel `Tree.onBackgroundTap`,
+  Fächer `Fan.onBackgroundTap` — Maus wie Touch, wenn `downTarget` fehlt und
+  < 10 px bewegt —, Gotha-Rand, Karte) ruft `App.closeFloatingPanels()`:
+  Verwandtschafts-Overlay, Legende und die Profil-Seitenleiste (Desktop)
+  gehen zu. Der Editor bewusst nicht (ungespeicherte Eingaben).
+- **Wegwischen (nur Touch/Stift)**: `Utils.attachSwipeClose(el, dir, cb)`
+  — Overlay und Legende nach unten (nur wenn `scrollTop === 0`, sonst wird
+  gescrollt), Profil-Vollbild nach rechts (wie iOS-Zurück); 60/70 px in
+  der Richtung und deutlich mehr als quer, nicht ab Eingabefeldern/Knöpfen.
+- **Anlegen-Zeile im Profil** (`#profile-add-row`, nur < 600 px sichtbar,
+  nur mit Schreibrecht; Partner-Knopf nur ohne eingetragenen Partner):
+  auf dem Handy öffnet ein Tipp auf eine Person sofort das Profil, die
+  Hover-Chips im Fächer sind dort kaum nutzbar — Kind/Geschwister/Partner
+  entstehen darum direkt aus dem Profil (`App.addRelative`). Desktop bleibt
+  bei den Chips.
+- **Ansichts-Umschalter** unter 480 px linksbündig und 36 px breit — sechs
+  Ansichten zentriert überlappten die FAB-Spalte (ⓘ-Knopf) rechts.
+
 ## Sicherheit & Datenschutz — Stand nach Review 15.09.2026
 
 - **Wer sieht was:** Anonym: nichts (alle Tabellen RLS, anon-Probe liefert

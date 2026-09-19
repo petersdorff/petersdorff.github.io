@@ -1810,6 +1810,8 @@ a {
 /* Seitenpanel (Desktop) offen: in die freie linke Hälfte rücken */
 @media (min-width: 600px) {
   body.side-panel-open .view-switch,
+  body.side-panel-open .family-switch,
+  body.side-panel-open .temp-root-bar,
   body.side-panel-open .offline-banner { left: calc((100% - min(400px, 50vw)) / 2); }
 }
 @supports (padding: env(safe-area-inset-bottom)) {
@@ -1825,6 +1827,22 @@ a {
 .admin-code-row { display: flex; gap: 12px; flex-wrap: wrap; }
 .admin-code-row .input-group { flex: 1 1 200px; margin-bottom: 8px; }
 .admin-code-box .btn { width: auto; display: inline-block; margin-right: 10px; }
+
+/* Änderungsprotokoll (Nutzerverwaltung) */
+.changes-list { display: flex; flex-direction: column; gap: 6px; }
+.change-item { display: grid; grid-template-columns: 74px 1fr; column-gap: 10px; padding: 8px 10px;
+  border: 1.5px solid var(--trace-faint); border-radius: var(--radius); font-size: 12px; line-height: 1.45; }
+.change-when { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.change-who { font-weight: 600; }
+.change-what { color: var(--text-secondary); }
+.change-subject { color: var(--text); cursor: pointer; text-decoration: underline; text-decoration-color: var(--trace-light); }
+.change-subject:hover { color: var(--red); }
+.change-fields { color: var(--text-muted); }
+.change-op { display: inline-block; padding: 0 5px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px; vertical-align: 1px; }
+.change-op.INSERT { background: #e6f4ea; color: #1e7b3a; }
+.change-op.UPDATE { background: var(--blue-light); color: var(--blue); }
+.change-op.DELETE { background: var(--red-light); color: var(--red); }
+.changes-more { margin-top: 8px; }
 
 /* Nutzungsstatistik (Nutzerverwaltung) */
 .usage-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }

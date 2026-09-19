@@ -143,11 +143,74 @@ const Admin = (() => {
     }
   }
 
+  // ─── Änderungsprotokoll (Migration 013: Trigger auf members/relationships) ───
+
+  const FIELD_LABELS = {
+    first_name: 'Vorname', last_name: 'Nachname', call_name: 'Rufname', birth_name: 'Geburtsname',
+    birth_date: 'Geburtsdatum', death_date: 'Sterbedatum', is_deceased: 'verstorben', gender: 'Geschlecht',
+    location: 'Wohnort', place_name: 'Ort (Karte)', place_lat: 'Ort (Karte)', place_lng: 'Ort (Karte)',
+    occupation: 'Beruf', photo: 'Foto', contact: 'Kontakt', email: 'E-Mail', phone: 'Telefon', notes: 'Vita',
+    claimed_by_uid: 'Konto-Verknüpfung', is_placeholder: 'Platzhalter-Status', family_hint: 'Zweig-Zuordnung',
+    created_by: 'Ersteller', is_former: 'getrennt/geschieden', marriage_date: 'Heiratsdatum', divorce_date: 'Scheidungsdatum',
+    rel_type: 'Beziehungstyp', from_id: 'Person A', to_id: 'Person B',
+  };
+  const REL_LABELS = { parent_child: 'Eltern–Kind', spouse: 'Partner', sibling: 'Geschwister' };
+
+  async function loadChanges(limit = 10) {
+    const box = document.getElementById('admin-changes');
+    if (!box) return;
+    try {
+      const rows = await DB.getRecentChanges(limit);
+      box.innerHTML = '';
+      document.getElementById('admin-changes-count').textContent = rows.length ? `(letzte ${rows.length})` : '';
+      if (!rows.length) { box.innerHTML = '<p class="admin-hint">Noch keine Einträge — protokolliert wird ab Migration 013.</p>'; return; }
+      const list = Utils.createEl('div', { className: 'changes-list' });
+      for (const r of rows) {
+        const d = new Date(r.at);
+        const when = `${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+        const who = r.user_name || r.user_email || 'System';
+        const isMember = r.table_name === 'members';
+        const fields = (r.changed || []).map(c => FIELD_LABELS[c] || c);
+        const uniq = [...new Set(fields)];
+        const relType = r.details && REL_LABELS[r.details.rel_type] ? ` (${REL_LABELS[r.details.rel_type]})` : '';
+        let verb;
+        if (r.op === 'INSERT') verb = isMember ? 'Person angelegt:' : 'Beziehung angelegt:';
+        else if (r.op === 'DELETE') verb = isMember ? 'Person gelöscht:' : 'Beziehung gelöscht:';
+        else verb = isMember ? 'bearbeitet:' : 'Beziehung geändert:';
+        const what = Utils.createEl('div');
+        what.append(
+          Utils.createEl('span', { className: `change-op ${r.op}`, textContent: r.op === 'INSERT' ? 'NEU' : r.op === 'DELETE' ? 'WEG' : 'EDIT' }),
+          Utils.createEl('span', { className: 'change-who', textContent: who }),
+          document.createTextNode(' '),
+          Utils.createEl('span', { className: 'change-what', textContent: verb }),
+          document.createTextNode(' '),
+        );
+        const subj = Utils.createEl('span', { className: 'change-subject', textContent: (r.subject || '?') + relType });
+        if (isMember && r.op !== 'DELETE' && r.row_id) subj.addEventListener('click', () => Profile.show(r.row_id));
+        what.appendChild(subj);
+        if (uniq.length) what.appendChild(Utils.createEl('span', { className: 'change-fields', textContent: ` — ${uniq.join(', ')}` }));
+        list.appendChild(Utils.createEl('div', { className: 'change-item' }, [
+          Utils.createEl('div', { className: 'change-when', textContent: when }), what,
+        ]));
+      }
+      box.appendChild(list);
+      if (rows.length >= limit && limit < 200) {
+        const more = Utils.createEl('button', { className: 'btn btn-small btn-secondary changes-more', textContent: `Mehr anzeigen (${Math.min(limit * 5, 200)})` });
+        more.addEventListener('click', () => loadChanges(Math.min(limit * 5, 200)));
+        box.appendChild(more);
+      }
+    } catch (err) {
+      console.error('[Admin] changes:', err);
+      box.innerHTML = '<p class="admin-hint">Änderungsprotokoll nicht verfügbar (Migration 013 ausgeführt?).</p>';
+    }
+  }
+
   async function showAdminPanel() {
     App.showView('view-admin-approve');
     bindSearch();
     loadInviteCode();
     loadUsage();
+    loadChanges();
     const lists = {
       pending: document.getElementById('admin-pending-list'),
       approved: document.getElementById('admin-approved-list'),
@@ -439,6 +502,7 @@ const Admin = (() => {
     isAdmin,
     updateAdminMenu,
     showAdminPanel,
+    loadChanges,
     sendAdminNotification,
   };
 })();

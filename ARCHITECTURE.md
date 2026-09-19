@@ -726,6 +726,20 @@ clientseitig: jede Karte trägt `data-search` (Kontoname, E-Mail, Profilname
 inkl. Geburtsname, Status), jedes Suchwort muss vorkommen (Groß/Klein egal),
 Treffer-Zähler `#admin-search-count`, leere Liste zeigt „Keine Treffer".
 
+## Änderungsprotokoll (Migration 013)
+
+Trigger `members_audit`/`relationships_audit` (AFTER INSERT/UPDATE/DELETE,
+SECURITY DEFINER) schreiben in `audit_log`: `user_uid` = `auth.uid()` der
+Sitzung (NULL = Service-Key/Skript → „System"), `op`, `row_id`, `subject`
+(„Vorname Nachname" bzw. „A → B"), bei UPDATE die geänderten Spalten
+(`to_jsonb(OLD)`/`to_jsonb(NEW)`-Vergleich, `updated_at` ausgenommen; ohne
+sichtbare Änderung kein Eintrag), bei Beziehungen `details.rel_type`/
+`is_former`. Kaskadierte Löschungen (Person weg → ihre Beziehungen) zeigen
+die gelöschte Seite als „?". RLS: nur Admins lesen; RPC `recent_changes(n)`
+(Admin-Check innen, max. 200) liefert die Einträge mit Konto-Anzeigename/
+E-Mail. Nutzerverwaltung: Block „Letzte Änderungen" (`Admin.loadChanges`,
+Feldnamen übersetzt, Person antippbar → Profil, „Mehr anzeigen").
+
 ## Nutzungsstatistik (Migration 009)
 
 Tabelle `usage_events` (`created_at`, `user_uid` NULL = Gast, `kind`,

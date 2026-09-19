@@ -74,6 +74,13 @@ const DB = (() => {
     return data;
   }
 
+  /** Admin: letzte Änderungen (Trigger-Protokoll, Migration 013). */
+  async function getRecentChanges(limit = 10) {
+    const { data, error } = await supabase.rpc('recent_changes', { p_limit: limit });
+    if (error) throw error;
+    return data || [];
+  }
+
   /** Familientag-Code bei der Registrierung einlösen → sofort freigegeben. */
   async function redeemInviteCode(code, displayName) {
     const { data, error } = await supabase.rpc('redeem_invite_code', { p_code: code || '', p_display_name: displayName || null });
@@ -619,6 +626,7 @@ const DB = (() => {
     setInviteCode,
     logEvent,
     getUsageStats,
+    getRecentChanges,
     getAllMembers,
     getMember,
     searchMembers,

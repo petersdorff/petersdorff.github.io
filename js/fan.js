@@ -250,17 +250,18 @@ const Fan = (() => {
 
     // Jede Person genau einmal je Familie: Blutsverwandte als Segment,
     // deren Partner als Untertitel. Kinder hängen am ersten erreichten Elternteil.
-    function makeNode(m, depth, branch, assigned) {
+    function makeNode(m, depth, branch, assigned, stop = designated) {
       const spouses = (spousesOf.get(m.id) || []).map(id => byId.get(id))
-        .filter(sp => sp && !assigned.has(sp.id) && !designated.has(sp.id)).sort(byBirth)
+        .filter(sp => sp && !assigned.has(sp.id) && !stop.has(sp.id)).sort(byBirth)
         .map(sp => ({ ...sp, former: formerKey.has(`${m.id}~${sp.id}`) }));
       spouses.forEach(sp => assigned.add(sp.id));
       // Feste Zweig-Wurzeln werden nie als Kind eines anderen Zweigs eingehängt
+      // (stop = designated); der vereinigte Pommern-Baum steigt durch sie hindurch (stop = leer)
       const kids = (childrenOf.get(m.id) || []).map(id => byId.get(id))
-        .filter(k => k && !assigned.has(k.id) && !designated.has(k.id)).sort(byBirth);
+        .filter(k => k && !assigned.has(k.id) && !stop.has(k.id)).sort(byBirth);
       kids.forEach(k => assigned.add(k.id));
       const node = { m, depth, branch, spouses, children: [] };
-      node.children = kids.map((k, i) => makeNode(k, depth + 1, depth === 0 ? i : branch, assigned));
+      node.children = kids.map((k, i) => makeNode(k, depth + 1, depth === 0 ? i : branch, assigned, stop));
       node.weight = node.children.length
         ? node.children.reduce((sum, c) => sum + c.weight, 0)
         : 1;
@@ -296,22 +297,54 @@ const Fan = (() => {
     }
     for (let i = fams.length - 1; i >= 0; i--) if (fams[i].ancestorsOnly) fams.splice(i, 1);
 
-    // Temporäre Stammperson: ihr Zweig wird durch ihren Teilbaum ersetzt —
-    // rootId bleibt die Zweig-Wurzel (Umschalter, gespeicherte Auswahl),
-    // root/assigned/size sind der Teilbaum. Ohne Zweig (Waise): eigener Zweig.
+    // Vereinigter Pommern-Baum: haben die festen Wurzeln einen gemeinsamen
+    // obersten Vorfahren (Janike der Ältere), gibt es zusätzlich den Zweig
+    // „Pommern (gesamt)" mit ihm im Zentrum und ALLEN Pommern darunter —
+    // die Linien bleiben daneben bestehen. Personen stehen dann in zwei
+    // Zweigen; familyOf() liefert den ersten (die Linie).
+    if (designated.size >= 2) {
+      // Gemeinsamer Vorfahr ohne Eltern mit dem größten Generationsabstand
+      // (Janike d. Ä. schlägt Anna: sie ist zwar auch elternlos und gemeinsam,
+      // aber nur eine Generation über den Linien)
+      const upDist = id => { const d = new Map([[id, 0]]); const q = [id]; while (q.length) { const c = q.shift(); for (const p of (parentsOf.get(c) || [])) if (!d.has(p)) { d.set(p, d.get(c) + 1); q.push(p); } } return d; };
+      const dists = [...designated].map(upDist);
+      let top = null, best = 0;
+      for (const [anc, dist] of dists[0]) {
+        if (anc === [...designated][0] || parentsOf.has(anc) || !dists.every(d => d.has(anc))) continue;
+        const depth = Math.max(...dists.map(d => d.get(anc)));
+        if (depth > best) { best = depth; top = anc; }
+      }
+      if (top && byId.has(top)) {
+        const assigned = new Set([top]);
+        const root = makeNode(byId.get(top), 0, 0, assigned, new Set());
+        const blood = new Set();
+        (function walk(n) { blood.add(n.m.id); n.children.forEach(walk); })(root);
+        fams.push({ rootId: top, name: 'Pommersche Familie gesamt (von Petersdorff)', short: 'Pommern (gesamt)',
+                    order: FAMILY_NAMES.length, union: true, root, assigned, blood, ancestors: new Set(), size: assigned.size });
+      }
+    }
+
+    // Temporäre Stammperson: jeder Zweig, der sie enthält (ihre Linie und
+    // ggf. „Pommern (gesamt)"), wird durch ihren Teilbaum ersetzt — rootId
+    // bleibt die Zweig-Wurzel (Umschalter, gespeicherte Auswahl), root/
+    // assigned/size sind der Teilbaum. Ohne Zweig (Waise): eigener Zweig.
     if (forcedRoot && byId.has(forcedRoot)) {
-      const fresh = new Set([forcedRoot]);
-      const sub = makeNode(byId.get(forcedRoot), 0, 0, fresh);
-      const blood = new Set();
-      (function walk(n) { blood.add(n.m.id); n.children.forEach(walk); })(sub);
-      const host = fams.find(f => f.assigned.has(forcedRoot));
       const person = byId.get(forcedRoot);
-      const entry = { root: sub, assigned: fresh, blood, ancestors: new Set(), size: fresh.size, tempRoot: forcedRoot };
-      if (host) {
-        Object.assign(host, entry, { name: `${host.name} · Stammperson ${person.firstName} ${person.lastName}` });
+      const hosts = fams.filter(f => f.assigned.has(forcedRoot));
+      const build = stop => {
+        const fresh = new Set([forcedRoot]);
+        const sub = makeNode(person, 0, 0, fresh, stop);
+        const blood = new Set();
+        (function walk(n) { blood.add(n.m.id); n.children.forEach(walk); })(sub);
+        return { root: sub, assigned: fresh, blood, ancestors: new Set(), size: fresh.size, tempRoot: forcedRoot };
+      };
+      if (hosts.length) {
+        for (const host of hosts) {
+          Object.assign(host, build(host.union ? new Set() : designated), { name: `${host.name} · Stammperson ${person.firstName} ${person.lastName}` });
+        }
       } else {
         fams.push({ rootId: forcedRoot, name: `Stammperson: ${person.firstName} ${person.lastName}`,
-                    short: `${callName(person)} ${person.lastName}`, order: FAMILY_NAMES.length, ...entry });
+                    short: `${callName(person)} ${person.lastName}`, order: FAMILY_NAMES.length + 1, ...build(designated) });
       }
     }
     // Zwei Wurzeln mit demselben Familiennamen (noch nicht verbunden):

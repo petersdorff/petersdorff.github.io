@@ -482,7 +482,7 @@ const App = (() => {
       Fan.setColorMode(fanColorMode(name));
       setFanMode(isFan);
       Gotha.render(cachedMembers, cachedRelationships, { familyId: activeFamilyId });
-      MapView.setData(cachedMembers, cachedRelationships, families, { onlyAssigned: !!tempRootId });
+      MapView.setData(cachedMembers, cachedRelationships, families.filter(f => !f.union), { onlyAssigned: !!tempRootId });
       if (name === 'gotha') Gotha.show();
       if (name === 'map') MapView.show();
       updateViewSwitch();
@@ -494,7 +494,7 @@ const App = (() => {
     Tree.render(sub.members, sub.relationships);
     if (Fan.isActive()) Fan.render(cachedMembers, cachedRelationships);
     Gotha.render(cachedMembers, cachedRelationships, { familyId: activeFamilyId });
-    MapView.setData(cachedMembers, cachedRelationships, families, { onlyAssigned: !!tempRootId });
+    MapView.setData(cachedMembers, cachedRelationships, families.filter(f => !f.union), { onlyAssigned: !!tempRootId });
     updateFamilySwitch();
     updateOrphanTray();
   }
@@ -563,7 +563,10 @@ const App = (() => {
   function setTempRoot(memberId) {
     const m = cachedMembers.find(x => x.id === memberId);
     if (!m) return;
-    const branch = familyOf(memberId);          // Zweig der Person vor dem Filtern bestimmen
+    // Zweig der Person vor dem Filtern bestimmen — der aktive bleibt, wenn er
+    // sie enthält (z.B. „Pommern (gesamt)"), sonst ihre Linie
+    const cur = families.find(f => f.rootId === activeFamilyId);
+    const branch = cur && cur.assigned.has(memberId) ? activeFamilyId : familyOf(memberId);
     tempRootId = memberId;
     Fan.setTempRoot(memberId);
     if (branch) { activeFamilyId = branch; Fan.setPreferredFamily(branch); }
@@ -586,6 +589,9 @@ const App = (() => {
 
   /** Vor dem Zentrieren ggf. in den Zweig der Person wechseln. */
   function ensureFamilyFor(memberId) {
+    // Schon im aktiven Zweig (z.B. „Pommern (gesamt)" enthält beide Linien)? Dann bleiben.
+    const cur = families.find(f => f.rootId === activeFamilyId);
+    if (cur && cur.assigned.has(memberId)) return;
     const fid = familyOf(memberId);
     if (fid && fid !== activeFamilyId) setActiveFamily(fid);
   }
@@ -621,7 +627,7 @@ const App = (() => {
   // Zweig); null = alle. Unabhängig vom aktiven Zweig der anderen Ansichten.
   let mapBranchFilter = null;
   function toggleMapBranch(rootId) {
-    const all = families.map(f => f.rootId);
+    const all = families.filter(f => !f.union).map(f => f.rootId);   // „Pommern (gesamt)" ist auf der Karte kein Filter
     const cur = mapBranchFilter ? new Set(mapBranchFilter) : new Set(all);
     if (cur.has(rootId)) cur.delete(rootId); else cur.add(rootId);
     mapBranchFilter = cur.size === all.length ? null : cur;
@@ -633,7 +639,8 @@ const App = (() => {
       selbst bleibt auch in den anderen Zweigen bestehen. */
   function updateTempRootBar() {
     const bar = document.getElementById('temp-root-bar');
-    const show = !!tempRootId && familyOf(tempRootId) === activeFamilyId;
+    const cur = families.find(f => f.rootId === activeFamilyId);
+    const show = !!tempRootId && !!cur && cur.assigned.has(tempRootId);
     bar.classList.toggle('hidden', !show);
     document.body.classList.toggle('temp-root', show);
   }
@@ -648,6 +655,7 @@ const App = (() => {
     sw.classList.toggle('is-filter', mapMode);
     sw.setAttribute('aria-label', mapMode ? 'Zweige ein-/ausblenden' : 'Familienzweig');
     for (const f of families) {
+      if (mapMode && f.union) continue;   // Karte zeigt ohnehin alle Linien; der vereinigte Baum ist dort kein Filter
       const active = mapMode ? (!mapBranchFilter || mapBranchFilter.has(f.rootId)) : f.rootId === activeFamilyId;
       const b = document.createElement('button');
       b.className = 'family-btn' + (active ? ' active' : '');

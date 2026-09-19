@@ -305,9 +305,18 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   der Stammtafel jemand über dem Stammvater), Fächer/Gotha gehen ohnehin
   von der Wurzel abwärts. Kein Mini-Zweig, keine Waisen; Profil und Suche
   zeigen sie normal, Verwandtschaft über die Linien hinweg wird über sie
-  berechnet (Dahme ↔ Jannike = Brüder). Ein gemeinsamer Pommern-Fächer mit
-  Janike d. Ä. im Zentrum wäre damit jederzeit möglich (feste Wurzeln
-  weglassen). Zweige mit `tiny`
+  berechnet (Dahme ↔ Jannike = Brüder). **„Pommern (gesamt)"** (19.09.2026):
+  haben die festen Wurzeln einen gemeinsamen elternlosen Vorfahren, wird
+  der mit dem größten Generationsabstand (Janike d. Ä., nicht Anna) Wurzel
+  eines vierten Zweigs (`union: true`, `makeNode` mit leerer Stopp-Menge
+  steigt durch die festen Wurzeln hindurch; 350 Personen). Die Linien
+  bleiben daneben. Personen stehen dann in zwei Zweigen — `familyOf()`
+  liefert die Linie (erster Treffer), `ensureFamilyFor` bleibt aber im
+  aktiven Zweig, wenn der die Person schon enthält (sonst spränge ein Tipp
+  im Gesamtfächer in die Linie). Karte: der vereinigte Zweig ist dort kein
+  Filter/keine Farbe (`families.filter(f => !f.union)`). Stammperson:
+  jeder Zweig, der sie enthält (Linie und Gesamt), wird auf ihren Teilbaum
+  reduziert; die Leiste zeigt, wenn der aktive Zweig sie enthält. Zweige mit `tiny`
   (Märkisch) zeigen auf schmalen Handys die Kurzform. Angelegt 17.09.2026 (Platzhalter „Stammvater
   von Petersdorff" von 2026-09-13 gelöscht): Dahme (Daniel) von Petersdorff,
   * 1464, Jacobsdorf (Pommern), ID `bed5c986-…`; Jannike der Jüngere

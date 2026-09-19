@@ -143,7 +143,7 @@ const Fan = (() => {
       cancelHide();
       if (id !== ghostFor) showGhosts(id);
       if (!segLayer.querySelector(`.fan-hover[data-id="${id}"]`)) {
-        const seg = segLayer.querySelector(`.fan-seg[data-id="${id}"]:not(.fan-hover)`);
+        const seg = segLayer.querySelector(`.fan-seg[data-id="${id}"]:not(.fan-hover):not(.fan-selected)`);
         if (seg) showHoverHalo(seg);
       }
     });
@@ -441,6 +441,7 @@ const Fan = (() => {
     if (active) { highlight && hlAnchors.length ? fitToHighlight() : fit(); }
     renderLabels(true);
     applyTimeline();
+    drawSelectedHalo();
   }
 
   function drawSegment({ node, a0, a1 }, familyName, isMe, meIsSpouse = false) {
@@ -614,6 +615,37 @@ const Fan = (() => {
 
   function clearHoverHalo() {
     for (const h of segLayer.querySelectorAll('.fan-hover')) h.remove();
+  }
+
+  /**
+   * Gewählte Person (Profil-Seitenpanel offen): derselbe Halo wie beim
+   * Überfahren, aber dauerhaft — bis setSelected(null). Liegt unter dem
+   * Hover-Halo, damit Überfahren anderer Personen parallel funktioniert.
+   */
+  let selectedHaloId = null;
+  function drawSelectedHalo() {
+    for (const h of segLayer.querySelectorAll('.fan-selected')) h.remove();
+    if (!selectedHaloId) return;
+    const seg = segLayer.querySelector(`.fan-seg[data-id="${selectedHaloId}"]:not(.fan-hover)`);
+    const shape = seg && seg.querySelector('path, circle');
+    if (!shape || seg.classList.contains('fan-dim')) return;
+    const g = el('g', { class: 'fan-seg fan-selected', 'data-id': selectedHaloId });
+    const mkRim = (stroke, width) => {
+      const r = shape.cloneNode(false);
+      r.setAttribute('class', 'fan-hover-rim');
+      r.setAttribute('stroke', stroke);
+      r.setAttribute('stroke-width', String(width));
+      r.removeAttribute('fill');
+      return r;
+    };
+    g.append(mkRim('#fff', 15), mkRim(shape.getAttribute('fill'), 12), shape.cloneNode(false));
+    // vor einem evtl. vorhandenen Hover-Halo einfügen (der bleibt oben)
+    const hover = segLayer.querySelector('.fan-hover');
+    if (hover) segLayer.insertBefore(g, hover); else segLayer.appendChild(g);
+  }
+  function setSelected(memberId) {
+    selectedHaloId = memberId || null;
+    if (segLayer) drawSelectedHalo();
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1545,7 +1577,7 @@ const Fan = (() => {
     }, { passive: false });
   }
 
-  return { init, onTap, onBackgroundTap: (cb) => { onBackgroundTapCallback = cb; }, onAddRelative, onConnect, setCanEdit, isActive, show, hide, toggle, render, fit, centerOn, panTo, highlightConnection, clearHighlight,
+  return { init, onTap, onBackgroundTap: (cb) => { onBackgroundTapCallback = cb; }, onAddRelative, onConnect, setCanEdit, setSelected, isActive, show, hide, toggle, render, fit, centerOn, panTo, highlightConnection, clearHighlight,
            getFamilies, setFamily, familyOf, buildFamiliesFrom,
            setColorMode, getColorMode: () => colorMode, getYearScale, familySurname,
            getTimeline, setTimelineYear, startPlayback, stopPlayback, isPlaying: () => !!playing,

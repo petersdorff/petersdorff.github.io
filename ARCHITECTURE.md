@@ -413,7 +413,8 @@ Die Ansicht `temporal` (Y ∝ Geburtsjahr) wurde ersatzlos gestrichen.
   ihrer Pose (`theta`, `rm`, `tangential`) neu ausgerichtet, damit die
   Lesbarkeitsregel für den absoluten Winkel gilt; Chips, `centerOn`/
   `panTo` und Highlight-Anker rechnen mit `rotPt()`. Rotation wird nicht
-  gespeichert. Nur in den Fächer-Ansichten sichtbar. `.fan-wheel` selbst
+  gespeichert. Nur in den Fächer-Ansichten sichtbar; auf jeder Breite
+  vertikal mittig (unter 768 px kürzer: min(260px, 34vh)). `.fan-wheel` selbst
   ist nur der unsichtbare Griffbereich (34 px, Touch 42 px — bewusst
   knapp, alles darunter ist sonst unerreichbar), die sichtbare Leiste
   (20 px, Touch 28 px) zeichnet `::before` — die Ausblend-Maske muss auf
@@ -620,8 +621,11 @@ Auswahl funktionieren weiter; `root`/`assigned`/`size` sind der Teilbaum,
 der Filter bleibt über Zweigwechsel hinweg bestehen. In ihrem Zweig: Fächer-
 Zentrum, Gotha „I", oberste Karte der Stammtafel; Karte nur ihr Teilbaum
 (`setData(…, { onlyAssigned })`). Waise ohne Zweig → eigener Zweig.
-Schwarze Leiste `#temp-root-bar` **unter** dem Zweig-Umschalter (Name →
-Profil, × → `clearTempRoot()` mit `revealInCanvas` auf die Person);
+Schwarze Leiste `#temp-root-bar` **unter** dem Zweig-Umschalter — nur
+sichtbar, solange der Zweig der Stammperson aktiv ist (`updateTempRootBar`
+aus `updateFamilySwitch`); in anderen Zweigen ist sie weg, der Filter
+bleibt und die Leiste kommt beim Zurückwechseln wieder (Name → Profil,
+× → `clearTempRoot()` mit `revealInCanvas` auf die Person);
 `body.temp-root` rückt auf dem Handy ⓘ/„zu mir", Legende und
 Kartenwerkzeuge eine Zeile tiefer. Waisen-Ablage und der Hinweis „Dein
 Profil ist noch nicht verbunden" sind in dem Modus aus (unerreichbar =
@@ -629,6 +633,11 @@ Filter, keine Lücke). Nicht persistent. Nutzungsereignis `temp_root`.
 
 ## Panels schließen & Handy-Bedienung
 
+- **Profilperson hervorgehoben:** `App.revealInCanvas` setzt
+  `Fan.setSelected(id)` — derselbe Halo wie beim Überfahren (`.fan-selected`,
+  unter dem Hover-Halo, wird nach jedem Render neu gezeichnet), bleibt bis
+  das Profil zugeht (`showView` ≠ Profil, Zurück-Knopf, `closeFloatingPanels`).
+  Überfahren anderer Personen funktioniert parallel.
 - **Profilperson immer zentriert:** `Profile.show` ruft am Ende
   `App.revealInCanvas(id)` — Zweig wechseln, wenn nötig, dann Fächer
   `panTo` (Zoom bleibt), Stammtafel `centerOn(id, null, false)` (ohne

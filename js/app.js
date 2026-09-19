@@ -283,6 +283,7 @@ const App = (() => {
 
     // Profile view
     document.getElementById('btn-profile-back').addEventListener('click', () => {
+      Fan.setSelected(null);
       const profileView = document.getElementById('view-profile');
       if (profileView.classList.contains('side-panel')) {
         profileView.classList.remove('side-panel', 'active');
@@ -581,8 +582,6 @@ const App = (() => {
     Fan.setTempRoot(memberId);
     if (branch) { activeFamilyId = branch; Fan.setPreferredFamily(branch); }
     document.getElementById('temp-root-name').textContent = `${m.firstName} ${m.lastName}`;   // voller Name, eindeutiger als der Rufname
-    document.getElementById('temp-root-bar').classList.remove('hidden');
-    document.body.classList.add('temp-root');
     DB.logEvent('temp_root');
     showView('view-main');
     renderTree();
@@ -594,9 +593,7 @@ const App = (() => {
     const prev = tempRootId;
     tempRootId = null;
     Fan.setTempRoot(null);
-    document.getElementById('temp-root-bar').classList.add('hidden');
-    document.body.classList.remove('temp-root');
-    renderTree();
+    renderTree();   // updateFamilySwitch blendet die Leiste aus
     // Zurück im vollständigen Bild: die bisherige Stammperson bleibt im Blick
     revealInCanvas(prev);
   }
@@ -615,6 +612,7 @@ const App = (() => {
    * Zoom bleibt; nur der Zweig wechselt, wenn nötig.
    */
   function revealInCanvas(memberId) {
+    Fan.setSelected(memberId);   // vergrößert wie beim Überfahren, bis das Profil zugeht
     if (!memberId || !cachedMembers.some(m => m.id === memberId)) return;
     // Außerhalb des Teilbaums der Stammperson gibt es nichts zu zentrieren
     if (tempRootId && !familyOf(memberId)) return;
@@ -646,7 +644,17 @@ const App = (() => {
     updateFamilySwitch();
   }
 
+  /** Leiste der Stammperson nur im Zweig, zu dem sie gehört — der Filter
+      selbst bleibt auch in den anderen Zweigen bestehen. */
+  function updateTempRootBar() {
+    const bar = document.getElementById('temp-root-bar');
+    const show = !!tempRootId && familyOf(tempRootId) === activeFamilyId;
+    bar.classList.toggle('hidden', !show);
+    document.body.classList.toggle('temp-root', show);
+  }
+
   function updateFamilySwitch() {
+    updateTempRootBar();
     const sw = document.getElementById('family-switch');
     if (!sw) return;
     sw.classList.toggle('hidden', families.length < 2);
@@ -891,6 +899,7 @@ const App = (() => {
 
   /** Schwebende Panels schließen (nicht den Editor — ungespeicherte Eingaben). */
   function closeFloatingPanels() {
+    Fan.setSelected(null);
     Connection.closeOverlay();
     document.getElementById('legend-panel').classList.add('hidden');
     const profileView = document.getElementById('view-profile');
@@ -904,6 +913,7 @@ const App = (() => {
   function showView(viewId) {
     // Always close the connection overlay when switching views
     Connection.closeOverlay();
+    if (viewId !== 'view-profile') Fan.setSelected(null);
 
     const isDesktop = window.innerWidth >= 600;
     for (const id of SIDE_PANEL_VIEWS) {

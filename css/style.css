@@ -2184,10 +2184,10 @@ a {
   .fan-wheel { width: 42px; }
   .fan-wheel::before { width: 28px; right: 8px; border-radius: 14px; opacity: 0.95; }
 }
-/* Schmale Screens: Rad ins obere Drittel, damit es nicht hinter dem
-   FAB-Stapel unten rechts verschwindet */
+/* Schmale Screens: Rad vertikal mittig (halbe Seitenhöhe), etwas kürzer —
+   die kleinen Knöpfe oben rechts und der Umschalter unten bleiben frei */
 @media (max-width: 768px) {
-  .fan-wheel { top: 15%; transform: none; height: min(260px, 34vh); }
+  .fan-wheel { top: 50%; transform: translateY(-50%); height: min(260px, 34vh); }
 }
 
 /* Zeitstrahl (Geburtsjahr-Modus): horizontales Rändelrad unten mittig.
@@ -2857,6 +2857,9 @@ body.has-status .fan-timeline { bottom: 112px; }
   body.temp-root .map-tools { top: 96px; }
   body.temp-root .map-list { top: 138px; }
 }
+
+/* Gewählte Person (Profil offen): wie der Hover-Halo, bleibt bis das Panel zugeht */
+.fan-selected { pointer-events: none; }
 
 /* Anlegen-Zeile im Profil: nur auf dem Handy (Desktop hat die Hover-Chips) */
 .profile-add-row { display: none; align-items: center; flex-wrap: wrap; gap: 6px; margin: 10px 0 6px; }

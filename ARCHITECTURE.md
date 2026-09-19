@@ -672,7 +672,8 @@ Filter, keine Lücke). Nicht persistent. Nutzungsereignis `temp_root`.
   Eintrag im Seitenmenü (`#menu-add`, im Lesemodus ausgeblendet), der
   eigene QR-Code steht auf der Scan-Seite neben der Kamera
   (`#scanner-qr-canvas`, `openScanner`) — so scannt man sich gegenseitig;
-  „Mein QR-Code" im Menü zeigt ihn zusätzlich groß. Ansichts-Umschalter
+  das ist der einzige Weg (eigene QR-Seite, Menüeinträge „Mein QR-Code"/
+  „QR scannen" und der Profil-Knopf „QR-Code zeigen" sind entfernt). Ansichts-Umschalter
   bleibt mittig (unter 480 px 36-px-Knöpfe).
 
 ## Sicherheit & Datenschutz — Stand nach Review 15.09.2026

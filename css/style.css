@@ -1364,49 +1364,29 @@ a {
    QR VIEW
    ═══════════════════════════════════════════════════════════ */
 
-#view-qr, #view-scanner {
+#view-scanner {
   background: var(--bg);
 }
 
-.qr-container, .scanner-container {
-  max-width: 480px;
+.scanner-container {
+  max-width: 720px;            /* Kamera und eigener Code nebeneinander */
   margin: 0 auto;
   padding: 0 20px;
   width: 100%;
 }
 
-.qr-header, .scanner-header {
+.scanner-header {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 12px 0;
 }
 
-.qr-header h2, .scanner-header h2 {
+.scanner-header h2 {
   font-size: 18px;
 }
 
-.qr-display {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 20px;
-}
-
-#qr-code-canvas {
-  padding: 24px;
-  background: white;
-  border: 3px solid var(--trace);
-  border-radius: var(--radius-lg);
-  margin-bottom: 24px;
-}
-
-#qr-code-canvas canvas, #qr-code-canvas img {
-  display: block;
-}
-
-.qr-hint, .scanner-hint {
+.scanner-hint {
   text-align: center;
   color: var(--text-secondary);
   font-size: 13px;

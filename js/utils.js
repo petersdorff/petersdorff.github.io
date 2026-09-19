@@ -271,7 +271,6 @@ const Utils = (() => {
     MAIN: 'view-main',
     PROFILE: 'view-profile',
     EDIT: 'view-edit',
-    QR: 'view-qr',
     SCANNER: 'view-scanner',
   });
 

@@ -846,7 +846,7 @@ The decision tree:
 ### How It Should Work
 
 **QR Code Generation:**
-- Available from: Profile view ("QR-Code zeigen" button), Side menu ("Mein QR-Code"), FAB ("Mein QR Code")
+- Available from: the scanner page (top-bar camera button) shows the user's own code next to the camera; no separate QR page anymore
 - Encodes URL: `${window.location.origin}${pathname}#connect/${memberId}`
 - Size: 220x220 pixels
 - Colors: dark (#1a1a1a) on white (#ffffff)
@@ -854,7 +854,7 @@ The decision tree:
 - Library: QRCode.js
 
 **QR Code Scanning:**
-- Available from: Top bar scan button, Side menu ("QR scannen")
+- Available from: Top bar scan button
 - Opens camera view with scan area (250x250px)
 - Camera: rear-facing (`facingMode: 'environment'`) at 10 FPS
 - Aspect ratio: 1:1
@@ -961,8 +961,6 @@ The decision tree:
 |------|------|--------|-----------|
 | Stammbaum | - | Navigate to tree view | All users |
 | Mein Profil | - | Show user's own profile | All users |
-| Mein QR-Code | - | Generate and show user's QR | All users |
-| QR scannen | - | Open camera scanner | All users |
 | Nutzer-Verwaltung | - | Open admin panel | Admin only |
 | Abmelden | - | Log out | All users |
 
@@ -992,7 +990,6 @@ The decision tree:
 7. **Vita section:** Notes/biography text (pre-formatted whitespace, line-height 1.7)
 8. **Verbindungen section:** List of relationships (type badge + name, clickable to navigate)
 9. **Action buttons:**
-   - "QR-Code zeigen" - generates and shows QR for this person
    - "Im Stammbaum zeigen" - switches to tree and centers/zooms on this person (1.5x zoom, 500ms)
    - "Platzhalter loschen" - red danger button, only visible for true placeholders (see Section 29)
 

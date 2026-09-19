@@ -87,8 +87,8 @@ app_settings; je Datei `curl -X POST "$URL/rest/v1/<tabelle>" -H "apikey: $KEY"
 1. Backend aktiv? (Dashboard; Keep-alive-Workflow läuft wöchentlich.) Code
    und Ablaufdatum in der Nutzerverwaltung prüfen; Code auf den Aushang.
 2. Namensschilder mit QR-Codes drucken: Jeder QR enthält
-   `https://petersdorff.github.io/#connect/<member-id>` (im Profil unter
-   „Mein QR-Code" bzw. per `fetch-db.sh` exportierbar).
+   `https://petersdorff.github.io/#connect/<member-id>` (eigener Code auf
+   der Scan-Seite hinter dem Kamera-Symbol, bzw. per `fetch-db.sh` exportierbar).
 3. Ablauf für Gäste: QR scannen (native Kamera) → „Familientag: Ohne Konto
    ansehen" → Code eingeben → eigenen Namen wählen → Verwandtschaft wird
    angezeigt. Kein Konto, keine Freigabe — aber Netz und Code nötig.

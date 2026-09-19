@@ -300,13 +300,6 @@ const App = (() => {
     document.getElementById('btn-show-connection').addEventListener('click', Connection.showConnectionToMe);
     document.getElementById('btn-connect-other').addEventListener('click', Profile.toggleConnectOther);
     document.getElementById('connect-other-search').addEventListener('input', Profile.onConnectOtherInput);
-    document.getElementById('btn-show-qr').addEventListener('click', () => {
-      const profileId = Profile.getCurrentProfileId();
-      if (profileId) {
-        QR.generate('qr-code-canvas', profileId);
-        showView('view-qr');
-      }
-    });
     document.getElementById('btn-show-as-root').addEventListener('click', () => {
       const profileId = Profile.getCurrentProfileId();
       if (!profileId) return;
@@ -348,7 +341,6 @@ const App = (() => {
     });
 
     // QR views
-    document.getElementById('btn-qr-back').addEventListener('click', () => showView('view-main'));
     document.getElementById('btn-scanner-back').addEventListener('click', () => {
       QR.stopScanner();
       showView('view-main');
@@ -372,12 +364,6 @@ const App = (() => {
     });
     document.getElementById('menu-add').addEventListener('click', (e) => {
       e.preventDefault(); closeMenu(); Profile.edit(null);
-    });
-    document.getElementById('menu-qr').addEventListener('click', (e) => {
-      e.preventDefault(); closeMenu(); showMyQR();
-    });
-    document.getElementById('menu-scan').addEventListener('click', (e) => {
-      e.preventDefault(); closeMenu(); openScanner();
     });
     document.getElementById('menu-logout').addEventListener('click', (e) => {
       e.preventDefault(); closeMenu();
@@ -987,21 +973,6 @@ const App = (() => {
   }
 
   // ─── QR & Scanner ───
-
-  function showMyQR() {
-    const member = Auth.getMember();
-    if (!member) {
-      if (Guest.isActive()) {
-        toast('Wähle zuerst, wer du bist', 'info');
-        Guest.showIdentityPicker();
-      } else {
-        toast('Bitte verknüpfe zuerst dein Profil', 'error');
-      }
-      return;
-    }
-    QR.generate('qr-code-canvas', member.id);
-    showView('view-qr');
-  }
 
   function openScanner() {
     showView('view-scanner');

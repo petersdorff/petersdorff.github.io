@@ -12,7 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=57">
+  <link rel="stylesheet" href="css/style.css?v=58">
 </head>
 <body>
 
@@ -341,6 +341,13 @@
 
     <!-- Familienzweige (nur sichtbar, wenn es mehrere gibt) -->
     <div id="family-switch" class="family-switch hidden" role="tablist" aria-label="Familienzweig"></div>
+
+    <!-- Temporäre Stammperson: Leiste an Stelle des Zweig-Umschalters -->
+    <div id="temp-root-bar" class="temp-root-bar hidden">
+      <span class="temp-root-label">Stammperson:</span>
+      <button id="temp-root-name" class="temp-root-name" type="button" title="Profil öffnen"></button>
+      <button id="temp-root-close" class="temp-root-close" type="button" aria-label="Zurück zum vollständigen Stammbaum" title="Zurück zum vollständigen Stammbaum">&times;</button>
+    </div>
 
     <!-- Ansichten: Fächer · Fächer nach Geburtsjahr · Gotha · Stammtafel -->
     <div id="view-switch" class="view-switch" role="tablist" aria-label="Ansicht">
@@ -706,6 +713,7 @@
       <div class="profile-actions">
         <button id="btn-show-qr" class="btn btn-secondary">QR-Code zeigen</button>
         <button id="btn-show-in-tree" class="btn btn-secondary">Im Stammbaum zeigen</button>
+        <button id="btn-show-as-root" class="btn btn-secondary">Als Stammperson anzeigen</button>
         <button id="btn-delete-member" class="btn btn-danger" style="display:none; margin-top:16px;">Platzhalter löschen</button>
       </div>
     </div>
@@ -993,9 +1001,9 @@
   <script src="js/markdown.js?v=1"></script>
   <script src="js/article.js?v=4"></script>
   <script src="js/gotha.js?v=4"></script>
-  <script src="js/map.js?v=2"></script>
+  <script src="js/map.js?v=3"></script>
   <script src="js/babycry.js?v=6"></script>
-  <script src="js/fan.js?v=57"></script>
+  <script src="js/fan.js?v=58"></script>
   <script src="js/qr.js?v=23"></script>
   <script src="js/search.js?v=23"></script>
   <script src="js/admin.js?v=11"></script>
@@ -1003,7 +1011,7 @@
   <script src="js/guest.js?v=7"></script>
   <script src="js/connection.js?v=16"></script>
   <script src="js/relations.js?v=15"></script>
-  <script src="js/profile.js?v=41"></script>
-  <script src="js/app.js?v=77"></script>
+  <script src="js/profile.js?v=42"></script>
+  <script src="js/app.js?v=78"></script>
 </body>
 </html>

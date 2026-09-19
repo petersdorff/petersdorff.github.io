@@ -306,6 +306,13 @@ const App = (() => {
         showView('view-qr');
       }
     });
+    document.getElementById('btn-show-as-root').addEventListener('click', () => {
+      const profileId = Profile.getCurrentProfileId();
+      if (!profileId) return;
+      if (tempRootId === profileId) { showView('view-main'); clearTempRoot(); } else setTempRoot(profileId);
+    });
+    document.getElementById('temp-root-close').addEventListener('click', clearTempRoot);
+    document.getElementById('temp-root-name').addEventListener('click', () => { if (tempRootId) Profile.show(tempRootId); });
     document.getElementById('btn-show-in-tree').addEventListener('click', () => {
       const profileId = Profile.getCurrentProfileId();
       if (profileId) {
@@ -488,7 +495,7 @@ const App = (() => {
       Fan.setColorMode(fanColorMode(name));
       setFanMode(isFan);
       Gotha.render(cachedMembers, cachedRelationships, { familyId: activeFamilyId });
-      MapView.setData(cachedMembers, cachedRelationships, families);
+      MapView.setData(cachedMembers, cachedRelationships, families, { onlyAssigned: !!tempRootId });
       if (name === 'gotha') Gotha.show();
       if (name === 'map') MapView.show();
       updateViewSwitch();
@@ -500,7 +507,7 @@ const App = (() => {
     Tree.render(sub.members, sub.relationships);
     if (Fan.isActive()) Fan.render(cachedMembers, cachedRelationships);
     Gotha.render(cachedMembers, cachedRelationships, { familyId: activeFamilyId });
-    MapView.setData(cachedMembers, cachedRelationships, families);
+    MapView.setData(cachedMembers, cachedRelationships, families, { onlyAssigned: !!tempRootId });
     updateFamilySwitch();
     updateOrphanTray();
   }
@@ -514,6 +521,7 @@ const App = (() => {
     families = res.families;
     unreachableIds = res.unreachable;
     const valid = id => id && families.some(f => f.rootId === id);
+    if (tempRootId && valid(tempRootId)) activeFamilyId = tempRootId;
     if (!valid(activeFamilyId)) {
       let stored = null;
       try { stored = localStorage.getItem('stammbaum_family'); } catch { /* egal */ }
@@ -557,6 +565,44 @@ const App = (() => {
     updateLegendBlocks();
   }
 
+  // ─── Temporäre Stammperson ───
+  //
+  // „Als Stammperson anzeigen": die Person wird Wurzel der einzigen Familie
+  // (Fan.setTempRoot → buildFamiliesFrom), alle Ansichten zeigen nur ihren
+  // Teilbaum; oben eine Leiste mit × zurück zum vollständigen Bild. Nicht
+  // gespeichert — nach einem Neuladen ist alles wie vorher.
+  let tempRootId = null;
+  let familyBeforeTemp = null;
+
+  function setTempRoot(memberId) {
+    const m = cachedMembers.find(x => x.id === memberId);
+    if (!m) return;
+    if (!tempRootId) familyBeforeTemp = activeFamilyId;
+    tempRootId = memberId;
+    Fan.setTempRoot(memberId);
+    activeFamilyId = memberId;
+    Fan.setPreferredFamily(memberId);
+    document.getElementById('temp-root-name').textContent = `${m.firstName} ${m.lastName}`;   // voller Name, eindeutiger als der Rufname
+    document.getElementById('temp-root-bar').classList.remove('hidden');
+    DB.logEvent('temp_root');
+    showView('view-main');
+    renderTree();
+    if (Fan.isActive()) Fan.fit();
+  }
+
+  function clearTempRoot() {
+    if (!tempRootId) return;
+    const prev = tempRootId;
+    tempRootId = null;
+    Fan.setTempRoot(null);
+    document.getElementById('temp-root-bar').classList.add('hidden');
+    activeFamilyId = familyBeforeTemp;
+    familyBeforeTemp = null;
+    renderTree();
+    // Zurück im vollständigen Bild: die bisherige Stammperson bleibt im Blick
+    revealInCanvas(prev);
+  }
+
   /** Vor dem Zentrieren ggf. in den Zweig der Person wechseln. */
   function ensureFamilyFor(memberId) {
     const fid = familyOf(memberId);
@@ -572,6 +618,8 @@ const App = (() => {
    */
   function revealInCanvas(memberId) {
     if (!memberId || !cachedMembers.some(m => m.id === memberId)) return;
+    // Außerhalb des Teilbaums der Stammperson gibt es nichts zu zentrieren
+    if (tempRootId && !familyOf(memberId)) return;
     if (MapView.isActive()) { MapView.centerOn(memberId); return; }
     ensureFamilyFor(memberId);
     if (Fan.isActive()) Fan.panTo(memberId);
@@ -657,7 +705,7 @@ const App = (() => {
       .filter(m => !m.familyHint || !families.some(f => f.rootId === m.familyHint) || m.familyHint === activeFamilyId)
       .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`));
     document.getElementById('orphan-count').textContent = orphans.length;
-    tray.classList.toggle('hidden', orphans.length === 0 || MapView.isActive());   // Karte: Ablage stört nur
+    tray.classList.toggle('hidden', orphans.length === 0 || MapView.isActive() || !!tempRootId);   // Karte/Stammperson: Ablage stört nur
     updateConnectHint(ids);
     const list = document.getElementById('orphan-list');
     list.innerHTML = '';
@@ -1059,6 +1107,7 @@ const App = (() => {
     setActiveFamily,
     ensureFamilyFor,
     revealInCanvas,
+    setTempRoot, clearTempRoot, getTempRoot: () => tempRootId,
     focusInFan,
     familyInfo: (id) => {
       // Geburtszweig vor Heiratszweig (Angeheiratete stehen in beiden Fächern)

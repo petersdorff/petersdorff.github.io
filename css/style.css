@@ -2833,6 +2833,24 @@ body.has-status .fan-timeline { bottom: 112px; }
 .connect-other-box { margin-top: 8px; }
 .connect-other-box .mini-results { max-height: 220px; }
 
+/* Temporäre Stammperson: Leiste oben mittig (dort, wo sonst der Zweig-Umschalter sitzt) */
+.temp-root-bar {
+  position: absolute; top: 70px; left: 50%; transform: translateX(-50%); z-index: 90;
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 3px 3px 12px;
+  background: var(--trace); color: var(--bg); border: 2px solid var(--trace); border-radius: 20px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.12); max-width: calc(100vw - 24px); font-size: 11px;
+}
+.temp-root-bar.hidden { display: none; }
+.temp-root-label { color: rgba(255,255,255,0.7); white-space: nowrap; }
+.temp-root-name { border: none; background: none; color: var(--bg); font-family: var(--font); font-size: 11px; font-weight: 600;
+  cursor: pointer; padding: 5px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60vw; }
+.temp-root-close { width: 28px; height: 28px; border-radius: 50%; border: none; background: var(--bg); color: var(--trace);
+  font-size: 18px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.temp-root-close:hover { background: var(--red); color: #fff; }
+@supports (padding: env(safe-area-inset-top)) {
+  .temp-root-bar { top: max(70px, calc(env(safe-area-inset-top) + 62px)); }
+}
+
 /* Anlegen-Zeile im Profil: nur auf dem Handy (Desktop hat die Hover-Chips) */
 .profile-add-row { display: none; align-items: center; flex-wrap: wrap; gap: 6px; margin: 10px 0 6px; }
 .profile-add-row.hidden { display: none; }

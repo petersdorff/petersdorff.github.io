@@ -112,6 +112,9 @@ const Profile = (() => {
     document.getElementById('btn-show-connection').style.display = showConnBtn ? '' : 'none';
     // „Wie ist Kai mit … verwandt?" — Suche über alle Personen, Ergebnis im Verwandtschafts-Overlay
     document.getElementById('btn-connect-other').textContent = `Wie ist ${member.callName || member.firstName} mit … verwandt?`;
+    // Temporäre Stammperson: ist sie es schon, bietet der Knopf den Rückweg an
+    document.getElementById('btn-show-as-root').textContent = App.getTempRoot() === memberId
+      ? 'Vollständigen Stammbaum zeigen' : 'Als Stammperson anzeigen';
     resetConnectOther();
     // Anlegen-Zeile (Handy): nur mit Schreibrecht; Partner-Knopf nur ohne eingetragenen Partner
     const addRow = document.getElementById('profile-add-row');

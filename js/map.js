@@ -120,8 +120,10 @@ const MapView = (() => {
   //  DATEN → EINTRÄGE
   // ═══════════════════════════════════════════════════════════
 
-  function setData(memberData, relationshipData, familyData) {
+  let onlyAssigned = false;     // temporäre Stammperson: nur Personen ihres Teilbaums
+  function setData(memberData, relationshipData, familyData, opts = {}) {
     members = memberData; relationships = relationshipData; families = familyData || [];
+    onlyAssigned = !!opts.onlyAssigned;
     fitted = false;
     if (active && map) render(true);
   }
@@ -167,7 +169,9 @@ const MapView = (() => {
     }
     const visible = m => {
       if (!showDeceased && m.isDeceased) return false;
-      if (filter) { const b = branchOf(m.id); if (b && !filter.has(b)) return false; }
+      const b = branchOf(m.id);
+      if (onlyAssigned && !b) return false;
+      if (filter && b && !filter.has(b)) return false;
       return true;
     };
     const out = [];

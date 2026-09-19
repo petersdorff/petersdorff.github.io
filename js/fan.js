@@ -85,6 +85,10 @@ const Fan = (() => {
     '6f3dce22-f3e7-4f39-93bc-35b003b50e22': 2,   // Jannike der Jüngere (Johannes), Großenhagen
   };
   const BRANCH_ANCESTORS = { name: 'Vorfahren der festen Zweig-Wurzeln', short: 'Vorfahren', order: FAMILY_NAMES.length, ancestorsOnly: true };
+  // Temporäre Stammperson („Als Stammperson anzeigen"): ist sie gesetzt,
+  // gibt es genau EINE Familie mit ihr als Wurzel — alles darüber und
+  // daneben bleibt aus, in jeder Ansicht (alle nutzen buildFamiliesFrom).
+  let tempRoot = null;
   /** Anzeigename im Fächer: Rufname, sonst (alte Daten, Gastmodus vor
       Migration 011) der volle Vorname. */
   const callName = m => m.callName || m.firstName;
@@ -201,8 +205,9 @@ const Fan = (() => {
    * ein Stammelternpaar (beide ohne Eltern) bildet EINE Familie mit dem
    * älteren Partner als Wurzel. Jede Familie bekommt ihren eigenen Baum.
    */
-  function buildFamiliesFrom(members, relationships) {
+  function buildFamiliesFrom(members, relationships, opts = {}) {
     const byId = new Map(members.map(m => [m.id, m]));
+    const forcedRoot = opts.root !== undefined ? opts.root : tempRoot;
     const parentsOf = new Map(), childrenOf = new Map(), spousesOf = new Map();
     const push = (mp, k, v) => { if (!mp.has(k)) mp.set(k, []); mp.get(k).push(v); };
     for (const r of relationships) {
@@ -219,13 +224,19 @@ const Fan = (() => {
     const heads = candidates.filter(m => !(spousesOf.get(m.id) || []).some(id => parentsOf.has(id)));
     const used = new Set();
     const roots = [];
-    // Feste Wurzeln zuerst (unabhängig von eingetragenen Eltern)
-    for (const id of designated) { used.add(id); roots.push(byId.get(id)); }
-    for (const h of heads) {
-      if (used.has(h.id)) continue;
-      used.add(h.id);
-      for (const sp of (spousesOf.get(h.id) || [])) used.add(sp);
-      roots.push(h);
+    if (forcedRoot && byId.has(forcedRoot)) {
+      // Temporäre Stammperson: nur ihr Teilbaum
+      used.add(forcedRoot); roots.push(byId.get(forcedRoot));
+      designated.clear();
+    } else {
+      // Feste Wurzeln zuerst (unabhängig von eingetragenen Eltern)
+      for (const id of designated) { used.add(id); roots.push(byId.get(id)); }
+      for (const h of heads) {
+        if (used.has(h.id)) continue;
+        used.add(h.id);
+        for (const sp of (spousesOf.get(h.id) || [])) used.add(sp);
+        roots.push(h);
+      }
     }
 
     // Bekannte Familie ohne Wurzel (z.B. Stammvater ohne eingetragene
@@ -233,6 +244,7 @@ const Fan = (() => {
     // elternloser Namensträger, der nicht in eine dokumentierte Linie
     // eingeheiratet ist, wird ihre Wurzel.
     for (const fam of FAMILY_NAMES) {
+      if (forcedRoot) break;   // temporäre Stammperson: keine weiteren Familien
       if (roots.some(r => familyLabel(r).name === fam.name)) continue;
       const seed = members
         .filter(m => familyLabel(m).name === fam.name && !parentsOf.has(m.id) && !used.has(m.id)
@@ -271,7 +283,9 @@ const Fan = (() => {
       // Beschriftung: feste Wurzel → ihr Eintrag; Vorfahren einer festen
       // Wurzel → „Stammväter"; sonst nach Wurzel erkennen
       let label;
-      if (designated.has(rootMember.id)) {
+      if (forcedRoot && rootMember.id === forcedRoot) {
+        label = { name: `Stammperson: ${rootMember.firstName} ${rootMember.lastName}`, short: `${callName(rootMember)} ${rootMember.lastName}`, order: 0 };
+      } else if (designated.has(rootMember.id)) {
         const f = FAMILY_NAMES[BRANCH_ROOTS[rootMember.id]];
         label = { name: f.name, short: f.short, tiny: f.tiny, order: BRANCH_ROOTS[rootMember.id] };
       } else if ([...designated].some(d => (parentsOf.get(d) || []).some(p => assigned.has(p)))) {
@@ -307,7 +321,7 @@ const Fan = (() => {
     const res = buildFamiliesFrom(members, relationships);
     families = res.families;
     unreachable = res.unreachable;
-    if (unreachable.length) {
+    if (unreachable.length && !tempRoot) {
       const byId = new Map(members.map(m => [m.id, m]));
       console.info(`[Fan] ${unreachable.length} Personen in keiner Familie erreichbar:`,
         unreachable.map(id => { const m = byId.get(id); return `${m.firstName} ${m.lastName}`; }).join(', '));
@@ -1524,6 +1538,7 @@ const Fan = (() => {
            setColorMode, getColorMode: () => colorMode, getYearScale, familySurname,
            getTimeline, setTimelineYear, startPlayback, stopPlayback, isPlaying: () => !!playing,
            setPreferredFamily: (id) => { preferredFamilyId = id; },
+           setTempRoot: (id) => { tempRoot = id || null; }, getTempRoot: () => tempRoot,
            onFamilyChange: (cb) => { onFamilyChangeCallback = cb; },
            getUnreachable: () => unreachable.slice(),
            getRotation: () => phi, setRotation: (r) => { phi = r; applyRotation(); },

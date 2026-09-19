@@ -431,6 +431,9 @@ const Profile = (() => {
       item.addEventListener('click', () => {
         const fromId = currentProfileId;
         resetConnectOther();
+        // Wie showConnectionTo: erst zur Hauptansicht — auf dem Handy ist das
+        // Profil eine Vollbild-Ansicht und würde das Overlay sonst verdecken
+        App.showView('view-main');
         Connection.showOverlay(fromId, m.id);
       });
       box.appendChild(item);

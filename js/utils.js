@@ -31,7 +31,8 @@ const Utils = (() => {
   /**
    * Wegwischen zum Schließen (nur Touch/Stift, nicht Maus): `dir` 'down'
    * für Bottom-Sheets (nur wenn der Inhalt oben steht, sonst wird
-   * gescrollt), 'right' für Vollbild-Ansichten (wie iOS-Zurück). Reine
+   * gescrollt), 'up' für oben verankerte Kästen (Legende), 'right' für
+   * Vollbild-Ansichten (wie iOS-Zurück). Reine
    * Geste, kein Verschieben-Feedback — 60 px in der Richtung, deutlich mehr
    * als quer, und nicht vom Eingabefeld aus gestartet.
    */
@@ -47,7 +48,9 @@ const Utils = (() => {
       if (!start) return;
       const dx = e.clientX - start.x, dy = e.clientY - start.y;
       start = null;
-      const hit = dir === 'down' ? (dy > 60 && dy > Math.abs(dx) * 1.5) : (dx > 70 && dx > Math.abs(dy) * 1.5);
+      const hit = dir === 'down' ? (dy > 60 && dy > Math.abs(dx) * 1.5)
+        : dir === 'up' ? (dy < -60 && -dy > Math.abs(dx) * 1.5)
+        : (dx > 70 && dx > Math.abs(dy) * 1.5);
       if (hit) onClose();
     }, { passive: true });
     el.addEventListener('pointercancel', () => { start = null; }, { passive: true });

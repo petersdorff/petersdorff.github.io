@@ -12,7 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
   <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=56">
+  <link rel="stylesheet" href="css/style.css?v=57">
 </head>
 <body>
 
@@ -410,27 +410,17 @@
     <!-- Search Results Dropdown -->
     <div id="search-results" class="search-results hidden"></div>
 
-    <!-- Floating Action Buttons -->
+    <!-- Kleine Knöpfe oben rechts: Zeichenerklärung, auf mich zentrieren
+         (Person anlegen → Seitenmenü, eigener QR-Code → Scan-Seite) -->
     <div id="fab-container">
-      <button id="fab-add" class="fab" aria-label="Person hinzufügen">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-        </svg>
-      </button>
-      <button id="fab-myqr" class="fab fab-small" aria-label="Mein QR-Code">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-          <rect x="3" y="14" width="7" height="7" rx="1"/><circle cx="17.5" cy="17.5" r="2.5"/>
-        </svg>
-      </button>
-      <button id="fab-center" class="fab fab-small" aria-label="Auf mich zentrieren">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
-        </svg>
-      </button>
-      <button id="fab-legend" class="fab fab-small" aria-label="Zeichenerklärung" title="Was bedeuten die Rahmen?">
+      <button id="fab-legend" class="fab" aria-label="Zeichenerklärung" title="Zeichenerklärung">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><circle cx="12" cy="8" r="0.5" fill="currentColor"/>
+        </svg>
+      </button>
+      <button id="fab-center" class="fab" aria-label="Auf mich zentrieren" title="Auf mich zentrieren">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
         </svg>
       </button>
     </div>
@@ -916,8 +906,17 @@
         </button>
         <h2>QR-Code scannen</h2>
       </header>
-      <div id="qr-reader"></div>
-      <p class="scanner-hint">Halte die Kamera auf den QR-Code<br>eines Familienmitglieds.</p>
+      <div class="scanner-grid">
+        <div class="scanner-cam">
+          <div id="qr-reader"></div>
+          <p class="scanner-hint">Halte die Kamera auf den QR-Code<br>eines Familienmitglieds.</p>
+        </div>
+        <!-- Eigener Code gleich daneben: so scannt man sich gegenseitig -->
+        <div class="scanner-me">
+          <div id="scanner-qr-canvas" class="scanner-qr"></div>
+          <p class="scanner-hint" id="scanner-me-hint">Dein QR-Code – lass dich scannen.</p>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -939,6 +938,9 @@
         <li><a href="#" id="menu-profile">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           Mein Profil</a></li>
+        <li id="menu-add-item"><a href="#" id="menu-add">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          Person hinzufügen</a></li>
         <li><a href="#" id="menu-qr">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
           Mein QR-Code</a></li>
@@ -983,7 +985,7 @@
   <script defer src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
   <!-- App modules -->
-  <script src="js/utils.js?v=10"></script>
+  <script src="js/utils.js?v=11"></script>
   <script src="js/db.js?v=35"></script>
   <script src="js/auth.js?v=30"></script>
   <script src="js/relationship.js?v=33"></script>
@@ -1002,6 +1004,6 @@
   <script src="js/connection.js?v=16"></script>
   <script src="js/relations.js?v=15"></script>
   <script src="js/profile.js?v=40"></script>
-  <script src="js/app.js?v=75"></script>
+  <script src="js/app.js?v=76"></script>
 </body>
 </html>

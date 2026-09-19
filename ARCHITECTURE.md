@@ -624,8 +624,17 @@ einem Cousin 2. Grades von Kai."), Zweig-Hinweis „Sie stammen aus …".
   Hover-Chips im Fächer sind dort kaum nutzbar — Kind/Geschwister/Partner
   entstehen darum direkt aus dem Profil (`App.addRelative`). Desktop bleibt
   bei den Chips.
-- **Ansichts-Umschalter** unter 480 px linksbündig und 36 px breit — sechs
-  Ansichten zentriert überlappten die FAB-Spalte (ⓘ-Knopf) rechts.
+- **Knöpfe** (19.09.2026): keine FAB-Spalte unten rechts mehr. ⓘ
+  (Zeichenerklärung) und „zu mir" sind kleine 42-px-Knöpfe im Stil des
+  Ansichts-Umschalters **oben rechts** (`#fab-container`, top 70 px wie der
+  Zweig-Umschalter; unter 480 px darunter bei 112 px, da der Umschalter
+  fast die ganze Breite nimmt; bei offener Seitenleiste nach links
+  gerückt). Die Legende öffnet links daneben. „Person hinzufügen" ist ein
+  Eintrag im Seitenmenü (`#menu-add`, im Lesemodus ausgeblendet), der
+  eigene QR-Code steht auf der Scan-Seite neben der Kamera
+  (`#scanner-qr-canvas`, `openScanner`) — so scannt man sich gegenseitig;
+  „Mein QR-Code" im Menü zeigt ihn zusätzlich groß. Ansichts-Umschalter
+  bleibt mittig (unter 480 px 36-px-Knöpfe).
 
 ## Sicherheit & Datenschutz — Stand nach Review 15.09.2026
 

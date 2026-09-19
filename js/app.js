@@ -271,8 +271,6 @@ const App = (() => {
     updateViewSwitch();
 
     // FABs
-    document.getElementById('fab-add').addEventListener('click', () => Profile.edit(null));
-    document.getElementById('fab-myqr').addEventListener('click', showMyQR);
     document.getElementById('fab-center').addEventListener('click', centerOnMe);
     document.getElementById('fab-legend').addEventListener('click', () => {
       document.getElementById('legend-panel').classList.toggle('hidden');
@@ -367,6 +365,9 @@ const App = (() => {
       const member = Auth.getMember();
       if (member) Profile.show(member.id);
     });
+    document.getElementById('menu-add').addEventListener('click', (e) => {
+      e.preventDefault(); closeMenu(); Profile.edit(null);
+    });
     document.getElementById('menu-qr').addEventListener('click', (e) => {
       e.preventDefault(); closeMenu(); showMyQR();
     });
@@ -441,7 +442,7 @@ const App = (() => {
 
     // Handy: Wegwischen — Overlay und Legende nach unten, Profil nach rechts
     Utils.attachSwipeClose(document.getElementById('connection-overlay'), 'down', () => Connection.closeOverlay());
-    Utils.attachSwipeClose(document.getElementById('legend-panel'), 'down', () => document.getElementById('legend-panel').classList.add('hidden'));
+    Utils.attachSwipeClose(document.getElementById('legend-panel'), 'up', () => document.getElementById('legend-panel').classList.add('hidden'));
     Utils.attachSwipeClose(document.getElementById('view-profile'), 'right', () => {
       if (!document.getElementById('view-profile').classList.contains('side-panel')) showView('view-main');
     });
@@ -799,7 +800,7 @@ const App = (() => {
    */
   function applyReadOnlyUI() {
     const readOnly = DB.isOffline();
-    document.getElementById('fab-add').style.display = readOnly ? 'none' : '';
+    document.getElementById('menu-add-item').style.display = readOnly ? 'none' : '';
     Fan.setCanEdit(!readOnly);
     const whoamiItem = document.getElementById('menu-whoami-item');
     if (whoamiItem) whoamiItem.style.display = Guest.isActive() ? '' : 'none';
@@ -931,6 +932,17 @@ const App = (() => {
   function openScanner() {
     showView('view-scanner');
     QR.startScanner('qr-reader', Connection.handleQRScanned);
+    // Eigener Code auf derselben Seite — gegenseitiges Scannen ohne Umweg
+    const member = Auth.getMember();
+    const box = document.getElementById('scanner-qr-canvas');
+    const hint = document.getElementById('scanner-me-hint');
+    box.innerHTML = '';
+    if (member) {
+      QR.generate('scanner-qr-canvas', member.id);
+      hint.textContent = `Dein QR-Code (${member.callName || member.firstName}) – lass dich scannen.`;
+    } else {
+      hint.textContent = Guest.isActive() ? 'Wähle zuerst, wer du bist (Menü → Wer bin ich?), dann erscheint hier dein QR-Code.' : 'Verknüpfe zuerst dein Profil, dann erscheint hier dein QR-Code.';
+    }
   }
 
   // ─── Delete Member ───

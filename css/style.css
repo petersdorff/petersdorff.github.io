@@ -747,24 +747,27 @@ a {
    FLOATING ACTION BUTTONS
    ═══════════════════════════════════════════════════════════ */
 
+/* Kleine Knöpfe oben rechts (ⓘ, „zu mir") — Stil und Höhe wie der
+   Ansichts-Umschalter unten (42 px, 2 px heller Rand) */
 #fab-container {
   position: absolute;
-  bottom: 24px;
-  right: 16px;
+  top: 70px;                 /* unter der Kopfleiste, auf Höhe des Zweig-Umschalters */
+  right: 12px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   z-index: 50;
 }
 
 .fab {
-  width: 56px;
-  height: 56px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
-  border: 2px solid var(--trace);
+  border: 2px solid var(--trace-faint);
   background: var(--bg);
-  color: var(--trace);
+  color: var(--text-secondary);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -778,20 +781,19 @@ a {
   color: var(--bg);
 }
 
-.fab-small {
-  width: 44px;
-  height: 44px;
+.fab:hover { color: var(--text); border-color: var(--trace-light); }
+/* Desktop mit offener Seitenleiste: aus dem Panel heraus nach links rücken */
+@media (min-width: 600px) {
+  body.side-panel-open #fab-container { right: calc(min(400px, 50vw) + 12px); }
+  body.side-panel-open .legend-panel { right: calc(min(400px, 50vw) + 62px); }
 }
-
-#fab-add {
-  background: var(--red);
-  color: white;
-  border-color: var(--red);
+/* Handy: unter den Zweig-Umschalter (der geht fast über die ganze Breite) */
+@media (max-width: 480px) {
+  #fab-container { top: 112px; }
 }
-
-#fab-add:hover, #fab-add:active {
-  background: #c1313e;
-  border-color: #c1313e;
+@supports (padding: env(safe-area-inset-top)) {
+  #fab-container { top: max(70px, calc(env(safe-area-inset-top) + 62px)); }
+  @media (max-width: 480px) { #fab-container { top: max(112px, calc(env(safe-area-inset-top) + 104px)); } }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -800,14 +802,12 @@ a {
 
 .legend-panel {
   position: absolute;
-  /* Links neben der FAB-Spalte und über dem Offline-Banner, damit sie
-     weder die Buttons (3 im Gastmodus, 4 eingeloggt) noch den Banner
-     unten in der Mitte verdeckt. */
-  bottom: 60px;
-  right: 76px;
+  /* Links neben dem ⓘ-Knopf oben rechts */
+  top: 70px;
+  right: 62px;
   width: 250px;
   max-width: calc(100vw - 100px);
-  max-height: calc(100% - 100px);
+  max-height: calc(100% - 90px);
   overflow-y: auto;
   background: var(--bg);
   border: 2px solid var(--trace);
@@ -1418,6 +1418,12 @@ a {
   overflow: hidden;
   margin: 20px 0;
 }
+.scanner-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 700px) { .scanner-grid { grid-template-columns: 3fr 2fr; align-items: start; } }
+.scanner-me { display: flex; flex-direction: column; align-items: center; padding: 8px 0 24px; }
+.scanner-qr { padding: 14px; background: #fff; border: 2px solid var(--trace); border-radius: var(--radius-lg); margin-bottom: 10px; }
+.scanner-qr:empty { display: none; }
+.scanner-qr canvas, .scanner-qr img { display: block; width: 160px; height: 160px; }
 
 #qr-reader video {
   border-radius: var(--radius-lg);
@@ -1617,12 +1623,6 @@ a {
 @supports (padding: env(safe-area-inset-top)) {
   #top-bar {
     padding-top: max(8px, env(safe-area-inset-top));
-  }
-  #fab-container {
-    bottom: max(24px, calc(env(safe-area-inset-bottom) + 12px));
-  }
-  .legend-panel {
-    bottom: max(60px, calc(env(safe-area-inset-bottom) + 48px));
   }
   .menu-header {
     padding-top: max(32px, calc(env(safe-area-inset-top) + 12px));
@@ -1835,10 +1835,9 @@ a {
 @supports (padding: env(safe-area-inset-bottom)) {
   .view-switch { bottom: max(16px, calc(env(safe-area-inset-bottom) + 8px)); }
 }
-/* Handy: sechs Ansichten passen nicht mehr zentriert neben die FAB-Spalte
-   rechts (überlappte den ⓘ-Knopf) → linksbündig und etwas schmaler */
+/* Handy: sechs Ansichten à 36 px, mittig (rechts unten ist seit dem Umzug
+   der Knöpfe nach oben nichts mehr im Weg) */
 @media (max-width: 480px) {
-  .view-switch { left: 12px; transform: none; }
   .view-btn { width: 36px; }
 }
 
@@ -2740,8 +2739,7 @@ body.has-status .fan-timeline { bottom: 112px; }
 .map-canvas .leaflet-control-attribution a { color: var(--text-secondary); }
 .map-canvas .leaflet-bar { border: 1px solid var(--trace-faint); box-shadow: var(--shadow); }
 .map-canvas .leaflet-bar a { font-family: var(--font); color: var(--text); }
-/* Zoom-Knöpfe über die FAB-Säule rechts unten heben */
-.map-canvas .leaflet-bottom.leaflet-right { bottom: 150px; right: 6px; }
+.map-canvas .leaflet-bottom.leaflet-right { bottom: 8px; right: 6px; }
 .map-canvas .leaflet-div-icon { background: none; border: none; }
 
 /* Pin für einen Ort: Kreis mit Zahl + Ortsname darunter */
@@ -2854,5 +2852,11 @@ body.has-status .fan-timeline { bottom: 112px; }
   .family-switch.is-filter .family-btn.active::before { content: none; }   /* Häkchen kostet die eine Zeile */
   .map-tools { top: 54px; }
   .map-list { top: 96px; max-height: calc(100% - 210px); }
-  .map-canvas .leaflet-bottom.leaflet-right { bottom: 190px; }
+  .map-canvas .leaflet-bottom.leaflet-right { bottom: 8px; }
+}
+
+/* Legende auf dem Handy: unter dem Zweig-Umschalter, neben dem ⓘ-Knopf, volle Restbreite
+   (steht nach der Basisregel, sonst gewinnt deren top/right) */
+@media (max-width: 480px) {
+  .legend-panel { top: 112px; right: 62px; left: 12px; width: auto; max-width: none; max-height: calc(100% - 200px); }
 }

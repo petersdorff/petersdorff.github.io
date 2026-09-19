@@ -128,6 +128,11 @@ const Profile = (() => {
     await Relations.renderProfileRelations(memberId);
 
     App.showView('view-profile');
+    // Die gezeigte Person ist immer auch im Canvas zentriert — egal, ob sie
+    // im Fächer angetippt, in einer Verbindungsliste, im Overlay oder in der
+    // Kartenliste gewählt wurde. Nach showView, damit die Seitenleiste
+    // (Desktop) schon offen ist und die Animation nicht abgeschnitten wird.
+    App.revealInCanvas(memberId);
   }
 
   /**

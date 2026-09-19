@@ -34,10 +34,7 @@ const App = (() => {
     MapView.init('map-container');
     MapView.onTap((memberId) => Profile.show(memberId));
     Fan.init('fan-container');
-    Fan.onTap((memberId) => {
-      Fan.panTo(memberId);
-      Profile.show(memberId);
-    });
+    Fan.onTap((memberId) => Profile.show(memberId));   // zentriert über revealInCanvas
     Fan.onAddRelative(addRelative);
     Fan.onConnect((memberId) => Connection.showConnectionTo(memberId));
     // Fächer wechselt intern die Familie (z.B. Zentrieren auf eine Person
@@ -428,10 +425,7 @@ const App = (() => {
 
     // Tree node tap: center the person (instantly, at the current zoom —
     // an animation would be cut off by the view switch), then open profile
-    Tree.onNodeTap((nodeId) => {
-      Tree.centerOn(nodeId, null, false);
-      Profile.show(nodeId);
-    });
+    Tree.onNodeTap((nodeId) => Profile.show(nodeId));   // zentriert über revealInCanvas
 
     // Tipp/Klick ins Leere (Stammtafel, Fächer, Gotha, Karte): Overlay,
     // Legende und Profil-Seitenleiste schließen (Editor bewusst nicht)
@@ -567,6 +561,29 @@ const App = (() => {
   function ensureFamilyFor(memberId) {
     const fid = familyOf(memberId);
     if (fid && fid !== activeFamilyId) setActiveFamily(fid);
+  }
+
+  /**
+   * Person in der aktiven Ansicht in die Mitte holen — wird von Profile.show
+   * gerufen, damit die Person im Seitenpanel IMMER auch im Canvas zentriert
+   * ist, egal woher das Profil geöffnet wurde (Tipp im Fächer, Verbindungs-
+   * liste eines anderen Profils, Pfad-Schritt im Overlay, Kartenliste, Suche).
+   * Zoom bleibt; nur der Zweig wechselt, wenn nötig.
+   */
+  function revealInCanvas(memberId) {
+    if (!memberId || !cachedMembers.some(m => m.id === memberId)) return;
+    if (MapView.isActive()) { MapView.centerOn(memberId); return; }
+    ensureFamilyFor(memberId);
+    if (Fan.isActive()) Fan.panTo(memberId);
+    else if (Gotha.isActive()) Gotha.scrollTo(memberId);
+    else {
+      // Stammtafel: nach einem Ansichtswechsel passt der ResizeObserver
+      // kurz darauf noch einmal ein — deshalb zusätzlich verzögert zentrieren
+      // ohne Animation wie Fan.panTo — rAF-Animationen bleiben in inaktiven
+      // Tabs/Panes hängen und die Person käme nie an
+      Tree.centerOn(memberId, null, false);
+      setTimeout(() => { if (!Fan.isActive() && !Gotha.isActive() && !MapView.isActive()) Tree.centerOn(memberId, null, false); }, 350);
+    }
   }
 
   // ─── Familienzweige (Fächer) ───
@@ -1041,6 +1058,7 @@ const App = (() => {
     applyView,
     setActiveFamily,
     ensureFamilyFor,
+    revealInCanvas,
     focusInFan,
     familyInfo: (id) => {
       // Geburtszweig vor Heiratszweig (Angeheiratete stehen in beiden Fächern)

@@ -609,6 +609,16 @@ einem Cousin 2. Grades von Kai."), Zweig-Hinweis „Sie stammen aus …".
 
 ## Panels schließen & Handy-Bedienung
 
+- **Profilperson immer zentriert:** `Profile.show` ruft am Ende
+  `App.revealInCanvas(id)` — Zweig wechseln, wenn nötig, dann Fächer
+  `panTo` (Zoom bleibt), Stammtafel `centerOn(id, null, false)` (ohne
+  rAF-Animation: die bliebe in inaktiven Tabs hängen; nach 350 ms noch
+  einmal, weil der ResizeObserver nach einem Ansichtswechsel nachträglich
+  einpasst), Gotha `scrollTo`, Karte `centerOn`. Damit gilt das auch, wenn
+  das Profil aus der Verbindungsliste eines anderen Profils, einem
+  Overlay-Schritt oder der Kartenliste kommt; Fan.onTap/Tree.onNodeTap
+  zentrieren nicht mehr selbst.
+
 - **Tipp/Klick ins Leere** in jeder Ansicht (Stammtafel `Tree.onBackgroundTap`,
   Fächer `Fan.onBackgroundTap` — Maus wie Touch, wenn `downTarget` fehlt und
   < 10 px bewegt —, Gotha-Rand, Karte) ruft `App.closeFloatingPanels()`:

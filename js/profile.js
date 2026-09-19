@@ -136,6 +136,10 @@ const Profile = (() => {
     // Kartenliste gewählt wurde. Nach showView, damit die Seitenleiste
     // (Desktop) schon offen ist und die Animation nicht abgeschnitten wird.
     App.revealInCanvas(memberId);
+    // Hervorhebung gehört zum offenen Profil — nur hier setzen, nicht beim
+    // bloßen Zentrieren (sonst blieb sie z.B. nach dem Ende der Stammperson-
+    // Ansicht ohne Panel stehen)
+    Fan.setSelected(memberId);
   }
 
   /**

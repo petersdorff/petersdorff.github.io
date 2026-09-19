@@ -598,7 +598,6 @@ const App = (() => {
    * Zoom bleibt; nur der Zweig wechselt, wenn nötig.
    */
   function revealInCanvas(memberId) {
-    Fan.setSelected(memberId);   // vergrößert wie beim Überfahren, bis das Profil zugeht
     if (!memberId || !cachedMembers.some(m => m.id === memberId)) return;
     // Außerhalb des Teilbaums der Stammperson gibt es nichts zu zentrieren
     if (tempRootId && !familyOf(memberId)) return;
